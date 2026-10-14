@@ -58,12 +58,17 @@ struct ContentView: View {
     @StateObject private var connectionAlerts = WatchConnectionAlerts.shared
     @Environment(\.scenePhase) private var scenePhase
 
+    private var stageVersion: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.8.2.5"
+        return version.hasPrefix("0.") ? String(version.dropFirst(2)) : version
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("IWATCH · ETAPA 8.2.1")
+                        Text("IWATCH · ETAPA \(stageVersion)")
                             .font(.caption.bold()).foregroundStyle(.cyan)
                         Text("Moto Watch Bridge")
                             .font(.largeTitle.bold())
@@ -187,6 +192,11 @@ struct ContentView: View {
                                     .buttonStyle(.bordered)
                             }
                             statusRow("Spotify SDK", spotifyRemote.status)
+                            statusRow("SDK conectado", spotifyRemote.isConnected ? "Sí" : "No")
+                            statusRow("Eventos del SDK", spotifyRemote.metadataEventsActive ? "Suscripto" : "Sin suscripción")
+                            statusRow("Último dato nativo", spotifyRemote.lastNativeEvent)
+                            Text("Si aparece Web API con iWatch abierta, mirá estas tres líneas. SDK conectado: No indica un problema de sesión, no del reloj. Para autorizar, tocá Activar SDK Spotify una vez con Spotify instalado.")
+                                .font(.caption).foregroundStyle(.secondary)
                             HStack {
                                 Button("Consultar Spotify") {
                                     Task { await spotify.refreshPlaybackInfo() }
@@ -279,14 +289,25 @@ struct ContentView: View {
                 watch.autoConnectIfNeeded()
                 watch.refreshBattery()
                 spotifyRemote.applicationDidBecomeActive()
-                if spotify.controlEnabled { Task { await spotify.refreshPlaybackInfo() } }
+                if spotify.controlEnabled {
+                    if spotifyRemote.isConnected {
+                        spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
+                    } else {
+                        Task { await spotify.refreshPlaybackInfo() }
+                    }
+                }
             }
         }
         .task {
             // No afirmar que hay encuesta continua con el iPhone bloqueado.
             while !Task.isCancelled {
-                if UIApplication.shared.applicationState == .active && watch.isConnected && spotify.controlEnabled {
-                    await spotify.refreshPlaybackInfo()
+                if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
+                    if spotifyRemote.isConnected {
+                        // Recupera cambios aun cuando la suscripción del SDK no emita el evento.
+                        spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
+                    } else if watch.isConnected {
+                        await spotify.refreshPlaybackInfo()
+                    }
                 }
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
             }

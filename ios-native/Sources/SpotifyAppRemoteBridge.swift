@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UIKit
+import Security
 import SpotifyiOS
 
 // Motor prioritario de Spotify cuando la sesión App Remote está realmente activa.
@@ -15,6 +16,8 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     @Published private(set) var isConnected = false
     // Permite recurrir a Web API si falla la suscripción de eventos del SDK.
     @Published private(set) var metadataEventsActive = false
+    @Published private(set) var hasNativeMetadata = false
+    @Published private(set) var lastNativeEvent = "Sin evento nativo todavía"
     @Published private(set) var enabled = false
 
     private var sessionManager: SPTSessionManager?
@@ -29,7 +32,76 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         case failed(String)
     }
 
-    private override init() { super.init() }
+    private static let enabledKey = "motowatch.spotify.sdk.enabled"
+    private static let keychainService = "org.motowatchbridge.spotify.appremote"
+    private static let keychainAccount = "sdk-session"
+
+    private override init() {
+        super.init()
+        // Una reinstalación/relanzamiento no debe cambiar silenciosamente a Web API.
+        // La sesión del SDK se conserva exclusivamente en Keychain (nunca en UserDefaults).
+        if UserDefaults.standard.bool(forKey: Self.enabledKey) {
+            let id = UserDefaults.standard.string(forKey: "motowatch.spotify.clientid") ?? ""
+            if !restoreAuthorizedSession(clientID: id) {
+                status = "SDK: sesión no recuperable · tocá Activar SDK Spotify"
+            }
+        }
+    }
+
+    private static func saveSession(_ session: SPTSession) {
+        guard let data = try? NSKeyedArchiver.archivedData(withRootObject: session, requiringSecureCoding: true) else { return }
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: keychainService,
+                                    kSecAttrAccount as String: keychainAccount]
+        SecItemDelete(query as CFDictionary)
+        var values = query
+        values[kSecValueData as String] = data
+        values[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(values as CFDictionary, nil)
+    }
+
+    private static func storedSession() -> SPTSession? {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: keychainService,
+                                    kSecAttrAccount as String: keychainAccount,
+                                    kSecReturnData as String: true,
+                                    kSecMatchLimit as String: kSecMatchLimitOne]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: SPTSession.self, from: data)
+    }
+
+    private static func clearSession() {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: keychainService,
+                                    kSecAttrAccount as String: keychainAccount]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    @discardableResult
+    private func restoreAuthorizedSession(clientID: String) -> Bool {
+        guard clientID.count == 32, clientID.allSatisfy({ $0.isHexDigit }),
+              let url = URL(string: SpotifyBridge.redirect),
+              let session = Self.storedSession() else { return false }
+        let config = SPTConfiguration(clientID: clientID, redirectURL: url)
+        let remote = SPTAppRemote(configuration: config, logLevel: .debug)
+        remote.delegate = self
+        let manager = SPTSessionManager(configuration: config, delegate: self)
+        manager.session = session
+        self.appRemote = remote
+        self.sessionManager = manager
+        enabled = true
+        if session.isExpired {
+            status = "SDK: renovando sesión guardada"
+            manager.renewSession()
+        } else {
+            remote.connectionParameters.accessToken = session.accessToken
+            status = "SDK: sesión recuperada · conectando"
+            if UIApplication.shared.applicationState == .active { remote.connect() }
+        }
+        return true
+    }
 
     // Debe ser una acción voluntaria: OAuth del SDK no sustituye el flujo
     // PKCE existente. Configurar en Spotify Developer Dashboard el mismo
@@ -50,6 +122,8 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         appRemote = remote
         sessionManager = SPTSessionManager(configuration: config, delegate: self)
         enabled = true
+        UserDefaults.standard.set(clientID, forKey: "motowatch.spotify.clientid")
+        UserDefaults.standard.set(true, forKey: Self.enabledKey)
         authorizing = true
         status = "Esperando autorización del SDK de Spotify..."
         // Solicita app-remote-control, sin iniciar música artificialmente.
@@ -69,7 +143,11 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         sessionManager = nil
         isConnected = false
         metadataEventsActive = false
-        status = "SDK desconectado; Web API sigue disponible"
+        hasNativeMetadata = false
+        lastNativeEvent = "SDK desactivado"
+        UserDefaults.standard.set(false, forKey: Self.enabledKey)
+        Self.clearSession()
+        status = "SDK desactivado; Web API sigue disponible"
     }
 
     func applicationDidEnterBackground() {
@@ -78,15 +156,27 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         appRemote?.disconnect()
         isConnected = false
         metadataEventsActive = false
+        hasNativeMetadata = false
         if enabled { status = "SDK en reposo · Web API activa en segundo plano" }
     }
 
     func applicationDidBecomeActive() {
         // Reconectar únicamente si el usuario habilitó App Remote y se conserva
         // un token de la sesión del SDK; no disparar OAuth en segundo plano.
-        guard enabled, let remote = appRemote,
-              !remote.isConnected,
-              remote.connectionParameters.accessToken != nil else { return }
+        guard enabled else { return }
+        guard let remote = appRemote else {
+            status = "SDK sin sesión · tocá Activar SDK Spotify"
+            return
+        }
+        if remote.isConnected {
+            requestCurrentPlayerState(fallbackToWeb: true)
+            return
+        }
+        guard remote.connectionParameters.accessToken != nil else {
+            status = "SDK sin token · tocá Activar SDK Spotify"
+            return
+        }
+        status = "SDK reconectando con Spotify..."
         remote.connect()
     }
 
@@ -95,6 +185,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     func sessionManager(manager: SPTSessionManager, didInitiate session: SPTSession) {
         authorizing = false
         guard enabled, let remote = appRemote else { return }
+        Self.saveSession(session)
         remote.connectionParameters.accessToken = session.accessToken
         status = "SDK autorizado · conectando con Spotify"
         remote.connect()
@@ -102,6 +193,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
 
     func sessionManager(manager: SPTSessionManager, didRenew session: SPTSession) {
         guard enabled, let remote = appRemote else { return }
+        Self.saveSession(session)
         remote.connectionParameters.accessToken = session.accessToken
         if UIApplication.shared.applicationState == .active { remote.connect() }
     }
@@ -116,6 +208,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         isConnected = true
         metadataEventsActive = false
+        hasNativeMetadata = false
         status = "SDK conectado · activando eventos de Spotify"
         appRemote.playerAPI?.delegate = self
         // Lectura inicial sin esperar a que Spotify cambie de canción.
@@ -140,12 +233,14 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
         isConnected = false
         metadataEventsActive = false
+        hasNativeMetadata = false
         status = "SDK sin conexión: \(error?.localizedDescription ?? "Spotify no disponible")"
     }
 
     func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
         isConnected = false
         metadataEventsActive = false
+        hasNativeMetadata = false
         status = "SDK desconectado · controles Web API disponibles"
     }
 
@@ -221,6 +316,8 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
                 self?.playerStateDidChange(state)
                 return
             }
+            self?.hasNativeMetadata = false
+            self?.lastNativeEvent = "Falló lectura SDK: \(error?.localizedDescription ?? "sin estado")"
             self?.status = "SDK: estado no disponible; consultando respaldo Web API"
             if fallbackToWeb {
                 Task { @MainActor in
@@ -234,6 +331,9 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
 
     func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
         guard enabled, isConnected else { return }
+        hasNativeMetadata = true
+        lastNativeEvent = "Estado recibido: \(Date().formatted(date: .omitted, time: .standard))"
+        status = "SDK conectado · metadatos nativos recibidos"
         let track = playerState.track
         let title = track.name
         let artist = track.artist.name

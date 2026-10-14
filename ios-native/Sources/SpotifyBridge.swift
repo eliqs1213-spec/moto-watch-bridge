@@ -352,6 +352,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         if force { manualIdlePreviewUntil = nil }
         // Incluso las consultas forzadas deben respetar la prioridad nativa.
         // La única excepción: un getPlayerState del SDK falló explícitamente.
+        // Nunca pisar un estado nativo válido con una consulta Web tardía.
+        if SpotifyAppRemoteBridge.shared.isConnected &&
+           SpotifyAppRemoteBridge.shared.hasNativeMetadata { return }
         if SpotifyAppRemoteBridge.shared.isConnected &&
            SpotifyAppRemoteBridge.shared.metadataEventsActive && !allowSDKFallback { return }
         let nativeRevisionAtStart = sdkMetadataRevision
@@ -367,6 +370,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             // son más recientes que la respuesta Web y tienen prioridad.
             if sdkMetadataRevision != nativeRevisionAtStart { return }
             if SpotifyAppRemoteBridge.shared.isConnected &&
+               SpotifyAppRemoteBridge.shared.hasNativeMetadata { return }
+            if SpotifyAppRemoteBridge.shared.isConnected &&
                SpotifyAppRemoteBridge.shared.metadataEventsActive && !allowSDKFallback { return }
             if let playback = playback {
                 if playback.device != nil || (playback.item != nil && playback.is_playing) {
@@ -379,6 +384,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             }
         } catch {
             if sdkMetadataRevision != nativeRevisionAtStart { return }
+            if SpotifyAppRemoteBridge.shared.isConnected &&
+               SpotifyAppRemoteBridge.shared.hasNativeMetadata { return }
             if SpotifyAppRemoteBridge.shared.isConnected &&
                SpotifyAppRemoteBridge.shared.metadataEventsActive && !allowSDKFallback { return }
             // No ocultar la música por fallos temporales de red o HTTP 429.
