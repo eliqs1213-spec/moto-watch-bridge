@@ -1,0 +1,75 @@
+name: MotoWatchNativeProbe
+options:
+  bundleIdPrefix: org.motowatchbridge
+  deploymentTarget:
+    iOS: '16.2'
+packages:
+  SpotifyiOS:
+    url: https://github.com/spotify/ios-sdk
+    branch: master
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    TARGETED_DEVICE_FAMILY: '1'
+targets:
+  MotoWatchNativeProbe:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Shared/MotoBatteryActivityAttributes.swift
+      - path: Resources/FindPhoneAlert.wav
+        buildPhase: resources
+    dependencies:
+      - target: MotoBatteryWidgets
+        embed: true
+      - package: SpotifyiOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.motowatchbridge.nativeprobe
+        SWIFT_VERSION: '5.0'
+        TARGETED_DEVICE_FAMILY: '1'
+        CODE_SIGN_STYLE: Manual
+        OTHER_LDFLAGS: "$(inherited) -ObjC"
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: iWatch
+        CFBundleShortVersionString: '0.8.2'
+        CFBundleVersion: '82'
+        NSBluetoothAlwaysUsageDescription: 'iWatch se conecta a Moto Watch Fit para controlar Spotify, consultar batería y localizar el teléfono.'
+        CFBundleURLTypes:
+          - CFBundleURLName: org.motowatchbridge.spotify-auth
+            CFBundleURLSchemes:
+              - motowatchbridgeeliqs
+        LSApplicationQueriesSchemes:
+          - spotify
+        UIBackgroundModes:
+          - bluetooth-central
+          - audio
+        NSSupportsLiveActivities: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+  MotoBatteryWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: BatteryWidgets
+      - path: Shared/MotoBatteryActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.motowatchbridge.nativeprobe.widgets
+        SWIFT_VERSION: '5.0'
+        TARGETED_DEVICE_FAMILY: '1'
+        CODE_SIGN_STYLE: Manual
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+    info:
+      path: BatteryWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: iWatch Battery
+        CFBundleShortVersionString: '0.8.2'
+        CFBundleVersion: '82'
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
