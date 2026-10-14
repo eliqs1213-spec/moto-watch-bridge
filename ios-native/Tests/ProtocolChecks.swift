@@ -87,3 +87,11 @@ case .complete(let data): expect(WatchHealthProtocol.decode(data) == nil, "Assem
 default: fatalError("Corruption test did not assemble")
 }
 print("Assembly checks passed: 509-byte split, interleaving, reset, expiry and CRC rejection")
+
+var selectorTwoPayload = pulsePayload
+selectorTwoPayload[1] = 2
+let selectorTwoFrame = WatchHealthProtocol.Frame(group: 0x31, command: 0x07, payload: Data(selectorTwoPayload))
+expect(WatchHealthProtocol.pulse(selectorTwoFrame, start: now.addingTimeInterval(-20000), end: now) == nil, "Selector 2 accepted as selector 1")
+expect(WatchHealthProtocol.pulse(selectorTwoFrame, start: now.addingTimeInterval(-20000), end: now, expectedSelector: 2)?.count == 80, "Selector 2 decoder failed")
+expect(WatchHealthProtocol.pulse(longFrame, start: now.addingTimeInterval(-20000), end: now, expectedSelector: 2) == nil, "Late selector 1 accepted as selector 2")
+print("Selector checks passed: expected series is enforced for selectors 1 and 2")

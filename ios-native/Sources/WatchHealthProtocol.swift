@@ -53,9 +53,9 @@ enum WatchHealthProtocol {
         // todo valor positivo sea válido ni que el indicador sea un booleano.
         return indicator == 1 || indicator == 2
     }
-    static func pulseRejectionReason(_ frame: Frame, start: Date, end: Date) -> String {
+    static func pulseRejectionReason(_ frame: Frame, start: Date, end: Date, expectedSelector: UInt64 = 1) -> String {
         guard let items = fields(frame.payload) else { return "Formato Protobuf inválido" }
-        guard integer(1, in: items) == 1 else { return "Tipo de serie ausente o distinto de 1" }
+        guard integer(1, in: items) == expectedSelector else { return "Tipo de serie ausente o distinto de \(expectedSelector)" }
         guard let base = integer(2, in: items), base >= 1577836800 else { return "Fecha base ausente o inválida" }
         for field in items where field.number == 3 {
             guard let data = field.data, let sample = fields(data) else { return "Muestra anidada inválida" }
@@ -116,9 +116,9 @@ enum WatchHealthProtocol {
               Double(seconds) <= now.timeIntervalSince1970 + 300 else { return nil }
         return StepCandidate(count: Int(steps), timestamp: Date(timeIntervalSince1970: Double(seconds)))
     }
-    static func pulse(_ frame: Frame, start: Date, end: Date) -> [PulseCandidate]? {
+    static func pulse(_ frame: Frame, start: Date, end: Date, expectedSelector: UInt64 = 1) -> [PulseCandidate]? {
         guard frame.group == 0x31, frame.command == 0x07,
-              let items = fields(frame.payload), integer(1, in: items) == 1,
+              let items = fields(frame.payload), integer(1, in: items) == expectedSelector,
               let base = integer(2, in: items), base >= 1577836800 else { return nil }
         var result: [PulseCandidate] = []
         for field in items where field.number == 3 {

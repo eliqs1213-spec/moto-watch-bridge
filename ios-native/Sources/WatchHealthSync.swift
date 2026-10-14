@@ -29,6 +29,10 @@ final class WatchHealthSync: ObservableObject {
     private var waitingForIndex = false
     private var waitingForPulse = false
     private var waitingForSteps = false
+    private var requestedSelector: UInt64 = 1
+    private var probeSecondSelector = false
+    private var pulseCursor: UInt64 = 0
+    private var secondSelectorCompleted = false
     private var requestID = UUID()
     private var deadline: Task<Void, Never>?
     private var send: ((Data) -> Bool)?
@@ -43,6 +47,10 @@ final class WatchHealthSync: ObservableObject {
         self.clearPending = clearPending
         steps = nil; pulse = []; saved = false
         diagnostics = []
+        requestedSelector = 1
+        probeSecondSelector = false
+        pulseCursor = 0
+        secondSelectorCompleted = false
         stepsDetail = "Esperando respuesta 30/06"
         heartRateDetail = "Esperando índice 31/06"
         end = Date()
@@ -135,33 +143,56 @@ final class WatchHealthSync: ObservableObject {
                 finishIfReady()
                 return true
             }
-            note(flag == 2 ? "Indicador 2: consulta experimental del primer bloque, sin paginación" : "Indicador 1: consultando primer bloque")
-            // El indicador 2 fue observado en iPhone; su significado exacto
-            // aún no está confirmado. Se prueba únicamente la lectura 31/07
-            // conocida para el primer bloque, sin confirmaciones ni borrados.
-            // Reproduce la petición 31/07 observada. No envía confirmaciones
-            // de borrado/avance de cursor ni realiza paginación no validada.
-            let payload: [UInt8] = [0x08, 0x01, 0x10] + WatchHealthProtocol.varint(cursor)
-            waitingForPulse = send?(WatchHealthProtocol.encode(group: 0x31, command: 0x07, payload: payload)) ?? false
-            heartRateDetail = waitingForPulse ? "Esperando muestras 31/07" : "No se pudo encolar la consulta de muestras"
-            note(waitingForPulse ? "31/07 encolado con cursor válido" : "31/07 no se pudo encolar")
+            pulseCursor = cursor
+            probeSecondSelector = flag == 2
+            // El indicador podría representar varios bloques; no está probado.
+            // Solo se sondean los selectores 1 y, si se anunció 2, el selector 2.
+            // No se envían confirmaciones que avancen o borren registros.
+            requestedSelector = 1
+            waitingForPulse = requestPulseSelector(1)
+
         } else {
             guard waitingForPulse else { return true }
-            guard let candidates = WatchHealthProtocol.pulse(frame, start: start.addingTimeInterval(-1), end: end) else {
-                heartRateDetail = WatchHealthProtocol.pulseRejectionReason(frame, start: start.addingTimeInterval(-1), end: end)
-                note("31/07 rechazado: " + heartRateDetail)
+            guard let candidates = WatchHealthProtocol.pulse(frame, start: start.addingTimeInterval(-1), end: end, expectedSelector: requestedSelector) else {
+                heartRateDetail = WatchHealthProtocol.pulseRejectionReason(frame, start: start.addingTimeInterval(-1), end: end, expectedSelector: requestedSelector)
+                note("31/07 selector \(requestedSelector) rechazado: " + heartRateDetail)
                 status = "Respuesta de ritmo cardíaco no válida; esperando hasta finalizar la consulta"
                 return true
             }
             waitingForPulse = false
             var byTime: [Date: WatchHealthProtocol.PulseCandidate] = [:]
-            for candidate in candidates { byTime[candidate.timestamp] = candidate }
+            for candidate in pulse { byTime[candidate.timestamp] = candidate }
+            var conflicts = 0
+            for candidate in candidates {
+                if let previous = byTime[candidate.timestamp], previous.bpm != candidate.bpm {
+                    conflicts += 1 // No sobreescribir una muestra con un selector aún no validado.
+                } else { byTime[candidate.timestamp] = candidate }
+            }
+            if conflicts > 0 { note("Selector \(requestedSelector): \(conflicts) timestamps con valores distintos; se conserva el primero") }
             pulse = byTime.values.sorted { $0.timestamp < $1.timestamp }
             heartRateDetail = pulse.isEmpty ? "Respuesta válida; cero muestras" : "\(pulse.count) muestras decodificadas"
-            note("31/07: \(pulse.count) muestras únicas aceptadas")
+            note("31/07 selector \(requestedSelector): \(candidates.count) muestras; total único \(pulse.count)")
+            if let latest = pulse.last {
+                note("Última muestra recibida: " + latest.timestamp.formatted(date: .abbreviated, time: .standard))
+            }
+            if requestedSelector == 2 { secondSelectorCompleted = true }
+            if requestedSelector == 1 && probeSecondSelector {
+                requestedSelector = 2
+                waitingForPulse = requestPulseSelector(2)
+                if !waitingForPulse { note("Selector 2 no pudo consultarse; se conservan las muestras del selector 1") }
+            }
         }
         finishIfReady()
         return true
+    }
+
+    private func requestPulseSelector(_ selector: UInt64) -> Bool {
+        let payload: [UInt8] = [0x08] + WatchHealthProtocol.varint(selector)
+            + [0x10] + WatchHealthProtocol.varint(pulseCursor)
+        let enqueued = send?(WatchHealthProtocol.encode(group: 0x31, command: 0x07, payload: payload)) ?? false
+        heartRateDetail = enqueued ? "Esperando muestras 31/07 selector \(selector)" : "No se pudo encolar el selector \(selector)"
+        note(enqueued ? "31/07 selector \(selector) encolado con cursor válido" : "31/07 selector \(selector) no se pudo encolar")
+        return enqueued
     }
 
     func cancel(message: String = "Consulta interrumpida por desconexión del reloj") {
@@ -186,13 +217,21 @@ final class WatchHealthSync: ObservableObject {
         if timedOut {
             if stepsDetail == "Esperando respuesta 30/06" { stepsDetail = "Sin respuesta 30/06 en 25 segundos" }
             if heartRateDetail == "Esperando índice 31/06" { heartRateDetail = "Sin respuesta del índice 31/06 en 25 segundos" }
-            if heartRateDetail == "Esperando muestras 31/07" { heartRateDetail = "Índice recibido; sin respuesta de muestras 31/07 en 25 segundos" }
+            if heartRateDetail.hasPrefix("Esperando muestras 31/07") { heartRateDetail = "Sin respuesta de muestras 31/07 selector \(requestedSelector) en 25 segundos" }
             note("Consulta finalizada por timeout")
+        }
+        if probeSecondSelector && !secondSelectorCompleted && !pulse.isEmpty {
+            note("Consulta parcial: selector 2 no completado; las muestras recibidas se conservan")
+            heartRateDetail += " · \(pulse.count) muestras previas conservadas"
         }
         if steps == nil && pulse.isEmpty {
             status = timedOut ? "Sin respuesta válida a tiempo. Podés volver a consultar."
                 : "El reloj no entregó pasos o pulso para esta consulta"
         } else {
+            if probeSecondSelector && !secondSelectorCompleted && !pulse.isEmpty {
+                status = "Ritmo cardíaco parcial: falta completar selector 2. Revisá el diagnóstico."
+                return
+            }
             status = pulse.isEmpty ? "Pasos recibidos; ritmo cardíaco sin muestras. Revisá el diagnóstico."
                 : (steps == nil ? "Ritmo cardíaco recibido; pasos no disponibles." : "Pasos y ritmo cardíaco recibidos.")
         }
