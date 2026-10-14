@@ -1,0 +1,28 @@
+MOTO WATCH BRIDGE — ETAPA 4: ALARMA CONTINUA + BATERÍA MOTOROLA (EXPERIMENTAL)
+================================================================================
+
+Se conserva el mismo bundle ID y la integración Spotify de Etapa 3.
+NO se reemplaza index.html ni el flujo de GitHub Actions.
+
+NOVEDADES
+- «Encuentra mi teléfono»: comando 11/06 «inicio» activa un archivo WAV en bucle con AVAudioPlayer; «detener» detiene el sonido.
+- Botones «Probar alarma» y «Detener sonido» en pantalla para poder apagarlo aunque el reloj pierda la conexión.
+- Se agrega el modo de segundo plano «audio» al «bluetooth-central»; la categoría playback puede sonar con Silencio activado.
+- iOS NO garantiza que inicie una reproducción nueva al despertar desde segundo plano. Es una prueba, no una función confirmada con pantalla bloqueada.
+- La alarma puede reducir momentáneamente el volumen de Spotify; si hay auriculares conectados puede salir por ellos.
+- Aviso local de respaldo solo si falla iniciar la alarma. Permiso de notificaciones opcional.
+- Batería Motorola: al tocar «Consultar batería», si no existe 180F, envía trama 10/01 y espera respuesta del reloj.
+- Solo muestra un porcentaje si recibe respuesta Motorola válida (CRC y trama) o la característica estándar.
+- El 55% indicado por el usuario permite verificar el dato real, sin asumirlo de antemano.
+
+INSTALACIÓN
+1) Descarga ZIP y descomprimí.
+2) Arrastrá únicamente la carpeta ios-native sobre tu repositorio GitHub, actualizando archivos anteriores.
+3) Verificá que Resources/FindPhoneAlert.wav esté incluido. Conservá .github/workflows e index.html sin cambios.
+4) Commit; GitHub Actions ejecuta la compilación.
+5) Descargá el IPA de Artifacts e instalalo en Sideloadly.
+6) Prueba 1: «Probar alarma», después «Detener sonido» con app visible.
+7) Prueba 2: app abierta, bloqueá iPhone, activá «Encuentra mi teléfono» y detenelo desde reloj.
+8) Probar «Consultar batería» y comparar con el 55% mostrado por el reloj.
+
+IMPORTANTE: Audio en background depende de iOS. El usuario siempre debe poder detener una alarma activa.

@@ -45,7 +45,7 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("PROTOTIPO NATIVO · ETAPA 3")
+                        Text("PROTOTIPO NATIVO · ETAPA 4")
                             .font(.caption.bold()).foregroundStyle(.cyan)
                         Text("Moto Watch Bridge")
                             .font(.largeTitle.bold())
@@ -77,7 +77,7 @@ struct ContentView: View {
                             Text(watch.batteryStatus).foregroundStyle(.secondary)
                             Button("Consultar batería") { watch.refreshBattery() }
                                 .buttonStyle(.bordered)
-                            Text("Lee el servicio Bluetooth estándar 180F / 2A19. Si el Moto Watch Fit no lo expone, no se puede conocer su porcentaje todavía.")
+                            Text("Consulta primero 180F / 2A19; si no existe, intenta el paquete Motorola 10/01. Su respuesta se valida y se registra antes de mostrar un porcentaje.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -126,12 +126,14 @@ struct ContentView: View {
                             Text(finder.status).foregroundStyle(.secondary)
                             statusRow("Búsqueda", finder.searching ? "Solicitada por el reloj" : "Detenida")
                             HStack {
-                                Button("Permitir avisos") { finder.requestPermission() }
+                                Button("Probar alarma") { finder.test() }
                                     .buttonStyle(.borderedProminent)
-                                Button("Probar sonido") { finder.test() }
+                                Button("Detener sonido") { finder.stop() }
                                     .buttonStyle(.bordered)
                             }
-                            Text("Desde el reloj: Encontrar teléfono. La app intenta emitir una notificación local con sonido incluso con el iPhone bloqueado. Silencio/Concentración pueden impedirlo; Detener no corta un sonido ya emitido.")
+                            Button("Permitir aviso de respaldo (opcional)") { finder.requestPermission() }
+                                .buttonStyle(.bordered)
+                            Text("El reloj inicia una alarma en bucle y la detiene cuando salís de «Encuentra mi teléfono». También podés detenerla aquí. Probá primero con la app visible y después con el iPhone bloqueado; iOS puede impedir iniciar audio desde segundo plano.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }

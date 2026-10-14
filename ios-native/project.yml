@@ -13,6 +13,8 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      - path: Resources/FindPhoneAlert.wav
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.motowatchbridge.nativeprobe
@@ -23,8 +25,8 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: Moto Watch Bridge
-        CFBundleShortVersionString: '0.3.0'
-        CFBundleVersion: '3'
+        CFBundleShortVersionString: '0.4.0'
+        CFBundleVersion: '4'
         NSBluetoothAlwaysUsageDescription: 'Moto Watch Bridge se conecta a tu Moto Watch Fit para recibir los botones musicales.'
         CFBundleURLTypes:
           - CFBundleURLName: org.motowatchbridge.spotify-auth
@@ -32,6 +34,7 @@ targets:
               - motowatchbridgeeliqs
         UIBackgroundModes:
           - bluetooth-central
+          - audio
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

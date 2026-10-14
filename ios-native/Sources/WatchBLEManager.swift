@@ -42,6 +42,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var musicQueue: [PendingMusicWrite] = []
     private var musicInProgress = false
     private var musicAfterDelay: TimeInterval = 0
+    private var currentWriteIsBattery = false
+    private var batteryQuerySentAt: Date? = nil
     private var lastMusicSignature: String?
     private var lastMusicSentAt = Date.distantPast
     private var manuallyDisconnected = false
@@ -320,6 +322,24 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
+        // Respuesta Motorola 10/01 observada en el registro Android.
+        // Protobuf: 08 <porcentaje>; el reloj mostró 59 en una captura antigua.
+        let bytes = Array(data)
+        if bytes.count >= 10 && bytes[4] == 0x10 && bytes[5] == 0x01 {
+            let len = Int(bytes[1]) | (Int(bytes[2]) << 8)
+            guard bytes[0] == 0xAA, len + 4 == bytes.count,
+                  MotoProtocol.crc16Xmodem(bytes.dropLast(2)) ==
+                    (UInt16(bytes[bytes.count-2]) | (UInt16(bytes[bytes.count-1]) << 8)),
+                  bytes[6] == 0x08, bytes[7] <= 100 else {
+                record("BATERIA", "Respuesta Motorola 10/01 inválida: \(MotoProtocol.hex(data))")
+                return
+            }
+            let percentage = Int(bytes[7])
+            batteryPercentage = percentage
+            batteryStatus = "\(percentage)% (protocolo Motorola, experimental)"
+            record("BATERIA", "Respuesta 10/01: \(percentage)%, trama \(MotoProtocol.hex(data))")
+            return
+        }
         guard let command = MotoProtocol.decode(data) else {
             record("BLE", "Paquete no reconocido / CRC incorrecto: \(MotoProtocol.hex(data))")
             return
@@ -343,11 +363,25 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     }
 
     func refreshBattery() {
-        guard let peripheral = peripheral, let characteristic = batteryCharacteristic else {
-            record("BATERIA", "Sin característica estándar 2A19 para consultar")
+        if let peripheral = peripheral, let characteristic = batteryCharacteristic,
+           characteristic.properties.contains(.read) {
+            peripheral.readValue(for: characteristic)
             return
         }
-        if characteristic.properties.contains(.read) { peripheral.readValue(for: characteristic) }
+        guard isConnected, peripheral != nil, let tx = writeCharacteristic,
+              tx.properties.contains(.write) else {
+            batteryStatus = "Sin conexión o F8F1 no admite escritura"
+            record("BATERIA", "No se pudo enviar consulta Motorola 10/01")
+            return
+        }
+        guard Date().timeIntervalSince(batteryQuerySentAt ?? .distantPast) > 3 else { return }
+        batteryQuerySentAt = Date()
+        // Consulta real capturada al conectar Moto Watch en el Motorola Edge.
+        let packet = Data([0xAA, 0x04, 0x00, 0x00, 0x10, 0x01, 0x7E, 0xFD])
+        musicQueue.append(PendingMusicWrite(packet: packet, delayAfter: 0))
+        batteryStatus = "Esperando respuesta Motorola 10/01"
+        record("BATERIA", "Enviando consulta Motorola 10/01: \(MotoProtocol.hex(packet))")
+        flushMusicQueue()
     }
 
     // Usar la codificación probada en Windows: anuncio 08 02 de canción
@@ -387,6 +421,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         musicInProgress = true
+        currentWriteIsBattery = next.packet.count == 8 && next.packet[4] == 0x10 && next.packet[5] == 0x01
         musicAfterDelay = next.delayAfter
         peripheral.writeValue(next.packet, for: tx, type: .withResponse)
     }
@@ -395,14 +430,17 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                     error: Error?) {
         guard characteristic.uuid == txUUID else { return }
         musicInProgress = false
+        let isBattery = currentWriteIsBattery
+        currentWriteIsBattery = false
         if let error = error {
-            musicSyncStatus = "Error al escribir metadatos"
+            if isBattery { batteryStatus = "Error de consulta Motorola" }
+            else { musicSyncStatus = "Error al escribir metadatos" }
             record("ERROR", "Escritura F8F1: \(error.localizedDescription)")
             musicQueue.removeAll()
             return
         }
         let delay = musicAfterDelay
-        if musicQueue.isEmpty { musicSyncStatus = "Datos enviados; pantalla no confirmada" }
+        if musicQueue.isEmpty && !isBattery { musicSyncStatus = "Datos enviados; pantalla no confirmada" }
         if delay > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.flushMusicQueue()
