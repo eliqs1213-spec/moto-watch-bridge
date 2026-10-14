@@ -9,6 +9,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         _ = SpotifyBridge.shared
         _ = SpotifyAppRemoteBridge.shared
         _ = PhoneFinder.shared
+        _ = WatchConnectionAlerts.shared
         return true
     }
 
@@ -54,6 +55,7 @@ struct ContentView: View {
     @StateObject private var spotifyRemote = SpotifyAppRemoteBridge.shared
     @EnvironmentObject private var finder: PhoneFinder
     @StateObject private var batteryLive = BatteryLiveActivityManager.shared
+    @StateObject private var connectionAlerts = WatchConnectionAlerts.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -61,7 +63,7 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("IWATCH · ETAPA 8.1")
+                        Text("IWATCH · ETAPA 8.2")
                             .font(.caption.bold()).foregroundStyle(.cyan)
                         Text("Moto Watch Bridge")
                             .font(.largeTitle.bold())
@@ -80,6 +82,27 @@ struct ContentView: View {
                                 Button("Desconectar") { watch.disconnect() }
                                     .buttonStyle(.bordered)
                             }
+                            Toggle("Reconectar reloj automáticamente", isOn: Binding(
+                                get: { watch.autoReconnectEnabled },
+                                set: { watch.setAutoReconnect($0) }
+                            ))
+                            .tint(.green)
+                            Toggle("Avisar conexión y batería", isOn: $connectionAlerts.enabled)
+                                .tint(.green)
+                            Text(connectionAlerts.permissionStatus)
+                                .font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Permitir avisos") { connectionAlerts.requestPermission() }
+                                    .buttonStyle(.bordered)
+                                Button("Probar aviso") {
+                                    connectionAlerts.sendTestAlert(
+                                        watchName: watch.watchName,
+                                        percentage: watch.isConnected ? watch.batteryPercentage : nil)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            Text("Al conectar, iWatch consulta automáticamente la batería Motorola 10/01 y manda un solo aviso con porcentaje. Si la lectura falla, avisa sin inventar el valor; evita repeticiones durante 90 s. «Desconectar» detiene la reconexión hasta pulsar «Conectar reloj».")
+                                .font(.caption).foregroundStyle(.secondary)
                             Text("Antes de conectar, cerrá el puente de Windows y desconectá Bluefy y el Motorola Edge.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
@@ -100,7 +123,7 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    GroupBox("Pantalla de bloqueo · Etapa 7") {
+                    GroupBox("Pantalla de bloqueo · Widget experimental") {
                         VStack(alignment: .leading, spacing: 9) {
                             Text("Batería real por Actividad en vivo (ActivityKit), sin App Groups.")
                                 .font(.subheadline)
@@ -168,7 +191,7 @@ struct ContentView: View {
                                     Task { await spotify.refreshPlaybackInfo() }
                                 }.buttonStyle(.bordered)
                                 Button("Forzar metadatos") {
-                                    Task { await spotify.refreshPlaybackInfo(force: true) }
+                                    spotify.forceWatchMusicRecovery()
                                 }.buttonStyle(.bordered)
                             }
                             Button("Probar pantalla sin música") {
@@ -251,6 +274,8 @@ struct ContentView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 finder.updateAuthorizationStatus()
+                connectionAlerts.refreshPermissionStatus()
+                watch.autoConnectIfNeeded()
                 watch.refreshBattery()
                 spotifyRemote.applicationDidBecomeActive()
                 if spotify.controlEnabled { Task { await spotify.refreshPlaybackInfo() } }

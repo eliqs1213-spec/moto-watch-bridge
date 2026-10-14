@@ -123,6 +123,19 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         status = "SDK desconectado · controles Web API disponibles"
     }
 
+    // Obtener estado real del SDK cuando lo solicitamos; no esperar un cambio
+    // de canción para que el reloj salga de «No se está reproduciendo música».
+    func requestCurrentPlayerState() {
+        guard enabled, isConnected, let playerAPI = appRemote?.playerAPI else { return }
+        playerAPI.getPlayerState { [weak self] result, error in
+            if let error = error {
+                self?.status = "SDK: no se pudo consultar estado: \(error.localizedDescription)"
+            } else if let state = result as? SPTAppRemotePlayerState {
+                self?.playerStateDidChange(state)
+            }
+        }
+    }
+
     // MARK: SPTAppRemotePlayerStateDelegate
 
     func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {

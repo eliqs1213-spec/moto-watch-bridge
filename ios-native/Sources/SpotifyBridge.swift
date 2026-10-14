@@ -114,6 +114,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var lastDeviceID: String?
     private var lastIsPlaying: Bool?
     private var lastMusicSnapshot: WatchMusicSnapshot?
+    private var recoveryInProgress = false
     private var unavailableChecks = 0
     private var idleModeRequested = false
     private let inactiveThreshold = 3
@@ -268,6 +269,35 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         sendIdle(reason: "Ausencia de reproductor durante al menos 30 segundos")
     }
 
+    // Sincronizar sin depender de Spotify Web API: si tenemos metadatos recientes,
+    // repetir el anuncio de canción nueva 08/02, incluso siendo la misma pista.
+    func forceWatchMusicRecovery() {
+        if let snapshot = lastMusicSnapshot, !idleModeRequested,
+           playerUnavailableSince == nil, WatchBLEManager.shared.isConnected {
+            WatchBLEManager.shared.sendMusic(snapshot, force: true, reannounce: true)
+            record("Recuperación local de metadatos solicitada")
+        }
+        if SpotifyAppRemoteBridge.shared.isConnected {
+            SpotifyAppRemoteBridge.shared.requestCurrentPlayerState()
+        } else {
+            Task { await refreshPlaybackInfo(force: true) }
+        }
+    }
+
+    func recoverAfterWatchReady() async {
+        guard controlEnabled, !recoveryInProgress else { return }
+        recoveryInProgress = true
+        defer { recoveryInProgress = false }
+        // Primer envío: reanuncio desde cache; no depende de red.
+        if lastMusicSnapshot != nil && !idleModeRequested && playerUnavailableSince == nil {
+            forceWatchMusicRecovery()
+        } else if SpotifyAppRemoteBridge.shared.isConnected {
+            SpotifyAppRemoteBridge.shared.requestCurrentPlayerState()
+        } else {
+            await refreshPlaybackInfo(force: true)
+        }
+    }
+
     // Recibe eventos de App Remote sólo en primer plano. Al bloquear el iPhone
     // continúa vigente nuestro mecanismo Web API + CoreBluetooth.
     func receiveAppRemoteState(uri: String, title: String, artist: String,
@@ -288,7 +318,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         lastSong = title
         status = isPlaying ? "Spotify App Remote · reproduciendo" : "Spotify App Remote · pausado"
         playbackAvailability = isPlaying ? "Reproduciendo (SDK)" : "Pausado (SDK)"
-        WatchBLEManager.shared.sendMusic(snapshot, force: wasIdle)
+        WatchBLEManager.shared.sendMusic(snapshot, force: wasIdle, reannounce: wasIdle)
     }
 
     func refreshPlaybackInfo(force: Bool = false) async {

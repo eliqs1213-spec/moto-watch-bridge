@@ -35,7 +35,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var peripheral: CBPeripheral?
     private var notifyCharacteristic: CBCharacteristic?
     private var writeCharacteristic: CBCharacteristic?
-    private struct PendingMusicWrite { let packet: Data; let delayAfter: TimeInterval }
+    private enum OutboundKind { case music, battery, notification }
+    private struct PendingMusicWrite {
+        let packet: Data
+        let delayAfter: TimeInterval
+        let kind: OutboundKind
+    }
     private var musicQueue: [PendingMusicWrite] = []
     private var musicInProgress = false
     private var musicAfterDelay: TimeInterval = 0
@@ -43,7 +48,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var batteryQuerySentAt: Date? = nil
     private var lastMusicSignature: String?
     private var lastMusicSentAt = Date.distantPast
-    private var manuallyDisconnected = false
+    private var manuallyDisconnected = UserDefaults.standard.bool(forKey: "motowatch.ble.manualDisconnect")
+    @Published private(set) var autoReconnectEnabled =
+        UserDefaults.standard.object(forKey: "motowatch.ble.autoReconnect") as? Bool ?? true
+    private var readyConnectionID = 0
+    private var pendingConnectionAlertID: Int? = nil
+    private var reconnectScheduled = false
 
     private override init() {
         super.init()
@@ -82,14 +92,39 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             .joined(separator: "\n")
     }
 
+    func setAutoReconnect(_ enabled: Bool) {
+        autoReconnectEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "motowatch.ble.autoReconnect")
+        record("BLE", enabled ? "Reconexión automática activada" : "Reconexión automática desactivada")
+        if enabled { autoConnectIfNeeded() }
+    }
+
+    func autoConnectIfNeeded() {
+        guard autoReconnectEnabled, !manuallyDisconnected,
+              central.state == .poweredOn,
+              !isConnected, !central.isScanning else { return }
+        if let p = peripheral, p.state == .connecting || p.state == .connected { return }
+        if let p = peripheral, p.state == .disconnected {
+            connectionStatus = "Reconectando reloj conocido"
+            central.connect(p, options: nil)
+        } else if !connectKnownPeripheral() {
+            scanForeground()
+        }
+    }
+
     func connectToWatch() {
         manuallyDisconnected = false
+        UserDefaults.standard.set(false, forKey: "motowatch.ble.manualDisconnect")
         guard central.state == .poweredOn else {
             record("BLE", "Bluetooth no disponible: \(bluetoothStatus)")
             return
         }
-        if let p = peripheral, p.state == .connected {
-            record("BLE", "El reloj ya está conectado")
+        if let p = peripheral, p.state == .connected || p.state == .connecting {
+            record("BLE", "El reloj ya está conectado o conectándose")
+            return
+        }
+        if let p = peripheral, p.state == .disconnected {
+            central.connect(p, options: nil)
             return
         }
         if connectKnownPeripheral() { return }
@@ -123,6 +158,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
 
     func disconnect() {
         manuallyDisconnected = true
+        UserDefaults.standard.set(true, forKey: "motowatch.ble.manualDisconnect")
+        pendingConnectionAlertID = nil
         central.stopScan()
         if let p = peripheral, p.state != .disconnected {
             central.cancelPeripheralConnection(p)
@@ -144,9 +181,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         case .poweredOn:
             bluetoothStatus = "Bluetooth encendido"
             record("BLE", "Bluetooth encendido")
-            if !manuallyDisconnected && peripheral == nil {
-                _ = connectKnownPeripheral()
-            }
+            autoConnectIfNeeded()
         case .poweredOff:
             bluetoothStatus = "Bluetooth apagado"
             isConnected = false
@@ -177,7 +212,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             if p.state == .connected {
                 connectionStatus = "Restaurado; descubriendo servicios"
                 p.discoverServices(nil)
-            } else {
+            } else if autoReconnectEnabled && !manuallyDisconnected {
                 central.connect(p, options: nil)
             }
         }
@@ -203,6 +238,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         watchName = device.name ?? "Moto Watch Fit"
         UserDefaults.standard.set(device.identifier.uuidString, forKey: storedPeripheralKey)
         connectionStatus = "Conectado; preparando notificaciones"
+        readyConnectionID += 1
+        pendingConnectionAlertID = nil
+        batteryPercentage = nil
+        batteryQuerySentAt = nil
+        // La primera lectura 10/01 de esta conexión será la que figure en el aviso.
+        lastMusicSignature = nil
         record("BLE", "Conexión BLE establecida: \(watchName)")
         device.discoverServices(nil)
     }
@@ -212,6 +253,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         connectionStatus = "No se pudo conectar"
         isConnected = false
         record("ERROR", "Falló conexión: \(error?.localizedDescription ?? "desconocido")")
+        scheduleReconnectIfNeeded()
+    }
+
+    private func scheduleReconnectIfNeeded() {
+        guard autoReconnectEnabled, !manuallyDisconnected, !reconnectScheduled,
+              central.state == .poweredOn else { return }
+        reconnectScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            guard let self = self else { return }
+            self.reconnectScheduled = false
+            self.autoConnectIfNeeded()
+        }
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral device: CBPeripheral,
@@ -221,12 +274,14 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         writeCharacteristic = nil
         musicQueue.removeAll()
         musicInProgress = false
+        pendingConnectionAlertID = nil
+        batteryQuerySentAt = nil
         lastMusicSignature = nil
         batteryPercentage = nil
         batteryStatus = "Desconectado"
         connectionStatus = "Desconectado"
         record("BLE", "Reloj desconectado\(error.map { ": " + $0.localizedDescription } ?? "")")
-        if !manuallyDisconnected && central.state == .poweredOn {
+        if !manuallyDisconnected && autoReconnectEnabled && central.state == .poweredOn {
             connectionStatus = "Esperando reconexión"
             central.connect(device, options: nil)
             record("BLE", "Reconexión automática solicitada")
@@ -278,8 +333,24 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         isConnected = characteristic.isNotifying
         connectionStatus = characteristic.isNotifying ? "Escuchando los botones" : "Sin notificaciones"
         record("BLE", characteristic.isNotifying ? "Notificaciones F8F0 activadas" : "Notificaciones F8F0 desactivadas")
-        if characteristic.isNotifying && SpotifyBridge.shared.controlEnabled {
-            Task { await SpotifyBridge.shared.refreshPlaybackInfo() }
+        if characteristic.isNotifying {
+            // La conexión ya tiene F8F0 activo y F8F1 descubierto: pedir batería
+            // inmediatamente, sin esperar a que el usuario toque Consultar.
+            let connectionID = readyConnectionID
+            if pendingConnectionAlertID != connectionID {
+                pendingConnectionAlertID = connectionID
+                refreshBattery()
+                // Si no llega 10/01, avisar de conexión sin inventar porcentaje.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 14) { [weak self] in
+                    guard let self = self, self.isConnected,
+                          self.readyConnectionID == connectionID,
+                          self.pendingConnectionAlertID == connectionID else { return }
+                    self.pendingConnectionAlertID = nil
+                    WatchConnectionAlerts.shared.sendConnectedAlert(
+                        watchName: self.watchName, percentage: nil)
+                }
+            }
+            Task { await SpotifyBridge.shared.recoverAfterWatchReady() }
         }
     }
 
@@ -306,6 +377,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             batteryPercentage = percentage
             batteryStatus = "\(percentage)% (Motorola 10/01)"
             record("BATERIA", "Respuesta 10/01: \(percentage)%, trama \(MotoProtocol.hex(data))")
+            if pendingConnectionAlertID == readyConnectionID {
+                pendingConnectionAlertID = nil
+                WatchConnectionAlerts.shared.sendConnectedAlert(
+                    watchName: watchName, percentage: percentage)
+            }
             if #available(iOS 16.2, *) {
                 BatteryLiveActivityManager.shared.updateBattery(percentage)
             }
@@ -344,7 +420,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         batteryQuerySentAt = Date()
         // Consulta real capturada al conectar Moto Watch en el Motorola Edge.
         let packet = Data([0xAA, 0x04, 0x00, 0x00, 0x10, 0x01, 0x7E, 0xFD])
-        musicQueue.append(PendingMusicWrite(packet: packet, delayAfter: 0))
+        musicQueue.append(PendingMusicWrite(packet: packet, delayAfter: 0, kind: .battery))
         batteryStatus = "Esperando respuesta Motorola 10/01"
         record("BATERIA", "Enviando consulta Motorola 10/01: \(MotoProtocol.hex(packet))")
         flushMusicQueue()
@@ -369,7 +445,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             record("NOTIFICACION", "No enviada: texto vacío o trama demasiado grande para MTU")
             return false
         }
-        musicQueue.append(PendingMusicWrite(packet: packet, delayAfter: 0))
+        musicQueue.append(PendingMusicWrite(packet: packet, delayAfter: 0, kind: .notification))
         record("NOTIFICACION", "Encolada trama 25/02 para \(source), bytes=\(packet.count)")
         flushMusicQueue()
         return true
@@ -377,22 +453,23 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
 
     // Usar la codificación probada en Windows: anuncio 08 02 de canción
     // nueva y estado estable vacío al reproducir / 08 01 al pausar.
-    func sendMusic(_ snapshot: WatchMusicSnapshot, force: Bool = false) {
+    func sendMusic(_ snapshot: WatchMusicSnapshot, force: Bool = false,
+                   reannounce: Bool = false) {
         guard isConnected, writeCharacteristic != nil, peripheral != nil else {
             musicSyncStatus = "Requiere Bluetooth conectado y F8F1"
             return
         }
         let signature = "\(snapshot.id)|\(snapshot.isPlaying)"
         let changed = signature != lastMusicSignature
-        if !force && !changed && Date().timeIntervalSince(lastMusicSentAt) < 25 { return }
+        if !force && !reannounce && !changed && Date().timeIntervalSince(lastMusicSentAt) < 25 { return }
         let trackChanged = lastMusicSignature == nil || lastMusicSignature?.components(separatedBy: "|").first != snapshot.id
         let steady = WatchMusicProtocol.encode(snapshot, code: snapshot.isPlaying ? .empty : .one)
-        // Reemplazar cola obsoleta si Spotify cambió de estado mientras se escribía.
-        musicQueue.removeAll()
-        if trackChanged && snapshot.isPlaying {
-            musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encode(snapshot, code: .two), delayAfter: 0.8))
+        // Reemplazar SOLO metadatos antiguos; no descartar WhatsApp ni batería.
+        musicQueue.removeAll { $0.kind == .music }
+        if (trackChanged || force || reannounce) && snapshot.isPlaying {
+            musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encode(snapshot, code: .two), delayAfter: 0.8, kind: .music))
         }
-        musicQueue.append(PendingMusicWrite(packet: steady, delayAfter: 0))
+        musicQueue.append(PendingMusicWrite(packet: steady, delayAfter: 0, kind: .music))
         lastMusicSignature = signature
         lastMusicSentAt = Date()
         musicSyncStatus = "Enviando: \(snapshot.title) · \(snapshot.isPlaying ? "PLAY" : "PAUSA")"
@@ -410,8 +487,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         if !force && lastMusicSignature == "NO_MUSIC" { return }
-        musicQueue.removeAll()
-        musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encodeNoMusic(), delayAfter: 0))
+        musicQueue.removeAll { $0.kind == .music }
+        musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encodeNoMusic(), delayAfter: 0, kind: .music))
         lastMusicSignature = "NO_MUSIC"
         lastMusicSentAt = Date()
         musicSyncStatus = "Sin música · señal enviada (pantalla no confirmada)"
@@ -427,7 +504,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         guard tx.properties.contains(.write), next.packet.count <= maxLength else {
             musicSyncStatus = "El paquete no cabe en el tamaño BLE disponible"
             record("ERROR", "Escritura F8F1 inválida: tamaño \(next.packet.count), máximo \(maxLength)")
-            musicQueue.removeAll()
+            flushMusicQueue()
             return
         }
         musicInProgress = true
@@ -446,7 +523,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             if isBattery { batteryStatus = "Error de consulta Motorola" }
             else { musicSyncStatus = "Error al escribir metadatos" }
             record("ERROR", "Escritura F8F1: \(error.localizedDescription)")
-            musicQueue.removeAll()
+            // Una escritura fallida no debe borrar otros avisos ya encolados.
+            flushMusicQueue()
             return
         }
         let delay = musicAfterDelay
