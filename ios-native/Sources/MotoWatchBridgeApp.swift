@@ -7,16 +7,22 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         // Instanciar CoreBluetooth temprano es esencial para la restauración de estado.
         _ = WatchBLEManager.shared
         _ = SpotifyBridge.shared
+        _ = SpotifyAppRemoteBridge.shared
         _ = PhoneFinder.shared
         return true
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         WatchBLEManager.shared.record("SISTEMA", "iPhone: aplicación en segundo plano")
+        SpotifyAppRemoteBridge.shared.applicationDidEnterBackground()
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
         WatchBLEManager.shared.record("SISTEMA", "iPhone: aplicación vuelve al primer plano")
+    }
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        SpotifyAppRemoteBridge.shared.applicationDidBecomeActive()
     }
 }
 
@@ -26,7 +32,15 @@ struct MotoWatchBridgeApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            TabView {
+                ContentView()
+                    .tabItem { Label("iWatch", systemImage: "watch.analog") }
+                NotificationsView()
+                    .tabItem { Label("Notificaciones", systemImage: "bell.badge") }
+            }
+                .onOpenURL { url in
+                    SpotifyAppRemoteBridge.shared.handleOpenURL(url)
+                }
                 .environmentObject(WatchBLEManager.shared)
                 .environmentObject(SpotifyBridge.shared)
                 .environmentObject(PhoneFinder.shared)
@@ -37,6 +51,7 @@ struct MotoWatchBridgeApp: App {
 struct ContentView: View {
     @EnvironmentObject private var watch: WatchBLEManager
     @EnvironmentObject private var spotify: SpotifyBridge
+    @StateObject private var spotifyRemote = SpotifyAppRemoteBridge.shared
     @EnvironmentObject private var finder: PhoneFinder
     @StateObject private var batteryLive = BatteryLiveActivityManager.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -46,7 +61,7 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("PROTOTIPO NATIVO · ETAPA 7")
+                        Text("IWATCH · ETAPA 8.1")
                             .font(.caption.bold()).foregroundStyle(.cyan)
                         Text("Moto Watch Bridge")
                             .font(.largeTitle.bold())
@@ -135,6 +150,19 @@ struct ContentView: View {
                             statusRow("Última canción", spotify.lastSong)
                             statusRow("Última orden", spotify.lastAction)
                             statusRow("Pantalla del reloj", watch.musicSyncStatus)
+                            Divider()
+                            Text("Spotify iOS SDK · App Remote (experimental)")
+                                .font(.headline)
+                            Text("Sincroniza cambios más rápido mientras iWatch está abierta. Al bloquear el iPhone seguimos usando la Web API; activar SDK no modifica esa conexión.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Activar SDK Spotify") {
+                                    spotifyRemote.authorize(clientID: spotify.clientID.trimmingCharacters(in: .whitespacesAndNewlines))
+                                }.buttonStyle(.bordered)
+                                Button("Desactivar SDK") { spotifyRemote.disable() }
+                                    .buttonStyle(.bordered)
+                            }
+                            statusRow("Spotify SDK", spotifyRemote.status)
                             HStack {
                                 Button("Consultar Spotify") {
                                     Task { await spotify.refreshPlaybackInfo() }
@@ -224,6 +252,7 @@ struct ContentView: View {
             if phase == .active {
                 finder.updateAuthorizationStatus()
                 watch.refreshBattery()
+                spotifyRemote.applicationDidBecomeActive()
                 if spotify.controlEnabled { Task { await spotify.refreshPlaybackInfo() } }
             }
         }

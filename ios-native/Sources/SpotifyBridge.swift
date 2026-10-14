@@ -117,6 +117,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var unavailableChecks = 0
     private var idleModeRequested = false
     private let inactiveThreshold = 3
+    // Confirmar ausencia de reproductor durante ~30 s, no sólo 3 consultas.
+    private let inactiveGraceSeconds: TimeInterval = 30
+    private var playerUnavailableSince: Date?
     private var manualIdlePreviewUntil: Date?
     private var requestBusy = false
     private var lastCommandTimes: [String: Date] = [:]
@@ -197,6 +200,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         lastIsPlaying = nil
         lastMusicSnapshot = nil
         unavailableChecks = 0
+        playerUnavailableSince = nil
+        SpotifyAppRemoteBridge.shared.disable()
         // La desconexión voluntaria debe limpiar el panel aunque no haya
         // una respuesta de Spotify o el iPhone esté sin conexión a internet.
         controlEnabled = false
@@ -225,6 +230,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
 
     private func markAvailable(_ playback: SpotifyPlayback, force: Bool = false) {
         unavailableChecks = 0
+        playerUnavailableSince = nil
         let wasIdle = idleModeRequested
         idleModeRequested = false
         updateCachedPlayback(playback)
@@ -239,28 +245,57 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
     }
 
-    private func markNoActivePlayer() {
-        // Spotify puede devolver HTTP 204 cuando el iPhone lleva un rato en
-        // pausa. Si conocemos una pausa previa, no inventar desconexión.
-        if lastIsPlaying == false && lastMusicSnapshot != nil {
-            playbackAvailability = "Pausado (Spotify sin datos recientes)"
-            unavailableChecks = 0
+    private func markNoActivePlayer(reason: String = "Spotify sin reproductor") {
+        // HTTP 204 puede significar pausa prolongada o reproductor cerrado.
+        // Se aplica una tolerancia temporal también si la última canción estaba
+        // pausada; de lo contrario quedaría «Pausado» para siempre.
+        let now = Date()
+        if playerUnavailableSince == nil { playerUnavailableSince = now }
+        unavailableChecks += 1
+        let elapsed = now.timeIntervalSince(playerUnavailableSince ?? now)
+        if elapsed < inactiveGraceSeconds {
+            let seconds = max(0, Int(inactiveGraceSeconds - elapsed))
+            playbackAvailability = "Sin reproductor · comprobando (\(seconds)s)"
+            record("Spotify: \(reason), revisión \(unavailableChecks), faltan ~\(seconds)s")
             return
         }
-        unavailableChecks += 1
-        if unavailableChecks < inactiveThreshold {
-            playbackAvailability = "Sin reproductor: \(unavailableChecks)/\(inactiveThreshold)"
-            record("Spotify sin reproductor: comprobación \(unavailableChecks)/\(inactiveThreshold)")
-        } else {
-            playbackAvailability = "No se está reproduciendo música"
-            status = "Spotify sin reproductor activo"
-            sendIdle(reason: "Spotify confirmó ausencia de reproductor en \(inactiveThreshold) consultas")
-        }
+        playbackAvailability = "No se está reproduciendo música"
+        status = "Spotify sin reproductor activo"
+        lastDeviceID = nil
+        lastIsPlaying = nil
+        lastMusicSnapshot = nil
+        lastSong = "Sin canción"
+        sendIdle(reason: "Ausencia de reproductor durante al menos 30 segundos")
+    }
+
+    // Recibe eventos de App Remote sólo en primer plano. Al bloquear el iPhone
+    // continúa vigente nuestro mecanismo Web API + CoreBluetooth.
+    func receiveAppRemoteState(uri: String, title: String, artist: String,
+                               album: String, durationMs: Int, progressMs: Int,
+                               isPlaying: Bool) {
+        guard controlEnabled else { return }
+        guard !title.isEmpty else { return }
+        unavailableChecks = 0
+        playerUnavailableSince = nil
+        let wasIdle = idleModeRequested
+        idleModeRequested = false
+        let snapshot = WatchMusicSnapshot(
+            id: uri, title: title, artist: artist, album: album,
+            durationMs: durationMs, progressMs: progressMs, isPlaying: isPlaying
+        )
+        lastMusicSnapshot = snapshot
+        lastIsPlaying = isPlaying
+        lastSong = title
+        status = isPlaying ? "Spotify App Remote · reproduciendo" : "Spotify App Remote · pausado"
+        playbackAvailability = isPlaying ? "Reproduciendo (SDK)" : "Pausado (SDK)"
+        WatchBLEManager.shared.sendMusic(snapshot, force: wasIdle)
     }
 
     func refreshPlaybackInfo(force: Bool = false) async {
         if !force, let until = manualIdlePreviewUntil, Date() < until { return }
         if force { manualIdlePreviewUntil = nil }
+        // El SDK proporciona eventos en primer plano; no competir con ellos.
+        if !force && SpotifyAppRemoteBridge.shared.isConnected { return }
         // iOS permite consultas periódicas solo cuando la app está visible.
         // No considerar una pausa (dispositivo disponible e is_playing=false)
         // como desconexión. Spotify puede devolver HTTP 204 temporalmente.
@@ -286,11 +321,15 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                 if code == 401 || (code == 400 && body.contains("invalid_grant")) {
                     playbackAvailability = "Spotify rechazó la autorización"
                     sendIdle(reason: "Sesión Spotify inválida")
-                } else if code == 404 && body.contains("NO_ACTIVE_DEVICE") {
-                    // Spotify confirma explícitamente que no existe dispositivo activo.
-                    unavailableChecks = inactiveThreshold
-                    playbackAvailability = "No se está reproduciendo música"
-                    sendIdle(reason: "Spotify confirmó NO_ACTIVE_DEVICE")
+                } else if code == 404 &&
+                          (body.localizedCaseInsensitiveContains("device not found") ||
+                           body.contains("NO_ACTIVE_DEVICE")) {
+                    // Un identificador viejo no debe conservarse. Verificar de nuevo
+                    // sin convertir una caída de red en desconexión.
+                    lastDeviceID = nil
+                    markNoActivePlayer(reason: "Spotify HTTP 404 / dispositivo no disponible")
+                    lastAction = "Dispositivo antiguo no disponible; esperando reproductor activo"
+                    return
                 }
             }
             failure(error)
@@ -329,10 +368,13 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             } catch {
                 if let spotifyError = error as? SpotifyBridgeError,
                    case let .response(code, body) = spotifyError,
-                   code == 404 && body.contains("NO_ACTIVE_DEVICE") {
-                    self.unavailableChecks = self.inactiveThreshold
-                    self.playbackAvailability = "No se está reproduciendo música"
-                    self.sendIdle(reason: "Spotify rechazó comando: NO_ACTIVE_DEVICE")
+                   code == 404 && (body.contains("NO_ACTIVE_DEVICE") ||
+                                   body.localizedCaseInsensitiveContains("device not found")) {
+                    self.lastDeviceID = nil
+                    self.markNoActivePlayer(reason: "Spotify rechazó comando por dispositivo ausente")
+                    self.lastAction = "Dispositivo anterior ya no existe; comprobando Spotify"
+                    await self.refreshPlaybackInfo(force: true)
+                    return
                 }
                 self.failure(error)
             }
@@ -353,7 +395,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             action = lastIsPlaying! ? "pause" : "play"
         case .findStart, .findStop, .unknown: return
         }
-        devicePath = lastDeviceID.map { "?device_id=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)" } ?? ""
+        // Omitir device_id: Spotify utiliza el dispositivo activo. Fijar el
+        // antiguo ID provocaba HTTP 404 «Device not found» tras reconexiones.
+        devicePath = ""
         let method = (action == "next" || action == "previous") ? "POST" : "PUT"
         _ = try await api("/me/player/\(action)\(devicePath)", method: method)
         if action == "play" { lastIsPlaying = true }

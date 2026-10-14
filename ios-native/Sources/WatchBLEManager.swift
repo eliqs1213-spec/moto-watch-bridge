@@ -350,6 +350,31 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         flushMusicQueue()
     }
 
+    // Envío de avisos propios o recibidos por una automatización de Atajos iOS 27.
+    // No se guardan remitente ni mensaje en el log, por privacidad.
+    @discardableResult
+    func sendNotification(source: String, sender: String, message: String) -> Bool {
+        guard isConnected, let peripheral = peripheral, let tx = writeCharacteristic,
+              tx.properties.contains(.write) else {
+            record("NOTIFICACION", "No enviada: reloj BLE sin conexión de escritura")
+            return false
+        }
+        let filterKey = "motowatch.notification.\(source.lowercased()).enabled"
+        if let enabled = UserDefaults.standard.object(forKey: filterKey) as? Bool, !enabled {
+            record("NOTIFICACION", "Origen desactivado: \(source)")
+            return false
+        }
+        guard let packet = WatchNotificationProtocol.encode(source: source, sender: sender, message: message),
+              packet.count <= peripheral.maximumWriteValueLength(for: .withResponse) else {
+            record("NOTIFICACION", "No enviada: texto vacío o trama demasiado grande para MTU")
+            return false
+        }
+        musicQueue.append(PendingMusicWrite(packet: packet, delayAfter: 0))
+        record("NOTIFICACION", "Encolada trama 25/02 para \(source), bytes=\(packet.count)")
+        flushMusicQueue()
+        return true
+    }
+
     // Usar la codificación probada en Windows: anuncio 08 02 de canción
     // nueva y estado estable vacío al reproducir / 08 01 al pausar.
     func sendMusic(_ snapshot: WatchMusicSnapshot, force: Bool = false) {
