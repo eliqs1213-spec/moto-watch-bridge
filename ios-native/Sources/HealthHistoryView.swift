@@ -63,6 +63,7 @@ struct HealthHistoryView: View {
                             ForEach(store.watchIDs, id: \.self) { id in Text(id).tag(id) }
                         }
                     }
+                    HealthSyncPanel()
                     DatePicker("Consultar día", selection: $date, in: ...Date(), displayedComponents: .date)
                     ForEach(HealthMetric.allCases) { metric in
                         NavigationLink {
@@ -77,6 +78,11 @@ struct HealthHistoryView: View {
                                     Text(store.day(date, watchID: effectiveWatchID)?.value(for: metric)
                                         .map { metric.formatted($0) } ?? "Sin datos")
                                         .font(.title3.bold()).foregroundStyle(.primary)
+                                    if let day = store.day(date, watchID: effectiveWatchID),
+                                       (metric == .steps && day.stepsExperimental == true)
+                                        || (metric == .heartRate && day.heartRateExperimental == true) {
+                                        Text("Experimental").font(.caption).foregroundStyle(.orange)
+                                    }
                                     Text("Consultar por día o semana")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
@@ -90,7 +96,7 @@ struct HealthHistoryView: View {
                     if let error = store.storageError {
                         Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                     }
-                    Text("La sincronización de salud del Moto Watch todavía no está disponible. Los registros aparecerán aquí cuando se incorpore. Tu histórico se guardará en este iPhone.")
+                    Text("Pasos y pulso tienen una consulta experimental. Sueño, estrés y entrenamientos todavía no se sincronizan. Tu histórico se guarda en este iPhone.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }.padding()
             }.navigationTitle("Salud").navigationBarTitleDisplayMode(.inline)
@@ -167,6 +173,10 @@ private struct HealthMetricHistoryView: View {
                         Text("\(values.count) de 7 días con registros")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                }
+                if records.contains(where: { metric == .steps ? $0.stepsExperimental == true : (metric == .heartRate && $0.heartRateExperimental == true) }) {
+                    Label("Datos experimentales · interpretación pendiente de validar con el reloj", systemImage: "flask")
+                        .font(.caption).foregroundStyle(.orange)
                 }
                 if values.isEmpty {
                     VStack(spacing: 12) {
@@ -278,3 +288,4 @@ private struct HealthMetricHistoryView: View {
         date = min(next, Date())
     }
 }
+
