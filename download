@@ -1,0 +1,5 @@
+MotoWatchNativeProbe.xcodeproj/
+build/
+DerivedData/
+Sources/Info.plist
+.DS_Store
