@@ -136,3 +136,61 @@ enum WatchHealthProtocol {
     }
 }
 
+
+
+// El reloj divide mensajes Motorola grandes entre valores ATT de hasta 509
+// bytes. Las continuaciones no llevan otra cabecera AA. CoreBluetooth
+// reconstruye HCI/ACL, pero no esta fragmentación del protocolo del reloj.
+struct WatchHealthFrameAssembler {
+    enum Result {
+        case unrelated
+        case pending(received: Int, expected: Int)
+        case complete(Data)
+        case rejected(String)
+    }
+    private var buffer = Data()
+    private var expected = 0
+    private var began = Date.distantPast
+    mutating func reset() { buffer.removeAll(); expected = 0; began = .distantPast }
+
+    mutating func consume(_ data: Data, now: Date = Date()) -> Result {
+        if !buffer.isEmpty && now.timeIntervalSince(began) > 20 { reset() }
+        // Tramas completas intercaladas no son continuaciones del histórico.
+        if let frame = WatchHealthProtocol.decode(data) {
+            if frame.group == 0x31 && frame.command == 0x07 {
+                reset()
+                return .complete(data)
+            }
+            return .unrelated
+        }
+        if let route = WatchHealthProtocol.route(data) {
+            if route.group == 0x31 && route.command == 0x07 {
+                let bytes = Array(data); var position = 1
+                guard let length = WatchHealthProtocol.readVarint(bytes, &position),
+                      length <= 65536 else { reset(); return .rejected("Longitud anunciada fuera de límites") }
+                let total = position + 2 + Int(length)
+                if data.count == total {
+                    reset()
+                    return .complete(data) // receive comprueba CRC, incluso si es incorrecto.
+                }
+                guard data.count < total else { reset(); return .rejected("Trama supera la longitud anunciada") }
+                buffer = data
+                expected = total
+                began = now
+                return .pending(received: buffer.count, expected: expected)
+            }
+            // Otra cabecera Motorola reconocible: no mezclar batería/botones.
+            return .unrelated
+        }
+        guard !buffer.isEmpty else { return .unrelated }
+        guard !data.isEmpty, buffer.count + data.count <= expected else {
+            reset()
+            return .rejected("Continuación supera la longitud anunciada")
+        }
+        buffer.append(data)
+        if buffer.count < expected { return .pending(received: buffer.count, expected: expected) }
+        let message = buffer
+        reset()
+        return .complete(message)
+    }
+}

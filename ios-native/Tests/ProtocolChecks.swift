@@ -52,3 +52,38 @@ expect(!WatchHealthProtocol.canProbeFirstPulseBlock(nil), "Missing index accepte
 expect(!WatchHealthProtocol.canProbeFirstPulseBlock(0), "Empty index accepted")
 expect(!WatchHealthProtocol.canProbeFirstPulseBlock(255), "Unknown index accepted")
 print("Index checks passed: indicators 1/2 accepted; missing, zero and unknown rejected")
+
+var assembler = WatchHealthFrameAssembler()
+let firstPart = Data(longData.prefix(509))
+let secondPart = Data(longData.dropFirst(509))
+switch assembler.consume(firstPart, now: now) {
+case .pending(let received, let expected): expect(received == 509 && expected == longData.count, "Fragment length accounting")
+default: fatalError("First 509-byte fragment was not buffered")
+}
+switch assembler.consume(battery, now: now) {
+case .unrelated: break
+default: fatalError("Interleaved battery consumed health buffer")
+}
+switch assembler.consume(secondPart, now: now) {
+case .complete(let data): expect(data == longData && WatchHealthProtocol.decode(data) != nil, "Fragmented message CRC")
+default: fatalError("Continuation did not complete health message")
+}
+_ = assembler.consume(firstPart, now: now)
+assembler.reset()
+switch assembler.consume(secondPart, now: now) {
+case .unrelated: break
+default: fatalError("Continuation leaked across connections")
+}
+_ = assembler.consume(firstPart, now: now)
+switch assembler.consume(secondPart, now: now.addingTimeInterval(21)) {
+case .unrelated: break
+default: fatalError("Expired fragment was reused")
+}
+_ = assembler.consume(firstPart, now: now)
+var badTail = secondPart
+badTail[badTail.count - 1] ^= 1
+switch assembler.consume(badTail, now: now) {
+case .complete(let data): expect(WatchHealthProtocol.decode(data) == nil, "Assembler bypassed CRC")
+default: fatalError("Corruption test did not assemble")
+}
+print("Assembly checks passed: 509-byte split, interleaving, reset, expiry and CRC rejection")

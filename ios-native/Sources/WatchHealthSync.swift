@@ -68,7 +68,19 @@ final class WatchHealthSync: ObservableObject {
         }
     }
 
-    // CoreBluetooth ya reconstruye fragmentos HCI/ACL y entrega el valor ATT.
+    func transferProgress(received: Int, expected: Int) {
+        guard isRunning, waitingForPulse else { return }
+        heartRateDetail = "Recibiendo mensaje: \(received) de \(expected) bytes"
+        note("31/07 fragmentado: \(received)/\(expected) bytes")
+    }
+    func transferRejected(_ reason: String) {
+        guard isRunning, waitingForPulse else { return }
+        heartRateDetail = "Reconstrucción rechazada: " + reason
+        note("31/07: " + reason)
+    }
+
+    // CoreBluetooth reconstruye HCI/ACL; WatchHealthFrameAssembler reúne las
+    // notificaciones ATT antes de validar el mensaje Motorola completo.
     // Aquí se comprueba el mensaje Motorola completo, incluso si su longitud
     // necesita más de un byte varint.
     func receive(_ data: Data, watchID: String) -> Bool {

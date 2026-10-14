@@ -41,6 +41,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         let delayAfter: TimeInterval
         let kind: OutboundKind
     }
+    private var healthAssembler = WatchHealthFrameAssembler()
     private var musicQueue: [PendingMusicWrite] = []
     private var musicInProgress = false
     private var musicAfterDelay: TimeInterval = 0
@@ -62,6 +63,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private func resetConnectionTransport() {
         Task { @MainActor in WatchHealthSync.shared.cancel() }
         currentWriteIsHealth = false
+        healthAssembler.reset()
         readyConnectionID += 1
         isConnected = false
         notifyCharacteristic = nil
@@ -419,6 +421,23 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
+        switch healthAssembler.consume(data) {
+        case .pending(let received, let expected):
+            Task { @MainActor in
+                WatchHealthSync.shared.transferProgress(received: received, expected: expected)
+            }
+            return
+        case .complete(let message):
+            let watchID = peripheral.identifier.uuidString
+            Task { @MainActor in
+                _ = WatchHealthSync.shared.receive(message, watchID: watchID)
+            }
+            return
+        case .rejected(let reason):
+            Task { @MainActor in WatchHealthSync.shared.transferRejected(reason) }
+            return
+        case .unrelated: break
+        }
         if let frame = WatchHealthProtocol.route(data),
            (frame.group == 0x30 && frame.command == 0x06)
             || (frame.group == 0x31 && [0x06, 0x07].contains(frame.command)) {
@@ -478,10 +497,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
 
     func refreshHealth() {
         guard isConnected, let device = peripheral else { return }
+        healthAssembler.reset()
         let watchID = device.identifier.uuidString
         Task { @MainActor [weak self] in
             WatchHealthSync.shared.begin(watchID: watchID, clearPending: { [weak self] in
                 self?.musicQueue.removeAll { $0.kind == .health }
+                self?.healthAssembler.reset()
             }) { [weak self] data in
                 guard let self = self, self.isConnected,
                       self.peripheral?.identifier.uuidString == watchID,
