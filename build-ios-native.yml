@@ -1,0 +1,56 @@
+name: Compilar Moto Watch Bridge iOS
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ios-native/**'
+      - '.github/workflows/build-ios-native.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-unsigned-ipa:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v4
+
+      - name: Configurar Xcode y generar proyecto
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          cd ios-native
+          xcodegen generate
+
+      - name: Compilar para iPhone físico (sin firmar)
+        run: |
+          xcodebuild \
+            -project ios-native/MotoWatchNativeProbe.xcodeproj \
+            -scheme MotoWatchNativeProbe \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Empaquetar IPA sin firmar
+        run: |
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          test -d "$APP"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/MotoWatchNativeProbe-unsigned.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/MotoWatchNativeProbe-unsigned.ipa"
+
+      - name: Publicar IPA para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: MotoWatchNativeProbe-unsigned
+          path: MotoWatchNativeProbe-unsigned.ipa
+          retention-days: 14
