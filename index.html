@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Moto Watch Bridge · Prueba BLE para iPhone</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #edf2fa; background:#0b101b; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+    main { max-width:580px; margin:auto; }
+    .eyebrow { color:#92a8c6; font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+    h1 { font-size:clamp(26px, 7vw, 36px); line-height:1.13; letter-spacing:-.035em; margin:10px 0 12px; }
+    .intro, .hint { color:#aab9cf; line-height:1.5; font-size:14px; }
+    .panel { background:#151e2c; border:1px solid #2b3a4f; border-radius:18px; padding:18px; margin-top:18px; }
+    .heading { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+    h2 { font-size:16px; margin:0; }
+    .status { display:inline-flex; gap:8px; align-items:center; color:#bac8d9; font-size:13px; }
+    .dot { width:9px; height:9px; border-radius:50%; background:#f1b85a; }
+    .dot.connected { background:#43d69f; box-shadow:0 0 0 4px #43d69f1c; }
+    .dot.disconnected { background:#f1b85a; }
+    .controls { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+    button { appearance:none; border:0; border-radius:12px; padding:14px 16px; background:#478cff; color:white; font-size:15px; font-weight:700; cursor:pointer; min-width:130px; }
+    button.secondary { background:#263750; color:#e6effb; }
+    button:disabled { opacity:.45; }
+    .flag { display:flex; align-items:center; gap:8px; margin-top:15px; font-size:13px; color:#b4c5de; }
+    input[type=checkbox] { width:17px; height:17px; accent-color:#478cff; }
+    .event { font-size:30px; font-weight:800; letter-spacing:-.035em; padding:13px 0 4px; min-height:70px; }
+    .counter { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
+    .metric { background:#202d40; border-radius:12px; padding:10px 6px; text-align:center; }
+    .metric strong { display:block; font-size:23px; font-variant-numeric:tabular-nums; }
+    .metric span { display:block; font-size:11px; color:#aabbd0; margin-top:4px; }
+    #log { display:block; background:#080f1a; border-radius:12px; margin-top:14px; padding:12px; font:12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; height:220px; overflow:auto; white-space:pre-wrap; word-break:break-all; color:#bbd6f7; }
+    footer { padding-top:15px; color:#8599b4; font-size:12px; line-height:1.5; }
+    .warn { color:#f8d6a0; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Moto Watch Bridge · Paso 1</div>
+  <h1>Tu reloj. Tu iPhone. Sin PC.</h1>
+  <p class="intro">Prueba directa de Bluetooth LE para Moto Watch Fit. Escucha los botones del reloj y muestra los paquetes recibidos. <strong>No controla Spotify todavía.</strong></p>
+
+  <section class="panel">
+    <div class="heading">
+      <h2>Conexión Bluetooth</h2>
+      <div class="status"><span class="dot disconnected" id="dot"></span><span id="state">Desconectado</span></div>
+    </div>
+    <div class="controls">
+      <button id="connect">Conectar reloj</button>
+      <button class="secondary" id="disconnect" disabled>Desconectar</button>
+    </div>
+    <label class="flag"><input type="checkbox" id="allDevices"> Mostrar todos los dispositivos si no aparece Moto Watch Fit</label>
+    <p class="hint">Abrí esta página en <strong>Bluefy</strong> con Bluetooth encendido. Cerrá los puentes de Windows y nRF Connect antes de conectarte.</p>
+  </section>
+
+  <section class="panel">
+    <div class="heading"><h2>Último comando recibido</h2><span style="font-size:12px;color:#a9b9cd" id="deviceName">Sin reloj</span></div>
+    <div class="event" id="event">Esperando…</div>
+    <div class="counter">
+      <div class="metric"><strong id="nextCount">0</strong><span>Siguiente</span></div>
+      <div class="metric"><strong id="previousCount">0</strong><span>Anterior</span></div>
+      <div class="metric"><strong id="toggleCount">0</strong><span>Play/Pausa</span></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="heading"><h2>Registro de prueba</h2><button id="clear" class="secondary" style="min-width:auto;padding:8px 11px;font-size:12px">Limpiar</button></div>
+    <div id="log" role="log" aria-live="polite"></div>
+    <p class="hint">Probá los botones Siguiente, Anterior y Play/Pausa del reloj. Esta prueba <strong>solo escucha</strong>: no envía comandos que alteren el reloj.</p>
+  </section>
+  <footer>Proyecto experimental no oficial. No requiere usuario, contraseña, Spotify ni permisos de acceso a tus datos. Toda la comunicación Bluetooth se procesa en este teléfono. El código publicado de esta prueba es público, pero los eventos locales no se envían a un servidor.</footer>
+</main>
+<script>
+(() => {
+  'use strict';
+  const SERVICE = 'fc9df9f0-4899-11ee-be56-0242ac120002';
+  const NOTIFY = 'fc9df8f0-4899-11ee-be56-0242ac120002';
+  const $ = id => document.getElementById(id);
+  let device = null, characteristic = null, counts = {next:0, previous:0, toggle:0};
+  function log(text) {
+    const node = $('log');
+    const line = new Date().toLocaleTimeString('es-AR',{hour12:false}) + '  ' + text;
+    node.textContent += line + '\n';
+    node.scrollTop = node.scrollHeight;
+  }
+  function setConnected(ok, label) {
+    $('state').textContent = label || (ok ? 'Conectado' : 'Desconectado');
+    $('dot').className = 'dot ' + (ok ? 'connected':'disconnected');
+    $('connect').disabled = ok;
+    $('disconnect').disabled = !ok;
+  }
+  function crcXmodem(bytes) {
+    let crc = 0;
+    for (const b of bytes) {
+      crc ^= b << 8;
+      for (let i=0; i<8; i++) crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+    }
+    return crc;
+  }
+  function decode(data) {
+    if (data.length < 8 || data[0] !== 0xAA || (data[1] | (data[2]<<8)) + 4 !== data.length) return ['incompleto','Paquete no reconocido'];
+    if (crcXmodem(data.slice(0,-2)) !== (data[data.length-2] | (data[data.length-1]<<8))) return ['crc','CRC inválido'];
+    if (data[4] === 0x24 && data[5] === 0x07) {
+      if (data.length === 10 && data[6]===0x08 && data[7]===0x02) return ['next','Siguiente ⏭'];
+      if (data.length === 10 && data[6]===0x08 && data[7]===0x01) return ['previous','Anterior ⏮'];
+      if (data.length === 8) return ['toggle','Play / Pausa ⏯'];
+    }
+    return ['otro','Otro comando Bluetooth'];
+  }
+  function onNotification(event) {
+    const dv = event.target.value;
+    const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+    const hex = [...bytes].map(b => b.toString(16).padStart(2,'0')).join(' ');
+    const [kind, label] = decode(bytes);
+    log(label + ' | ' + hex);
+    if (Object.prototype.hasOwnProperty.call(counts,kind)) {
+      counts[kind] += 1;
+      $('nextCount').textContent = counts.next;
+      $('previousCount').textContent = counts.previous;
+      $('toggleCount').textContent = counts.toggle;
+    }
+    $('event').textContent = label;
+  }
+  function onDisconnect() {
+    characteristic = null;
+    setConnected(false);
+    log('El reloj se desconectó.');
+  }
+  async function connect() {
+    if (!navigator.bluetooth || typeof navigator.bluetooth.requestDevice !== 'function') {
+      log('Web Bluetooth no disponible: abrí esta página en Bluefy, no en Safari.');
+      $('event').textContent = 'Usá Bluefy';
+      return;
+    }
+    try {
+      setConnected(false,'Buscando…');
+      const options = $('allDevices').checked
+        ? {acceptAllDevices:true, optionalServices:[SERVICE]}
+        : {filters:[{namePrefix:'Moto Watch Fit'}], optionalServices:[SERVICE]};
+      device = await navigator.bluetooth.requestDevice(options);
+      if (!device) { setConnected(false); return; }
+      device.addEventListener('gattserverdisconnected',onDisconnect);
+      $('deviceName').textContent = device.name || 'Moto Watch Fit';
+      log('Dispositivo seleccionado: ' + (device.name || '(sin nombre)'));
+      setConnected(false,'Conectando…');
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE);
+      characteristic = await service.getCharacteristic(NOTIFY);
+      characteristic.addEventListener('characteristicvaluechanged',onNotification);
+      await characteristic.startNotifications();
+      setConnected(true);
+      $('event').textContent = '¡Conectado!';
+      log('Suscripción F8F0 activada. Probá Siguiente, Anterior o Play/Pausa.');
+    } catch(error) {
+      setConnected(false);
+      const info = (error && (error.message || error.name)) || String(error);
+      log('ERROR: ' + info);
+      $('event').textContent = 'No se pudo conectar';
+      if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
+    }
+  }
+  function disconnect() {
+    if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
+    else setConnected(false);
+  }
+  $('connect').addEventListener('click', connect);
+  $('disconnect').addEventListener('click', disconnect);
+  $('clear').addEventListener('click', () => { $('log').textContent='';log('Registro reiniciado'); });
+  log('Listo. Abrí en Bluefy y tocá «Conectar reloj».');
+  if (!navigator.bluetooth) log('Aviso: este navegador no ofrece Web Bluetooth.');
+})();
+</script>
+</body>
+</html>
