@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark"><title>Moto Watch Bridge · iPhone y Spotify</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#090f19;color:#eef5ff}*{box-sizing:border-box}body{margin:0;padding:max(18px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom))}main{max-width:600px;margin:auto}h1{font-size:clamp(26px,7vw,35px);line-height:1.1;letter-spacing:-.03em;margin:9px 0 12px}h2{font-size:16px;margin:0}.eyebrow{font-size:12px;letter-spacing:.12em;color:#84b2ed;font-weight:750;text-transform:uppercase}.intro,.hint{color:#adbed5;font-size:14px;line-height:1.5}.panel{background:#151e2d;border:1px solid #2c3b50;padding:18px;border-radius:18px;margin:16px 0}.heading{display:flex;justify-content:space-between;align-items:center;gap:12px}.status{font-size:12px;color:#b8c8d8}.controls{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0 0}button{border:0;border-radius:12px;padding:13px 15px;background:#478cff;color:white;font-size:15px;font-weight:750;cursor:pointer}button.secondary{background:#2a3a51;color:#edf3fa}button:disabled{opacity:.45;cursor:default}input[type=text]{display:block;width:100%;background:#0c1521;color:#fff;border:1px solid #3c516b;border-radius:11px;padding:13px;margin-top:9px;font:14px ui-monospace,monospace}label{display:block;margin-top:12px;font-size:13px;color:#d3dfef}input[type=checkbox]{accent-color:#5297ff}.current{font-size:20px;font-weight:750;margin-top:12px;min-height:25px}.sub{font-size:14px;color:#b3c5d9;margin-top:4px}.small{font-size:12px;color:#a9c0dc}#log{height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#09121e;border-radius:12px;padding:12px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#c9dfff;margin-top:12px}a{color:#92bdff}.pill{display:inline-flex;align-items:center;gap:6px;color:#b7c7d8}.dot{height:8px;width:8px;background:#f3b859;border-radius:50%;display:inline-block}.dot.on{background:#3bd69b}.warning{color:#f5cc93}footer{font-size:12px;color:#9eb1ca;line-height:1.5;margin-top:18px}
+</style>
+</head>
+<body><main>
+<div class="eyebrow">Moto Watch Bridge · Paso 2</div>
+<h1>Spotify desde tu reloj. Sin PC.</h1>
+<p class="intro">Prototipo experimental: conecta el Moto Watch Fit por Bluetooth LE con Bluefy y envía sus botones a Spotify en tu iPhone. También intenta mostrar canción, artista y estado de reproducción en el reloj.</p>
+<section class="panel">
+  <div class="heading"><h2>1. Spotify</h2><span class="pill"><span class="dot" id="spotifyDot"></span><span id="spotifyState">Sin autorización</span></span></div>
+  <label for="clientId">Spotify Client ID (no Client Secret)</label><input id="clientId" type="text" placeholder="Client ID de tu aplicación Spotify" autocomplete="off" spellcheck="false">
+  <p class="hint">En Spotify Developer Dashboard, agregá exactamente esta dirección como <strong>Redirect URI</strong>:</p>
+  <div class="small" id="redirectUrl" style="word-break:break-all"></div>
+  <div class="controls"><button id="authorize">Autorizar Spotify</button><button class="secondary" id="logout">Desvincular</button></div>
+  <div class="current" id="song">Sin canción</div><div class="sub" id="artist">Conectá Spotify para consultar el reproductor.</div>
+  <div class="small" id="playerState" style="margin-top:9px"></div>
+</section>
+<section class="panel">
+  <div class="heading"><h2>2. Moto Watch Fit</h2><span class="pill"><span class="dot" id="watchDot"></span><span id="watchState">Desconectado</span></span></div>
+  <div class="controls"><button id="connect">Conectar reloj</button><button class="secondary" id="disconnect" disabled>Desconectar</button></div>
+  <label><input type="checkbox" id="allDevices"> Mostrar todos los dispositivos si no aparece el reloj</label>
+  <p class="hint">Usá <strong>Bluefy en el iPhone</strong>. Cerrá el puente de Windows y desconectá el Motorola Edge. Autorizá Spotify primero y conectá el reloj después.</p>
+  <div class="current" id="lastCommand">Esperando botones…</div>
+  <div class="small" id="sentState">Metadatos aún no enviados.</div>
+</section>
+<section class="panel">
+  <div class="heading"><h2>Registro</h2><button class="secondary" id="clear" style="padding:8px 10px;font-size:12px">Limpiar</button></div>
+  <div id="log" role="log" aria-live="polite"></div>
+  <p class="hint warning">Prueba inicial: mantené esta página abierta en Bluefy. iOS puede suspender el navegador al bloquear el teléfono; todavía no tenemos funcionamiento en segundo plano garantizado.</p>
+</section>
+<footer>Proyecto personal no oficial, sin relación con Motorola ni Spotify. La autorización usa PKCE: nunca ingreses tu Client Secret. Los tokens quedan almacenados localmente en este navegador; evitá usar una página o repositorio que no controles. No envía las credenciales a servidores propios; se comunica directamente con los servicios oficiales de Spotify.</footer>
+</main>
+<script>
+(() => {
+'use strict';
+const SERVICE='fc9df9f0-4899-11ee-be56-0242ac120002';
+const RX='fc9df8f0-4899-11ee-be56-0242ac120002';
+const TX='fc9df8f1-4899-11ee-be56-0242ac120002';
+const API='https://api.spotify.com/v1', TOKEN='https://accounts.spotify.com/api/token';
+const SCOPES='user-read-playback-state user-modify-playback-state';
+const REDIRECT=location.origin + location.pathname;
+const $=id=>document.getElementById(id);
+let device=null,rx=null,tx=null,playback=null,lastDeviceId='',lastItem=null,lastPlaying=null;
+let lastPanelSignature='',lastPanelAt=0,lastActionAt={},lastToggleAt=0,actionBusy=false,bleQueue=Promise.resolve();
+let pollTimer=null,requestBusy=false,loginBusy=false,lastTrackSignature='';
+const te=new TextEncoder();
+function log(s){const t=new Date().toLocaleTimeString('es-AR',{hour12:false});const n=$('log');n.textContent+=t+'  '+s+'\n';if(n.textContent.length>16000)n.textContent=n.textContent.slice(-12000);n.scrollTop=n.scrollHeight;}
+function alertError(prefix,e){log(prefix+': '+(e?.message||String(e)));}
+function setSpotify(ok,message){$('spotifyState').textContent=message|| (ok?'Autorizado':'Sin autorización');$('spotifyDot').className='dot'+(ok?' on':'');}
+function setWatch(ok,message){$('watchState').textContent=message||(ok?'Conectado':'Desconectado');$('watchDot').className='dot'+(ok?' on':'');$('connect').disabled=ok;$('disconnect').disabled=!ok;}
+function loadTokens(){try{return JSON.parse(localStorage.getItem('mwb_spotify_v1')||'null');}catch{return null;}}
+function saveTokens(v){localStorage.setItem('mwb_spotify_v1',JSON.stringify(v));}
+function bytesToB64Url(b){let s='';for(const x of b)s+=String.fromCharCode(x);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');}
+function randomString(){return bytesToB64Url(crypto.getRandomValues(new Uint8Array(48)));}
+async function challengeFromVerifier(v){return bytesToB64Url(new Uint8Array(await crypto.subtle.digest('SHA-256',te.encode(v))));}
+function clientId(){return $('clientId').value.trim();}
+async function authorize(){
+  if(loginBusy)return;
+  if(!/^[a-fA-F0-9]{32}$/.test(clientId())){log('Ingresá un Client ID de Spotify válido (32 caracteres hexadecimales).');return;}
+  loginBusy=true;
+  try{
+    localStorage.setItem('mwb_client_id',clientId());
+    const verifier=randomString(),state=randomString();
+    sessionStorage.setItem('mwb_pkce_verifier',verifier);
+    sessionStorage.setItem('mwb_oauth_state',state);
+    const challenge=await challengeFromVerifier(verifier);
+    const u=new URL('https://accounts.spotify.com/authorize');
+    u.search=new URLSearchParams({response_type:'code',client_id:clientId(),redirect_uri:REDIRECT,scope:SCOPES,state,code_challenge_method:'S256',code_challenge:challenge}).toString();
+    log('Redirigiendo a Spotify. Después volvés a esta página.');
+    location.assign(u.href);
+  }catch(e){alertError('No se pudo iniciar Spotify OAuth',e);loginBusy=false;}
+}
+async function tokenRequest(payload){
+  const res=await fetch(TOKEN,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(payload)});
+  const raw=await res.text();let obj={};try{obj=JSON.parse(raw);}catch{}
+  if(!res.ok||!obj.access_token)throw new Error('Spotify OAuth '+res.status+': '+(obj.error_description||obj.error||raw.slice(0,160)));
+  const prior=loadTokens()||{};
+  saveTokens({...obj,refresh_token:obj.refresh_token||prior.refresh_token,expires_at:Date.now()+Number(obj.expires_in||3600)*1000,client_id:clientId()});
+  setSpotify(true,'Autorizado');return obj.access_token;
+}
+async function handleCallback(){
+  const q=new URLSearchParams(location.search),code=q.get('code'),error=q.get('error');
+  if(!code&&!error)return;
+  history.replaceState(null,'',REDIRECT+location.hash);
+  if(error){log('Spotify rechazó la autorización: '+error);return;}
+  const state=sessionStorage.getItem('mwb_oauth_state'),verifier=sessionStorage.getItem('mwb_pkce_verifier');
+  if(!state||!verifier||q.get('state')!==state){log('OAuth inválido: sesión de autorización perdida. Probá autorizar de nuevo dentro de Bluefy.');return;}
+  sessionStorage.removeItem('mwb_oauth_state');sessionStorage.removeItem('mwb_pkce_verifier');
+  try{await tokenRequest({grant_type:'authorization_code',client_id:clientId(),code,redirect_uri:REDIRECT,code_verifier:verifier});log('Spotify autorizado desde el iPhone.');await updatePlayback();}
+  catch(e){alertError('No se pudo completar autorización',e);}
+}
+async function getAccessToken(){
+  const t=loadTokens();if(!t||!t.refresh_token&&!t.access_token)throw new Error('Primero autorizá Spotify.');
+  if(t.client_id!==clientId())throw new Error('El Client ID cambió; autorizá Spotify nuevamente.');
+  if(t.access_token&&Date.now()<Number(t.expires_at||0)-90000)return t.access_token;
+  if(!t.refresh_token)throw new Error('Token vencido; volvé a autorizar Spotify.');
+  return tokenRequest({grant_type:'refresh_token',client_id:clientId(),refresh_token:t.refresh_token});
+}
+async function spotify(path,method='GET',body=undefined){
+  const token=await getAccessToken(),headers={Authorization:'Bearer '+token};
+  if(body!==undefined)headers['Content-Type']='application/json';
+  const r=await fetch(API+path,{method,headers,...(body!==undefined?{body:JSON.stringify(body)}:{})});
+  if(r.status===204)return null;
+  if(!r.ok){const raw=await r.text();let info=raw.slice(0,220);try{const j=JSON.parse(raw);info=j.error?.message||j.error_description||info;}catch{}throw new Error('Spotify HTTP '+r.status+': '+info);}
+  if(method!=='GET')return {status:r.status};
+  return r.json();
+}
+function remember(p){
+  if(!p)return;
+  if(p.device?.id)lastDeviceId=p.device.id;
+  if(p.item)lastItem=p.item;
+  if(typeof p.is_playing==='boolean')lastPlaying=p.is_playing;
+}
+function effectivePlayback(p){return p||((lastItem&&lastPlaying!==null)?{item:lastItem,is_playing:lastPlaying,progress_ms:0,device:{id:lastDeviceId}}:null);}
+function renderPlayback(p){
+  if(!p||!p.item){$('song').textContent='Sin canción';$('artist').textContent='Iniciá Spotify en el iPhone.';$('playerState').textContent='No hay reproducción activa informada.';return;}
+  $('song').textContent=p.item.name||'Spotify';
+  $('artist').textContent=(p.item.artists||[]).map(a=>a.name).join(', ');
+  $('playerState').textContent=(p.is_playing?'Reproduciendo ⏸':'Pausado ▶')+(p.device?.name?' · '+p.device.name:'');
+}
+async function updatePlayback({force=false}={}){
+  if(requestBusy)return;
+  requestBusy=true;
+  try{
+    const p=await spotify('/me/player');
+    if(p){playback=p;remember(p);}else if(!playback){log('Spotify todavía no informa dispositivo activo.');}
+    const shown=effectivePlayback(p);
+    renderPlayback(shown);
+    if(shown)await sendPanel(shown,{force});
+  }catch(e){alertError('Consulta Spotify',e);}
+  finally{requestBusy=false;}
+}
+function concat(...parts){const arr=parts.flatMap(p=>[...p]);return new Uint8Array(arr);}
+function varint(n){n=Math.max(0,Math.floor(Number(n)||0));const a=[];while(n>=128){a.push((n%128)|128);n=Math.floor(n/128);}a.push(n);return a;}
+function fieldData(i,bytes){return concat(varint(i*8+2),varint(bytes.length),bytes);}
+function fieldNum(i,n){return concat(varint(i*8),varint(n));}
+function safeUtf8(s,limit){let acc=[];for(const c of String(s)){const b=te.encode(c);if(acc.length+b.length>limit)break;acc.push(...b);}return new Uint8Array(acc);}
+function crcXmodem(bytes){let c=0;for(const b of bytes){c^=b<<8;for(let i=0;i<8;i++)c=(c&0x8000)?(((c<<1)^0x1021)&0xffff):((c<<1)&0xffff);}return c;}
+function frame(group,command,payload){const n=payload.length+4;const pref=concat([0xaa,n&255,(n>>8)&255,0,group,command],payload);const crc=crcXmodem(pref);return concat(pref,[crc&255,crc>>8]);}
+function musicFrame(p,playingCode='empty',pausedCode='1'){
+ const item=p?.item;if(!item)return null;
+ const artist=(item.artists||[]).map(a=>a.name).join(', ')||'Spotify';
+ const details=concat(fieldData(1,safeUtf8(item.name||'Spotify',48)),fieldData(2,safeUtf8(artist,60)),fieldData(3,safeUtf8(item.album?.name||'Spotify',40)),fieldData(4,te.encode('com.spotify.music')),fieldData(5,te.encode('Spotify')),
+    ...(Number(p.progress_ms)>0?[fieldNum(7,p.progress_ms)]:[]));
+ const code=p.is_playing?playingCode:pausedCode;
+ const flag=(code==='empty')?new Uint8Array():fieldNum(1,Number(code));
+ const vol=concat(fieldNum(1,8),fieldNum(2,15));
+ const dur=fieldNum(1,Math.max(1,Math.round(Number(item.duration_ms||0)/1000)));
+ return frame(0x24,0x01,concat(fieldData(1,details),fieldData(2,flag),fieldData(3,vol),fieldData(4,dur)));
+}
+function isConnected(){return !!(device?.gatt?.connected && tx);}
+function enqueueWrite(bytes){
+  const op=bleQueue.then(async()=>{
+    if(!isConnected())return;
+    if(typeof tx.writeValueWithResponse==='function')await tx.writeValueWithResponse(bytes);
+    else await tx.writeValue(bytes);
+  });
+  bleQueue=op.catch(e=>{alertError('Escritura Bluetooth',e);});
+  return op;
+}
+async function sendPanel(p,{force=false}={}){
+ if(!isConnected()||!p?.item)return;
+ const id=p.item.id||p.item.name,signature=id+'|'+p.is_playing;
+ const changed=signature!==lastPanelSignature,trackChanged=id!==lastTrackSignature;
+ if(!force&&!changed&&Date.now()-lastPanelAt<22000)return;
+ lastPanelSignature=signature;lastPanelAt=Date.now();lastTrackSignature=id;
+ try{
+   if(trackChanged&&p.is_playing){
+     const intro=musicFrame(p,'2','1');
+     if(intro)await enqueueWrite(intro);
+     await new Promise(resolve=>setTimeout(resolve,800));
+   }
+   const stable=musicFrame(p,'empty','1');
+   if(stable)await enqueueWrite(stable);
+   $('sentState').textContent='Enviado al reloj: '+p.item.name+' · '+(p.is_playing?'PLAY':'PAUSA');
+   log('[PANEL] '+(changed?'CAMBIO':'REFRESCO')+': '+p.item.name+' | '+(p.is_playing?'PLAY':'PAUSA'));
+ }catch(e){alertError('Metadatos BLE',e);}
+}
+function decodePacket(data){
+ if(data.length<8||data[0]!==0xaa||(data[1]|data[2]<<8)+4!==data.length)return 'otro';
+ const crc=data[data.length-2]|data[data.length-1]<<8;
+ if(crcXmodem(data.slice(0,-2))!==crc)return 'crc';
+ if(data[4]===0x24&&data[5]===0x07){
+  if(data.length===10&&data[6]===0x08&&data[7]===0x02)return 'next';
+  if(data.length===10&&data[6]===0x08&&data[7]===0x01)return 'previous';
+  if(data.length===8)return 'toggle';
+ }
+ return 'otro';
+}
+async function act(action){
+ if(actionBusy){log('Comando anterior todavía en curso.');return;}
+ actionBusy=true;
+ try{
+  const q=lastDeviceId?'?device_id='+encodeURIComponent(lastDeviceId):'';
+  if(action==='next'||action==='previous'){
+    await spotify('/me/player/'+(action==='next'?'next':'previous')+q,'POST');
+    log('[SPOTIFY] '+(action==='next'?'Siguiente':'Anterior')+' enviado');
+  }else{
+    let p=null;
+    try{p=await spotify('/me/player');}catch(e){alertError('Estado antes de Play/Pausa',e);}
+    if(p)remember(p);
+    if(typeof lastPlaying!=='boolean'){log('Spotify no informó si reproduce. Iniciá una canción en el iPhone.');return;}
+    const nextAction=lastPlaying?'pause':'play';
+    await spotify('/me/player/'+nextAction+q,'PUT');
+    lastPlaying=nextAction==='play';
+    if(playback)playback={...playback,is_playing:lastPlaying};
+    log('[SPOTIFY] '+(lastPlaying?'REPRODUCIR':'PAUSA')+' enviado');
+    const local=effectivePlayback(null);if(local){renderPlayback(local);await sendPanel(local,{force:true});}
+  }
+  await new Promise(r=>setTimeout(r,700));
+  await updatePlayback({force:false});
+  if(action!=='toggle'){
+    await new Promise(r=>setTimeout(r,1100));await updatePlayback({force:false});
+  }
+ }catch(e){alertError('Control Spotify',e);if(action==='toggle')log('Si Spotify perdió el iPhone activo, abrí Spotify e iniciá una canción manualmente.');}
+ finally{actionBusy=false;}
+}
+function notify(event){
+ const v=event.target.value,b=new Uint8Array(v.buffer,v.byteOffset,v.byteLength),cmd=decodePacket(b);
+ if(cmd==='otro')return;
+ if(cmd==='crc'){log('Paquete con CRC inválido.');return;}
+ const now=Date.now(),minGap=cmd==='toggle'?1500:650,last=cmd==='toggle'?lastToggleAt:(lastActionAt[cmd]||0);
+ if(now-last<minGap)return;
+ if(cmd==='toggle')lastToggleAt=now;else lastActionAt[cmd]=now;
+ $('lastCommand').textContent={next:'⏭ Siguiente',previous:'⏮ Anterior',toggle:'⏯ Play/Pausa'}[cmd];
+ log('[RELOJ] '+cmd+' · '+[...b].map(x=>x.toString(16).padStart(2,'0')).join(''));
+ if(!loadTokens()){log('Primero autorizá Spotify.');return;}
+ void act(cmd);
+}
+function disconnected(){rx=null;tx=null;setWatch(false);log('Moto Watch Fit desconectado.');}
+async function connect(){
+ if(!navigator.bluetooth?.requestDevice){log('Web Bluetooth no está disponible. Abrí esta página en Bluefy.');return;}
+ try{
+  setWatch(false,'Buscando…');
+  const options=$('allDevices').checked?{acceptAllDevices:true,optionalServices:[SERVICE]}:{filters:[{namePrefix:'Moto Watch Fit'}],optionalServices:[SERVICE]};
+  device=await navigator.bluetooth.requestDevice(options);
+  device.addEventListener('gattserverdisconnected',disconnected);
+  setWatch(false,'Conectando…');
+  const server=await device.gatt.connect(),service=await server.getPrimaryService(SERVICE);
+  rx=await service.getCharacteristic(RX);
+  tx=await service.getCharacteristic(TX);
+  rx.addEventListener('characteristicvaluechanged',notify);
+  await rx.startNotifications();
+  setWatch(true);
+  log('Reloj conectado. Botones activos.');
+  lastPanelSignature='';lastTrackSignature='';
+  const p=effectivePlayback(playback);if(p)await sendPanel(p,{force:true});
+ }catch(e){alertError('Bluetooth',e);setWatch(false);if(device?.gatt?.connected)device.gatt.disconnect();}
+}
+function disconnect(){if(device?.gatt?.connected)device.gatt.disconnect();else setWatch(false);}
+function logout(){if(device?.gatt?.connected)device.gatt.disconnect();localStorage.removeItem('mwb_spotify_v1');setSpotify(false);renderPlayback(null);log('Sesión Spotify local desvinculada.');}
+$('authorize').addEventListener('click',authorize);
+$('logout').addEventListener('click',logout);
+$('connect').addEventListener('click',connect);
+$('disconnect').addEventListener('click',disconnect);
+$('clear').addEventListener('click',()=>{$('log').textContent='';log('Registro limpiado.');});
+$('redirectUrl').textContent=REDIRECT;
+$('clientId').value=localStorage.getItem('mwb_client_id')||'';
+if(loadTokens()&&loadTokens().client_id===$('clientId').value)setSpotify(true,'Sesión guardada');
+async function init(){await handleCallback();if(loadTokens())await updatePlayback();pollTimer=setInterval(()=>{if(loadTokens()&&!document.hidden&&!requestBusy&&!actionBusy)void updatePlayback();},4500);}
+log('Paso 2 cargado. Primero autorizar Spotify; después conectar reloj.');
+if(!navigator.bluetooth)log('Usá Bluefy: este navegador no ofrece Web Bluetooth.');
+if(!crypto?.subtle)log('Advertencia: WebCrypto no está disponible; se necesita HTTPS.');
+void init();
+})();
+</script>
+</body></html>
