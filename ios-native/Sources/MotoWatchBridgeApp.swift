@@ -171,12 +171,13 @@ struct ContentView: View {
                             statusRow("Spotify", spotify.status)
                             statusRow("Reproductor", spotify.playbackAvailability)
                             statusRow("Última canción", spotify.lastSong)
+                            statusRow("Fuente de metadatos", spotify.metadataSource)
                             statusRow("Última orden", spotify.lastAction)
                             statusRow("Pantalla del reloj", watch.musicSyncStatus)
                             Divider()
-                            Text("Spotify iOS SDK · App Remote (experimental)")
+                            Text("Spotify iOS SDK · App Remote (prioritario)")
                                 .font(.headline)
-                            Text("Sincroniza cambios más rápido mientras iWatch está abierta. Al bloquear el iPhone seguimos usando la Web API; activar SDK no modifica esa conexión.")
+                            Text("SDK prioritario para controles y metadatos (título, artista, álbum, duración y reproducción). La Web API respalda los dos cuando el SDK no está conectado o falla la lectura nativa. Con el iPhone bloqueado, iWatch usa los eventos y tiempos de ejecución que iOS permita. Sin Atajos para Spotify.")
                                 .font(.caption).foregroundStyle(.secondary)
                             HStack {
                                 Button("Activar SDK Spotify") {

@@ -3,20 +3,31 @@ import Combine
 import UIKit
 import SpotifyiOS
 
-// Complemento opcional: eventos rápidos en primer plano.
-// NO reemplaza Spotify Web API ni altera los controles con iPhone bloqueado.
+// Motor prioritario de Spotify cuando la sesión App Remote está realmente activa.
+// El SDK NO puede mantenerse conectado al suspenderse Spotify/iWatch; la Web API
+// conserva el respaldo cuando el iPhone está bloqueado.
 final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     SPTSessionManagerDelegate, SPTAppRemoteDelegate, SPTAppRemotePlayerStateDelegate {
 
     static let shared = SpotifyAppRemoteBridge()
 
-    @Published private(set) var status = "SDK opcional · sin conectar"
+    @Published private(set) var status = "SDK · esperando conexión"
     @Published private(set) var isConnected = false
+    // Permite recurrir a Web API si falla la suscripción de eventos del SDK.
+    @Published private(set) var metadataEventsActive = false
     @Published private(set) var enabled = false
 
     private var sessionManager: SPTSessionManager?
     private var appRemote: SPTAppRemote?
     private var authorizing = false
+
+    // Distinguir entre SDK no disponible y comando enviado con resultado incierto.
+    // Un salto NEXT/PREV no se repite por Web si el SDK ya lo intentó.
+    enum CommandResult {
+        case unavailable
+        case succeeded
+        case failed(String)
+    }
 
     private override init() { super.init() }
 
@@ -57,6 +68,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         appRemote = nil
         sessionManager = nil
         isConnected = false
+        metadataEventsActive = false
         status = "SDK desconectado; Web API sigue disponible"
     }
 
@@ -65,6 +77,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         // No afecta el CoreBluetooth que mantiene conectado al reloj.
         appRemote?.disconnect()
         isConnected = false
+        metadataEventsActive = false
         if enabled { status = "SDK en reposo · Web API activa en segundo plano" }
     }
 
@@ -102,36 +115,117 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
 
     func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         isConnected = true
-        status = "SDK conectado · eventos de Spotify activos"
+        metadataEventsActive = false
+        status = "SDK conectado · activando eventos de Spotify"
         appRemote.playerAPI?.delegate = self
+        // Lectura inicial sin esperar a que Spotify cambie de canción.
+        requestCurrentPlayerState(fallbackToWeb: true)
         appRemote.playerAPI?.subscribe(toPlayerState: { [weak self] result, error in
             if let error = error {
-                self?.status = "Error al suscribir eventos: \(error.localizedDescription)"
-            } else if let state = result as? SPTAppRemotePlayerState {
-                self?.playerStateDidChange(state)
+                self?.metadataEventsActive = false
+                self?.status = "SDK sin eventos: \(error.localizedDescription) · Web API de respaldo"
+                Task { @MainActor in
+                    await SpotifyBridge.shared.refreshPlaybackInfo(force: true, allowSDKFallback: true)
+                }
+            } else {
+                self?.metadataEventsActive = true
+                self?.status = "SDK conectado · eventos de Spotify activos"
+                if let state = result as? SPTAppRemotePlayerState {
+                    self?.playerStateDidChange(state)
+                }
             }
         })
     }
 
     func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
         isConnected = false
+        metadataEventsActive = false
         status = "SDK sin conexión: \(error?.localizedDescription ?? "Spotify no disponible")"
     }
 
     func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
         isConnected = false
+        metadataEventsActive = false
         status = "SDK desconectado · controles Web API disponibles"
+    }
+
+    // Comandos oficiales del Spotify iOS SDK. Deben invocarse en el hilo principal.
+    // No intentamos reabrir Spotify silenciosamente: iOS podría haberlo suspendido.
+    @MainActor
+    func sendWatchCommand(_ command: WatchCommand) async -> CommandResult {
+        guard enabled, isConnected,
+              UIApplication.shared.applicationState == .active,
+              let playerAPI = appRemote?.playerAPI else { return .unavailable }
+
+        // Obtener estado ACTUAL para el toggle; nunca alternar en base a un cache
+        // que puede haber quedado viejo mientras Spotify estuvo suspendido.
+        if command == .toggle {
+            let state: SPTAppRemotePlayerState? = await withCheckedContinuation { continuation in
+                playerAPI.getPlayerState { result, error in
+                    continuation.resume(returning: error == nil ? result as? SPTAppRemotePlayerState : nil)
+                }
+            }
+            guard let state = state else {
+                status = "SDK no entregó estado; usando respaldo Web API"
+                return .unavailable // Todavía no se envió ninguna orden: fallback seguro.
+            }
+            let shouldResume = state.isPaused
+            let failure: String? = await withCheckedContinuation { continuation in
+                let callback: SPTAppRemoteCallback = { _, error in
+                    continuation.resume(returning: error?.localizedDescription)
+                }
+                if shouldResume { playerAPI.resume(callback) }
+                else { playerAPI.pause(callback) }
+            }
+            if let failure = failure {
+                status = "SDK no pudo cambiar reproducción: \(failure)"
+                return .failed(failure)
+            }
+            status = shouldResume ? "SDK · reproducción reanudada" : "SDK · reproducción pausada"
+            requestCurrentPlayerState()
+            return .succeeded
+        }
+
+        let failure: String? = await withCheckedContinuation { continuation in
+            let callback: SPTAppRemoteCallback = { _, error in
+                continuation.resume(returning: error?.localizedDescription)
+            }
+            switch command {
+            case .next: playerAPI.skipToNext(callback)
+            case .previous: playerAPI.skipToPrevious(callback)
+            default: continuation.resume(returning: "Comando no disponible")
+            }
+        }
+        if let failure = failure {
+            status = "SDK no pudo avanzar: \(failure)"
+            return .failed(failure)
+        }
+        status = "SDK · comando enviado"
+        requestCurrentPlayerState()
+        return .succeeded
     }
 
     // Obtener estado real del SDK cuando lo solicitamos; no esperar un cambio
     // de canción para que el reloj salga de «No se está reproduciendo música».
-    func requestCurrentPlayerState() {
-        guard enabled, isConnected, let playerAPI = appRemote?.playerAPI else { return }
+    func requestCurrentPlayerState(fallbackToWeb: Bool = false) {
+        guard enabled, isConnected, let playerAPI = appRemote?.playerAPI else {
+            if fallbackToWeb {
+                Task { @MainActor in
+                    await SpotifyBridge.shared.refreshPlaybackInfo(force: true)
+                }
+            }
+            return
+        }
         playerAPI.getPlayerState { [weak self] result, error in
-            if let error = error {
-                self?.status = "SDK: no se pudo consultar estado: \(error.localizedDescription)"
-            } else if let state = result as? SPTAppRemotePlayerState {
+            if let state = result as? SPTAppRemotePlayerState, error == nil {
                 self?.playerStateDidChange(state)
+                return
+            }
+            self?.status = "SDK: estado no disponible; consultando respaldo Web API"
+            if fallbackToWeb {
+                Task { @MainActor in
+                    await SpotifyBridge.shared.refreshPlaybackInfo(force: true, allowSDKFallback: true)
+                }
             }
         }
     }

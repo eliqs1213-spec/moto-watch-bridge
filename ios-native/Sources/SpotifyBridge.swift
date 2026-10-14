@@ -70,6 +70,17 @@ private struct SpotifyPlayback: Decodable {
     let item: Song?
 }
 
+private struct SpotifyConnectDevices: Decodable {
+    struct Device: Decodable {
+        let id: String?
+        let name: String
+        let type: String
+        let is_active: Bool
+        let is_restricted: Bool
+    }
+    let devices: [Device]
+}
+
 private struct OAuthReply: Decodable {
     let access_token: String
     let refresh_token: String?
@@ -107,6 +118,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     @Published private(set) var lastAction: String = "Esperando comandos"
     @Published var controlEnabled: Bool = UserDefaults.standard.bool(forKey: "motowatch.spotify.enabled")
     @Published private(set) var playbackAvailability = "Sin comprobar"
+    // Diagnóstico: fuente que produjo los últimos metadatos aceptados.
+    @Published private(set) var metadataSource = "Sin datos"
 
     private var authentication: ASWebAuthenticationSession?
     private var oauthVerifier = ""
@@ -114,6 +127,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var lastDeviceID: String?
     private var lastIsPlaying: Bool?
     private var lastMusicSnapshot: WatchMusicSnapshot?
+    // Cada evento nativo invalida consultas Web todavía pendientes.
+    // Evita que un GET /me/player lento reemplace una pista más nueva del SDK.
+    private var sdkMetadataRevision: UInt64 = 0
     private var recoveryInProgress = false
     private var unavailableChecks = 0
     private var idleModeRequested = false
@@ -138,6 +154,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         if !enabled {
             sendIdle(reason: "Controles Spotify desactivados")
             playbackAvailability = "Controles desactivados"
+            metadataSource = "Desactivado"
         } else {
             Task { await refreshPlaybackInfo(force: true) }
         }
@@ -210,6 +227,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         sendIdle(reason: "Spotify desvinculado manualmente", force: true)
         playbackAvailability = "Spotify desvinculado"
         lastSong = "Sin canción"
+        metadataSource = "Sin datos"
         status = "Sin autorizar"
         record("Spotify desvinculado")
     }
@@ -235,6 +253,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         let wasIdle = idleModeRequested
         idleModeRequested = false
         updateCachedPlayback(playback)
+        if playback.item != nil {
+            metadataSource = "Spotify Web API · respaldo"
+        }
         if playback.item != nil {
             playbackAvailability = playback.is_playing ? "Reproduciendo" : "Pausado"
         } else {
@@ -266,6 +287,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         lastIsPlaying = nil
         lastMusicSnapshot = nil
         lastSong = "Sin canción"
+        metadataSource = "Sin reproductor confirmado"
         sendIdle(reason: "Ausencia de reproductor durante al menos 30 segundos")
     }
 
@@ -274,10 +296,12 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     func forceWatchMusicRecovery() {
         guard controlEnabled else { return }
         if SpotifyAppRemoteBridge.shared.isConnected {
-            SpotifyAppRemoteBridge.shared.requestCurrentPlayerState()
+            SpotifyAppRemoteBridge.shared.requestCurrentPlayerState(fallbackToWeb: true)
         }
-        Task { await refreshPlaybackInfo(force: true) }
-        record("Recuperación musical: consultando reproductor actual antes del reanuncio")
+        if !SpotifyAppRemoteBridge.shared.isConnected {
+            Task { await refreshPlaybackInfo(force: true) }
+        }
+        record("Recuperación musical: SDK prioritario, Web API de respaldo")
     }
 
     func recoverAfterWatchReady() async {
@@ -289,11 +313,13 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         // permitiera consultar la Web API durante la desconexión.
         record("Reloj reconectado: verificando canción actual de Spotify")
         if SpotifyAppRemoteBridge.shared.isConnected {
-            SpotifyAppRemoteBridge.shared.requestCurrentPlayerState()
+            SpotifyAppRemoteBridge.shared.requestCurrentPlayerState(fallbackToWeb: true)
         }
-        // Forzar consulta incluso cuando el SDK está conectado: la Web API es
-        // respaldo y un resultado válido reanuncia 08/02 para esta nueva sesión.
-        await refreshPlaybackInfo(force: true)
+        // Si el SDK está conectado, su estado es la fuente principal.
+        // No competir con un GET Web que puede llegar tarde y pisar los metadatos.
+        if !SpotifyAppRemoteBridge.shared.isConnected {
+            await refreshPlaybackInfo(force: true)
+        }
     }
 
     // Recibe eventos de App Remote sólo en primer plano. Al bloquear el iPhone
@@ -311,28 +337,38 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             id: uri, title: title, artist: artist, album: album,
             durationMs: durationMs, progressMs: progressMs, isPlaying: isPlaying
         )
+        sdkMetadataRevision &+= 1
         lastMusicSnapshot = snapshot
         lastIsPlaying = isPlaying
         lastSong = title
+        metadataSource = "Spotify iOS SDK · App Remote"
         status = isPlaying ? "Spotify App Remote · reproduciendo" : "Spotify App Remote · pausado"
         playbackAvailability = isPlaying ? "Reproduciendo (SDK)" : "Pausado (SDK)"
         WatchBLEManager.shared.sendMusic(snapshot, force: wasIdle, reannounce: wasIdle)
     }
 
-    func refreshPlaybackInfo(force: Bool = false) async {
+    func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
         if !force, let until = manualIdlePreviewUntil, Date() < until { return }
         if force { manualIdlePreviewUntil = nil }
-        // El SDK proporciona eventos en primer plano; no competir con ellos.
-        if !force && SpotifyAppRemoteBridge.shared.isConnected { return }
-        // iOS permite consultas periódicas solo cuando la app está visible.
-        // No considerar una pausa (dispositivo disponible e is_playing=false)
-        // como desconexión. Spotify puede devolver HTTP 204 temporalmente.
+        // Incluso las consultas forzadas deben respetar la prioridad nativa.
+        // La única excepción: un getPlayerState del SDK falló explícitamente.
+        if SpotifyAppRemoteBridge.shared.isConnected &&
+           SpotifyAppRemoteBridge.shared.metadataEventsActive && !allowSDKFallback { return }
+        let nativeRevisionAtStart = sdkMetadataRevision
         guard SecureTokenStorage.load() != nil else {
-            playbackAvailability = "Spotify sin autorizar"
+            if !SpotifyAppRemoteBridge.shared.isConnected {
+                playbackAvailability = "Spotify sin autorizar"
+            }
             return
         }
         do {
-            if let playback = try await fetchPlayback() {
+            let playback = try await fetchPlayback()
+            // Un callback App Remote llegó mientras esperaba HTTP: sus metadatos
+            // son más recientes que la respuesta Web y tienen prioridad.
+            if sdkMetadataRevision != nativeRevisionAtStart { return }
+            if SpotifyAppRemoteBridge.shared.isConnected &&
+               SpotifyAppRemoteBridge.shared.metadataEventsActive && !allowSDKFallback { return }
+            if let playback = playback {
                 if playback.device != nil || (playback.item != nil && playback.is_playing) {
                     markAvailable(playback, force: force)
                 } else {
@@ -342,6 +378,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                 markNoActivePlayer()
             }
         } catch {
+            if sdkMetadataRevision != nativeRevisionAtStart { return }
+            if SpotifyAppRemoteBridge.shared.isConnected &&
+               SpotifyAppRemoteBridge.shared.metadataEventsActive && !allowSDKFallback { return }
             // No ocultar la música por fallos temporales de red o HTTP 429.
             playbackAvailability = "Consulta fallida; estado conservado"
             if let spotifyError = error as? SpotifyBridgeError,
@@ -398,6 +437,22 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                 if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask) }
             }
             do {
+                // App Remote (iOS) es prioritario si tenemos sesión real activa.
+                // En segundo plano, App Remote se desconecta por diseño:
+                // los eventos BLE usarán la Web API como hasta ahora.
+                switch await SpotifyAppRemoteBridge.shared.sendWatchCommand(command) {
+                case .succeeded:
+                    self.lastAction = "Comando enviado con Spotify iOS SDK"
+                    self.record("[SPOTIFY] Comando \(key) por SDK nativo")
+                    return
+                case .failed(let message):
+                    // No repetir automáticamente un comando potencialmente aplicado.
+                    self.lastAction = "SDK rechazó el comando: \(message)"
+                    self.record("[SPOTIFY] SDK falló; sin reenvío duplicado")
+                    return
+                case .unavailable:
+                    self.record("[SPOTIFY] SDK no disponible; usando Web API")
+                }
                 try await self.run(command)
             } catch {
                 if let spotifyError = error as? SpotifyBridgeError,
@@ -419,43 +474,82 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
     }
 
+    // Solo para órdenes que no pudo gestionar el SDK. No llamar desde ambas vías.
     private func run(_ command: WatchCommand) async throws {
         var action: String
-        let devicePath: String
+        var currentPlayback: SpotifyPlayback?
         switch command {
         case .next: action = "next"
         case .previous: action = "previous"
         case .toggle:
-            if let playing = try await fetchPlayback() {
+            // Consultamos el estado de Spotify antes de decidir Play o Pausa.
+            // En pausa prolongada /me/player puede responder 204 (sin player).
+            currentPlayback = try await fetchPlayback()
+            if let playing = currentPlayback {
                 updateCachedPlayback(playing)
+            } else {
+                // Si Spotify ya no tiene reproductor activo, solo es razonable
+                // intentar PLAY, nunca una pausa basada en datos viejos.
+                lastIsPlaying = false
             }
-            if lastIsPlaying == nil { throw SpotifyBridgeError.emptyPlayer }
-            action = lastIsPlaying! ? "pause" : "play"
+            action = (lastIsPlaying == true) ? "pause" : "play"
         case .findStart, .findStop, .unknown: return
         }
-        // Omitir device_id: Spotify utiliza el dispositivo activo. Fijar el
-        // antiguo ID provocaba HTTP 404 «Device not found» tras reconexiones.
-        devicePath = ""
+
+        // La Web API usa el dispositivo activo, nunca un ID viejo de cache.
+        // Si no queda dispositivo activo, buscamos UN iPhone disponible antes
+        // de rendirnos. No transferir a otro teléfono ni a parlantes por error.
+        if action == "play" {
+            if currentPlayback?.device == nil {
+                guard let target = try await findUnambiguousIPhone() else {
+                    lastAction = "Spotify sin dispositivo iPhone disponible; abrí Spotify una vez"
+                    playbackAvailability = "Spotify suspendido · sin dispositivo Connect activo"
+                    record("[SPOTIFY] Web API sin iPhone disponible; no se fabricó reproducción")
+                    return
+                }
+                // Transferir con play=true es un único comando de reanudación.
+                // No enviar inmediatamente otro PUT /play: Spotify no garantiza
+                // el orden de las operaciones de control de dispositivos.
+                let body = try JSONSerialization.data(withJSONObject:
+                    ["device_ids": [target], "play": true])
+                _ = try await api("/me/player", method: "PUT", body: body)
+                lastIsPlaying = true
+                lastAction = "Spotify Connect: intentando reanudar en iPhone"
+                record("[SPOTIFY] Transferencia PLAY hacia iPhone disponible")
+                await refreshPlaybackInfo(force: true)
+                return
+            }
+        }
         let method = (action == "next" || action == "previous") ? "POST" : "PUT"
-        _ = try await api("/me/player/\(action)\(devicePath)", method: method)
+        _ = try await api("/me/player/\(action)", method: method)
         if action == "play" { lastIsPlaying = true }
         if action == "pause" { lastIsPlaying = false }
         if action == "play" || action == "pause", var snapshot = lastMusicSnapshot {
             snapshot.isPlaying = action == "play"
             lastMusicSnapshot = snapshot
-            // Actualización inmediata del icono, sin esperar respuesta de Spotify.
             WatchBLEManager.shared.sendMusic(snapshot)
         }
-        lastAction = "Enviado: \(action.uppercased())"
-        record("[SPOTIFY] \(action.uppercased()) enviado")
-        // Tras NEXT/PREVIOUS Spotify tarda en informar título nuevo. Consultar
-        // nuevamente mientras el evento Bluetooth mantenga despierta la app.
+        lastAction = "Web API: \(action.uppercased()) enviado"
+        record("[SPOTIFY] Web API \(action.uppercased()) enviado")
         try? await Task.sleep(nanoseconds: 850_000_000)
         await refreshPlaybackInfo()
         if UIApplication.shared.applicationState == .active && (action == "next" || action == "previous") {
             try? await Task.sleep(nanoseconds: 1_300_000_000)
             await refreshPlaybackInfo()
         }
+    }
+
+    private func findUnambiguousIPhone() async throws -> String? {
+        let data = try await api("/me/player/devices", method: "GET")
+        let candidates = try JSONDecoder().decode(SpotifyConnectDevices.self, from: data)
+            .devices.filter { $0.is_restricted == false && $0.id != nil }
+        let phones = candidates.filter {
+            $0.type.localizedCaseInsensitiveCompare("Smartphone") == .orderedSame &&
+            $0.name.localizedCaseInsensitiveContains("iPhone")
+        }
+        // Evitar elegir un dispositivo equivocado si hay más de un iPhone.
+        guard phones.count == 1 else { return nil }
+        return phones[0].id
     }
 
     private func updateCachedPlayback(_ playback: SpotifyPlayback) {
@@ -485,11 +579,15 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         return try JSONDecoder().decode(SpotifyPlayback.self, from: result)
     }
 
-    private func api(_ path: String, method: String) async throws -> Data {
+    private func api(_ path: String, method: String, body: Data? = nil) async throws -> Data {
         let token = try await validAccessToken()
         guard let url = URL(string: "https://api.spotify.com/v1\(path)") else { throw SpotifyBridgeError.badURL }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        if let body = body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 12
         let (data, response) = try await URLSession.shared.data(for: request)
