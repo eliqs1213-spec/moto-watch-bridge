@@ -34,6 +34,8 @@ struct MotoWatchBridgeApp: App {
     var body: some Scene {
         WindowGroup {
             TabView {
+                HealthHistoryView()
+                    .tabItem { Label("Salud", systemImage: "heart.text.square") }
                 ContentView()
                     .tabItem { Label("iWatch", systemImage: "watch.analog") }
                 NotificationsView()
