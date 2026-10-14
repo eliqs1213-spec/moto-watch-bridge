@@ -23,9 +23,13 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: Moto Watch Bridge
-        CFBundleShortVersionString: '0.1.0'
-        CFBundleVersion: '1'
+        CFBundleShortVersionString: '0.2.0'
+        CFBundleVersion: '2'
         NSBluetoothAlwaysUsageDescription: 'Moto Watch Bridge se conecta a tu Moto Watch Fit para recibir los botones musicales.'
+        CFBundleURLTypes:
+          - CFBundleURLName: org.motowatchbridge.spotify-auth
+            CFBundleURLSchemes:
+              - motowatchbridgeeliqs
         UIBackgroundModes:
           - bluetooth-central
         UILaunchScreen: {}

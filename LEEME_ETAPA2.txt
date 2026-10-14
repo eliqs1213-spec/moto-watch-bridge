@@ -1,0 +1,59 @@
+MOTO WATCH BRIDGE – ETAPA 2: SPOTIFY NATIVO
+
+Esta entrega es una PRUEBA, no una versión estable. Guardá el IPA anterior como respaldo.
+
+NUEVO
+- Bluetooth CoreBluetooth sigue activo en segundo plano (ya probado en la etapa 1).
+- Botones NEXT, PREVIOUS y PLAY/PAUSA envían comandos a Spotify Web API.
+- OAuth PKCE con ASWebAuthenticationSession (sin Spotify Client Secret).
+- Tokens OAuth almacenados en Keychain, con acceso después del primer desbloqueo.
+- Registro persistente de aciertos y errores.
+
+NO INCLUYE TODAVÍA
+- Metadatos de canciones enviados a la pantalla del reloj.
+- Control de volumen del iPhone.
+- Notificaciones WhatsApp/Instagram.
+- Garantía de que Spotify Web API responda mientras el iPhone está bloqueado.
+
+PARA SUBIR
+1. Extraé el archivo ZIP en Windows.
+2. En GitHub: https://github.com/eliqs1213-spec/moto-watch-bridge
+3. Code -> Add file -> Upload files.
+4. Arrastrá SOLAMENTE la carpeta ios-native completa del ZIP.
+5. Confirmá que GitHub mostrará:
+   ios-native/project.yml
+   ios-native/Sources/MotoWatchBridgeApp.swift
+   ios-native/Sources/WatchBLEManager.swift
+   ios-native/Sources/WatchProtocol.swift
+   ios-native/Sources/SpotifyBridge.swift
+6. Commit changes en main. GitHub Actions ejecutará la compilación.
+7. Descargá el artefacto IPA sin firmar y volvé a instalar desde Windows
+   con Sideloadly. Si Sideloadly advierte por app existente, seguí sus
+   opciones de actualizar o reemplazar; conservá la versión anterior de IPA.
+
+CONFIGURAR SPOTIFY
+1. Visitá https://developer.spotify.com/dashboard
+2. En la misma app Spotify 'Moto Watch Bridge' utilizada en Bluefy,
+   agregá EXACTAMENTE esta Redirect URI adicional:
+   motowatchbridgeeliqs://callback
+3. Guardá cambios en Spotify. No borres la Redirect URI de GitHub Pages.
+4. Abrí la app nativa, pegá el mismo Spotify Client ID, tocá 'Autorizar Spotify'.
+5. Autorizá en la ventana de Spotify y regresá a Moto Watch Bridge.
+6. Tocá 'Activar controles Spotify'.
+7. Conectá el Moto Watch Fit (cerrá Bluefy, Windows y Edge antes).
+8. Poné Spotify reproduciendo una canción manualmente en el iPhone.
+9. Probá NEXT, PREVIOUS y PLAY/PAUSA con el iPhone desbloqueado.
+10. Repetí con la pantalla bloqueada 60 segundos. Compará los comandos
+    capturados en el registro con las órdenes enviadas a Spotify.
+
+SEGURIDAD
+- Introducí únicamente el Client ID público, NO tu Client Secret.
+- La app accede a Spotify exclusivamente para leer/ajustar reproducción.
+- Los tokens se guardan localmente en el llavero de iOS, no en GitHub.
+- No compartas el registro si contiene datos privados que no querés divulgar.
+
+ERRORES ESPERABLES
+- Spotify puede responder 204 sin información al pausarse mucho tiempo.
+- Algunos comandos HTTP pueden fallar si iOS suspende demasiado pronto el proceso.
+- Spotify puede mostrar HTTP 403 / 404 / 500 si el dispositivo deja de estar activo.
+- Para la primera prueba, arrancá la música desde Spotify antes de pulsar el reloj.

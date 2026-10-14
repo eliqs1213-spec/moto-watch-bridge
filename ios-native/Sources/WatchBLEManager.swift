@@ -270,6 +270,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         case .unknown: lastCommand = "Otro comando"
         }
         record("RELOJ", "\(command.rawValue) | \(raw)")
-        // Etapa 1: NO se ejecuta Spotify. Solo comprobamos los eventos con el iPhone bloqueado.
+        // Etapa 2: si Spotify está habilitado, procesamos el evento incluso en segundo plano.
+        SpotifyBridge.shared.receive(command)
     }
 }

@@ -6,6 +6,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Instanciar CoreBluetooth temprano es esencial para la restauración de estado.
         _ = WatchBLEManager.shared
+        _ = SpotifyBridge.shared
         return true
     }
 
@@ -24,24 +25,27 @@ struct MotoWatchBridgeApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView().environmentObject(WatchBLEManager.shared)
+            ContentView()
+                .environmentObject(WatchBLEManager.shared)
+                .environmentObject(SpotifyBridge.shared)
         }
     }
 }
 
 struct ContentView: View {
     @EnvironmentObject private var watch: WatchBLEManager
+    @EnvironmentObject private var spotify: SpotifyBridge
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("PRUEBA NATIVA · ETAPA 1")
+                        Text("PRUEBA NATIVA · ETAPA 2")
                             .font(.caption.bold()).foregroundStyle(.cyan)
                         Text("Moto Watch Bridge")
                             .font(.largeTitle.bold())
-                        Text("Bluetooth directo con iPhone. Esta versión registra los botones para comprobar si siguen llegando con la pantalla bloqueada.")
+                        Text("Bluetooth + Spotify desde el iPhone. Vamos a probar el cambio de canción también con la pantalla bloqueada.")
                             .foregroundStyle(.secondary)
                     }
 
@@ -62,6 +66,39 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
+                    GroupBox("Spotify Premium") {
+                        VStack(alignment: .leading, spacing: 9) {
+                            Text("Configurá en Spotify Developer Dashboard la Redirect URI EXACTA:")
+                                .font(.caption)
+                            Text(SpotifyBridge.redirect)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                            TextField("Spotify Client ID (no Secret)", text: $spotify.clientID)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .textFieldStyle(.roundedBorder)
+                            HStack {
+                                Button("Autorizar Spotify") { spotify.authorize() }
+                                    .buttonStyle(.borderedProminent)
+                                Button("Desvincular") { spotify.disconnectSpotify() }
+                                    .buttonStyle(.bordered)
+                            }
+                            Toggle("Activar controles Spotify", isOn: Binding(
+                                get: { spotify.controlEnabled },
+                                set: { spotify.setEnabled($0) }
+                            ))
+                            .tint(.green)
+                            statusRow("Spotify", spotify.status)
+                            statusRow("Última canción", spotify.lastSong)
+                            statusRow("Última orden", spotify.lastAction)
+                            Button("Consultar estado actual") {
+                                Task { await spotify.refreshPlaybackInfo() }
+                            }.buttonStyle(.bordered)
+                            Text("Para esta primera prueba Spotify debe estar reproduciendo previamente en el iPhone. Con pantalla bloqueada, cada orden podría fallar o demorarse por los límites de iOS y Spotify.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     GroupBox("Comandos detectados") {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(watch.lastCommand).font(.title3.bold())
@@ -77,7 +114,7 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("1. Conectá el reloj y esperá «Escuchando los botones».\n2. Bloqueá el iPhone durante 60 segundos.\n3. Pulsá Siguiente, Anterior y Play/Pausa, espaciados 5 segundos.\n4. Desbloqueá y revisá el registro con las horas.")
                                 .font(.subheadline)
-                            Text("No cierres la aplicación desde el selector de apps. Esta prueba aún no controla Spotify.")
+                            Text("No cierres la aplicación desde el selector de apps. Esta versión controla Spotify de forma experimental. No actualiza todavía metadatos en la pantalla del reloj.")
                                 .font(.caption).foregroundStyle(.orange)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -104,7 +141,7 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    Text("Prototipo no oficial. No lee notificaciones privadas ni controla Spotify en esta etapa.")
+                    Text("Prototipo no oficial. No lee notificaciones privadas; Spotify usa PKCE y guarda tokens en el llavero del iPhone.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .padding()
