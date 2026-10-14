@@ -1,96 +1,108 @@
 import SwiftUI
 import WidgetKit
+import ActivityKit
 
-struct WatchBatteryEntry: TimelineEntry {
-    var date: Date
-    var percentage: Int?
-    var measuredAt: Date?
-}
-
-struct WatchBatteryProvider: TimelineProvider {
-    func entry() -> WatchBatteryEntry {
-        let data = BatteryWidgetStore.load()
-        return WatchBatteryEntry(date: Date(), percentage: data?.percentage, measuredAt: data?.date)
+// Diagnóstico sin App Groups: sirve para comprobar si iOS reconoce y muestra
+// la extensión instalada vía Sideloadly. NO inventa lecturas de batería.
+struct DiagnosticEntry: TimelineEntry { let date: Date }
+struct DiagnosticProvider: TimelineProvider {
+    func placeholder(in context: Context) -> DiagnosticEntry { DiagnosticEntry(date: Date()) }
+    func getSnapshot(in context: Context, completion: @escaping (DiagnosticEntry) -> Void) {
+        completion(DiagnosticEntry(date: Date()))
     }
-
-    func placeholder(in context: Context) -> WatchBatteryEntry {
-        WatchBatteryEntry(date: Date(), percentage: nil, measuredAt: nil)
-    }
-
-    func getSnapshot(in context: Context, completion: @escaping (WatchBatteryEntry) -> Void) {
-        completion(context.isPreview ? placeholder(in: context) : entry())
-    }
-
-    func getTimeline(in context: Context, completion: @escaping (Timeline<WatchBatteryEntry>) -> Void) {
-        let current = entry()
-        // iOS decide el intervalo real; no promete actualización al segundo.
-        completion(Timeline(entries: [current], policy: .after(Date().addingTimeInterval(15 * 60))))
+    func getTimeline(in context: Context, completion: @escaping (Timeline<DiagnosticEntry>) -> Void) {
+        completion(Timeline(entries: [DiagnosticEntry(date: Date())], policy: .never))
     }
 }
 
-struct WatchBatteryView: View {
+struct DiagnosticBatteryWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "iWatchDiagnosticStage7", provider: DiagnosticProvider()) { _ in
+            DiagnosticWidgetView()
+        }
+        .configurationDisplayName("iWatch · Prueba")
+        .description("Verifica si iOS registró correctamente los widgets instalados con Sideloadly.")
+        .supportedFamilies([.accessoryCircular, .accessoryRectangular])
+    }
+}
+
+struct DiagnosticWidgetView: View {
     @Environment(\.widgetFamily) private var family
-    let entry: WatchBatteryEntry
-
-    private var percent: String { entry.percentage.map { "\($0)%" } ?? "—" }
-    private var lastUpdate: String {
-        guard let date = entry.measuredAt else { return "Sin lectura" }
-        return "Última: " + date.formatted(date: .omitted, time: .shortened)
-    }
-
     var body: some View {
-        Group {
-            switch family {
-            case .accessoryCircular:
-                VStack(spacing: 1) {
-                    Image(systemName: "applewatch")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(percent)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .minimumScaleFactor(0.65)
-                        .lineLimit(1)
+        if family == .accessoryCircular {
+            VStack(spacing: 2) {
+                Image(systemName: "applewatch")
+                    .font(.system(size: 18, weight: .semibold))
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 14))
+            }
+            .widgetAccentable()
+        } else {
+            HStack(spacing: 6) {
+                Image(systemName: "applewatch")
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("iWatch OK").font(.system(size: 14, weight: .bold))
+                    Text("Widget instalado").font(.system(size: 10))
                 }
-                .widgetAccentable()
-            case .accessoryRectangular:
-                HStack(spacing: 7) {
-                    Image(systemName: "applewatch")
-                        .font(.title2)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Moto Watch · " + percent)
-                            .font(.system(size: 14, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                        Text(lastUpdate)
-                            .font(.system(size: 10))
-                            .lineLimit(1)
-                        if let charge = entry.percentage {
-                            ProgressView(value: Double(charge), total: 100)
-                                .tint(.primary)
-                        }
-                    }
+            }.widgetAccentable()
+        }
+    }
+}
+
+// Batería REAL de Moto Watch Fit, recibida de la aplicación vía ActivityKit.
+// No requiere UserDefaults(suiteName:) ni App Groups.
+struct MotoBatteryLiveWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: MotoBatteryActivityAttributes.self) { context in
+            HStack(spacing: 12) {
+                Image(systemName: "applewatch")
+                    .font(.title2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("iWatch · Moto Watch Fit")
+                        .font(.headline)
+                    Text(context.state.percentage >= 0
+                         ? "Batería del reloj · Motorola 10/01"
+                         : "Esperando primera lectura de batería")
+                        .font(.caption)
                 }
-                .widgetAccentable()
-            default:
-                Text(percent)
+                Spacer(minLength: 0)
+                Text(context.state.percentage >= 0 ? "\(context.state.percentage)%" : "—")
+                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .activityBackgroundTint(Color.black.opacity(0.92))
+            .activitySystemActionForegroundColor(.white)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Text("iWatch").font(.headline)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text(context.state.percentage >= 0 ? "\(context.state.percentage)%" : "—")
+                        .font(.title3.bold()).monospacedDigit()
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    Text("Moto Watch Fit · Batería Motorola 10/01")
+                        .font(.caption)
+                }
+            } compactLeading: {
+                Image(systemName: "applewatch")
+            } compactTrailing: {
+                Text(context.state.percentage >= 0 ? "\(context.state.percentage)%" : "—")
+                    .font(.caption.bold()).monospacedDigit()
+            } minimal: {
+                Image(systemName: "applewatch")
             }
         }
     }
 }
 
-struct WatchBatteryWidget: Widget {
-    let kind = BatteryWidgetStore.widgetKind
-
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: WatchBatteryProvider()) { entry in
-            WatchBatteryView(entry: entry)
-        }
-        .configurationDisplayName("Batería Moto Watch")
-        .description("Último porcentaje Motorola 10/01 leído por iWatch.")
-        .supportedFamilies([.accessoryCircular, .accessoryRectangular])
-    }
-}
-
 @main
 struct WatchBatteryWidgets: WidgetBundle {
-    var body: some Widget { WatchBatteryWidget() }
+    var body: some Widget {
+        DiagnosticBatteryWidget()
+        MotoBatteryLiveWidget()
+    }
 }

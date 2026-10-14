@@ -2,7 +2,6 @@ import Foundation
 import CoreBluetooth
 import Combine
 import UIKit
-import WidgetKit
 
 struct WatchLogEntry: Codable, Identifiable {
     let id: UUID
@@ -306,12 +305,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             let percentage = Int(bytes[7])
             batteryPercentage = percentage
             batteryStatus = "\(percentage)% (Motorola 10/01)"
-            let widgetSaved = BatteryWidgetStore.save(percentage: percentage)
             record("BATERIA", "Respuesta 10/01: \(percentage)%, trama \(MotoProtocol.hex(data))")
-            if widgetSaved {
-                WidgetCenter.shared.reloadTimelines(ofKind: BatteryWidgetStore.widgetKind)
-            } else {
-                record("WIDGET", "App Group no disponible con esta firma; el porcentaje sigue visible en iWatch")
+            if #available(iOS 16.2, *) {
+                BatteryLiveActivityManager.shared.updateBattery(percentage)
             }
             return
         }

@@ -38,6 +38,7 @@ struct ContentView: View {
     @EnvironmentObject private var watch: WatchBLEManager
     @EnvironmentObject private var spotify: SpotifyBridge
     @EnvironmentObject private var finder: PhoneFinder
+    @StateObject private var batteryLive = BatteryLiveActivityManager.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -45,7 +46,7 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("PROTOTIPO NATIVO · ETAPA 6")
+                        Text("PROTOTIPO NATIVO · ETAPA 7")
                             .font(.caption.bold()).foregroundStyle(.cyan)
                         Text("Moto Watch Bridge")
                             .font(.largeTitle.bold())
@@ -77,13 +78,34 @@ struct ContentView: View {
                             Text(watch.batteryStatus).foregroundStyle(.secondary)
                             Button("Consultar batería") { watch.refreshBattery() }
                                 .buttonStyle(.bordered)
-                            Text(BatteryWidgetStore.isAvailable
-                                 ? "WidgetKit: almacenamiento compartido disponible"
-                                 : "WidgetKit: sin App Group; podría necesitar otra firma")
+                            Text("Etapa 7: batería Motorola 10/01 sin App Groups. Probá la actividad en vivo de abajo.")
                                 .font(.caption).foregroundStyle(.secondary)
                             Text("Batería: exclusivamente protocolo Motorola 10/01. Solo se muestran respuestas con trama y checksum válidos.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    GroupBox("Pantalla de bloqueo · Etapa 7") {
+                        VStack(alignment: .leading, spacing: 9) {
+                            Text("Batería real por Actividad en vivo (ActivityKit), sin App Groups.")
+                                .font(.subheadline)
+                            HStack {
+                                Button("Mostrar batería en bloqueo") {
+                                    batteryLive.start(percentage: watch.batteryPercentage)
+                                    watch.refreshBattery()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                Button("Detener") { batteryLive.stop() }
+                                    .buttonStyle(.bordered)
+                            }
+                            Text(batteryLive.status)
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text("Bloqueá el iPhone y buscá la actividad debajo de las notificaciones o en la Dynamic Island. Es diferente al widget fijo debajo del reloj. Las actividades en vivo caducan según iOS y las lecturas solo se actualizan cuando iWatch logra comunicarse con el reloj.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text("Widget circular/rectangular «iWatch · Prueba»: solo muestra iWatch OK. Sirve para comprobar si Sideloadly registró la extensión; NO muestra una batería inventada.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     GroupBox("Spotify Premium") {
@@ -190,7 +212,7 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    Text("iWatch usa solo batería Motorola 10/01. Los widgets propios requieren extensión firmada y App Groups autorizados; no aparecerá en el widget Baterías oficial de Apple.")
+                    Text("iWatch usa solo batería Motorola 10/01. La Actividad en vivo no usa App Groups, pero necesita que la extensión WidgetKit quede firmada y registrada. El widget fijo es diagnóstico, no muestra el porcentaje real.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .padding()

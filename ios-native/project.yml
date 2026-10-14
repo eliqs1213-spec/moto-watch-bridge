@@ -2,7 +2,7 @@ name: MotoWatchNativeProbe
 options:
   bundleIdPrefix: org.motowatchbridge
   deploymentTarget:
-    iOS: '16.0'
+    iOS: '16.2'
 settings:
   base:
     SWIFT_VERSION: '5.0'
@@ -13,7 +13,7 @@ targets:
     platform: iOS
     sources:
       - path: Sources
-      - path: Shared/BatteryWidgetStore.swift
+      - path: Shared/MotoBatteryActivityAttributes.swift
       - path: Resources/FindPhoneAlert.wav
         buildPhase: resources
     dependencies:
@@ -25,17 +25,12 @@ targets:
         SWIFT_VERSION: '5.0'
         TARGETED_DEVICE_FAMILY: '1'
         CODE_SIGN_STYLE: Manual
-    entitlements:
-      path: Config/App.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.org.motowatchbridge.shared
     info:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: iWatch
-        CFBundleShortVersionString: '0.6.0'
-        CFBundleVersion: '6'
+        CFBundleShortVersionString: '0.7.0'
+        CFBundleVersion: '7'
         NSBluetoothAlwaysUsageDescription: 'iWatch se conecta a Moto Watch Fit para controlar Spotify, consultar batería y localizar el teléfono.'
         CFBundleURLTypes:
           - CFBundleURLName: org.motowatchbridge.spotify-auth
@@ -44,6 +39,7 @@ targets:
         UIBackgroundModes:
           - bluetooth-central
           - audio
+        NSSupportsLiveActivities: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -52,7 +48,7 @@ targets:
     platform: iOS
     sources:
       - path: BatteryWidgets
-      - path: Shared/BatteryWidgetStore.swift
+      - path: Shared/MotoBatteryActivityAttributes.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.motowatchbridge.nativeprobe.widgets
@@ -61,16 +57,11 @@ targets:
         CODE_SIGN_STYLE: Manual
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
-    entitlements:
-      path: Config/Widgets.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.org.motowatchbridge.shared
     info:
       path: BatteryWidgets/Info.plist
       properties:
         CFBundleDisplayName: iWatch Battery
-        CFBundleShortVersionString: '0.6.0'
-        CFBundleVersion: '6'
+        CFBundleShortVersionString: '0.7.0'
+        CFBundleVersion: '7'
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension

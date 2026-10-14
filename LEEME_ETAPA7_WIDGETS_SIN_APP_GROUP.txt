@@ -1,0 +1,33 @@
+iWatch — ETAPA 7: BATERÍA EN PANTALLA BLOQUEADA SIN APP GROUPS
+
+POR QUÉ: Sideloadly instaló iWatch sin el permiso com.apple.security.application-groups.
+El widget anterior no podía leer el porcentaje compartido y no aparecía en pantalla bloqueada.
+
+CAMBIOS:
+1. Sin entitlements App Groups en app y extensión.
+2. Widget circular y rectangular «iWatch · Prueba»: muestra «iWatch OK», NO batería real.
+   Sirve para comprobar si iOS registra extensiones al instalar con Sideloadly.
+3. ACTIVIDAD EN VIVO (ActivityKit): muestra porcentaje Motorola 10/01 real en pantalla
+   bloqueada y Dynamic Island, usando actualizaciones desde la app sin App Groups.
+   Se inicia manualmente en iWatch -> «Mostrar batería en bloqueo»; botón «Detener».
+4. Cada respuesta de batería 10/01 actualiza la actividad si está activa.
+5. Spotify, BLE, Encontrar iPhone, paquete «Sin música»: SIN CAMBIOS funcionales.
+
+LIMITACIONES IMPORTANTES:
+- Actividad en vivo != widget tradicional junto a la hora. Se muestra en otra zona.
+- Ambos siguen necesitando una extensión WidgetKit instalada y reconocida por iOS.
+  Si Sideloadly no la registra, no aparecerán, incluso con App Groups eliminados.
+- Actividades en vivo pueden caducar tras varias horas y no garantizan polling BLE.
+- No probar «Use custom entitlements» de Sideloadly a ciegas.
+
+INSTALACIÓN:
+1. Extraer ZIP.
+2. En GitHub reemplazar SOLO carpeta ios-native con la del ZIP.
+3. GitHub Actions -> descargar artifact unsigned IPA.
+4. Firmar IPA con Sideloadly (mantener «Dropping 0 of 1 plug-ins»).
+5. Abrir iWatch, conectar reloj, consultar batería 10/01 y pulsar
+   «Mostrar batería en bloqueo». Bloquear iPhone.
+6. Para widget diagnóstico: personalizar pantalla de bloqueo -> agregar widgets ->
+   iWatch · Prueba. Debe mostrar iWatch OK.
+
+Guardar respaldo de Etapa 6; no hay una garantía de que Sideloadly registre el widget.
