@@ -45,3 +45,10 @@ let wrongType = WatchHealthProtocol.Frame(group: 0x31, command: 0x07, payload: b
 expect(WatchHealthProtocol.pulseRejectionReason(wrongType, start: now, end: now) == "Tipo de serie ausente o distinto de 1", "Missing series diagnostic")
 expect(WatchHealthProtocol.pulseRejectionReason(longFrame, start: now, end: now) == "Muestra fuera de la ventana de 24 horas", "Time-window diagnostic")
 print("Diagnostic checks passed: routing preserves CRC rejection and reports type/time failures")
+
+expect(WatchHealthProtocol.canProbeFirstPulseBlock(1), "Captured index indicator 1 rejected")
+expect(WatchHealthProtocol.canProbeFirstPulseBlock(2), "Observed iPhone index indicator 2 rejected")
+expect(!WatchHealthProtocol.canProbeFirstPulseBlock(nil), "Missing index accepted")
+expect(!WatchHealthProtocol.canProbeFirstPulseBlock(0), "Empty index accepted")
+expect(!WatchHealthProtocol.canProbeFirstPulseBlock(255), "Unknown index accepted")
+print("Index checks passed: indicators 1/2 accepted; missing, zero and unknown rejected")

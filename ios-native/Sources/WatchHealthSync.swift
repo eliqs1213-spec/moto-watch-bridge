@@ -105,7 +105,7 @@ final class WatchHealthSync: ObservableObject {
             }
             let flag = WatchHealthProtocol.integer(1, in: fields)
             note("31/06: indicador de registros=" + (flag.map { String($0) } ?? "ausente"))
-            guard flag == 1 else {
+            guard WatchHealthProtocol.canProbeFirstPulseBlock(flag) else {
                 heartRateDetail = "Índice recibido; indicador de registros " + (flag.map { String($0) } ?? "ausente")
                 finishIfReady()
                 return true
@@ -123,6 +123,10 @@ final class WatchHealthSync: ObservableObject {
                 finishIfReady()
                 return true
             }
+            note(flag == 2 ? "Indicador 2: consulta experimental del primer bloque, sin paginación" : "Indicador 1: consultando primer bloque")
+            // El indicador 2 fue observado en iPhone; su significado exacto
+            // aún no está confirmado. Se prueba únicamente la lectura 31/07
+            // conocida para el primer bloque, sin confirmaciones ni borrados.
             // Reproduce la petición 31/07 observada. No envía confirmaciones
             // de borrado/avance de cursor ni realiza paginación no validada.
             let payload: [UInt8] = [0x08, 0x01, 0x10] + WatchHealthProtocol.varint(cursor)

@@ -48,6 +48,11 @@ enum WatchHealthProtocol {
               pos + 3 < bytes.count, bytes[pos] == 0, bytes[pos + 1] == 0 else { return nil }
         return (bytes[pos + 2], bytes[pos + 3])
     }
+    static func canProbeFirstPulseBlock(_ indicator: UInt64?) -> Bool {
+        // 1 en la captura Android y 2 en la prueba iPhone. No asumir que
+        // todo valor positivo sea válido ni que el indicador sea un booleano.
+        return indicator == 1 || indicator == 2
+    }
     static func pulseRejectionReason(_ frame: Frame, start: Date, end: Date) -> String {
         guard let items = fields(frame.payload) else { return "Formato Protobuf inválido" }
         guard integer(1, in: items) == 1 else { return "Tipo de serie ausente o distinto de 1" }
