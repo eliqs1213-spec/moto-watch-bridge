@@ -191,8 +191,8 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
                 continuation.resume(returning: error?.localizedDescription)
             }
             switch command {
-            case .next: playerAPI.skipToNext(callback)
-            case .previous: playerAPI.skipToPrevious(callback)
+            case .next: playerAPI.skip(toNext: callback)
+            case .previous: playerAPI.skip(toPrevious: callback)
             default: continuation.resume(returning: "Comando no disponible")
             }
         }
