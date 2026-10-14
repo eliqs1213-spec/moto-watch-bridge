@@ -1,0 +1,20 @@
+iWatch — Etapa 6 / Reproductor inteligente (EXPERIMENTAL)
+
+Se conserva TODO lo implementado en Etapa 5: Spotify (siguiente, anterior, play/pausa), lectura de batería exclusivamente Motorola 10/01, alarma para encontrar iPhone, y los dos widgets de batería.
+
+NOVEDADES:
+- Al pulsar Desvincular Spotify se intenta limpiar el panel musical SIN cortar Bluetooth.
+- Si Spotify confirma NO_ACTIVE_DEVICE, se intenta mostrar estado inactivo.
+- Si la API devuelve una respuesta vacía en 3 consultas seguidas mientras antes sonaba música, se intenta mostrar estado inactivo. La consulta periódica solo sucede cuando iWatch está visible.
+- Pausa conocida: conserva título y botón ▶, aunque la API no devuelva un reproductor temporalmente.
+- Fallos de red / HTTP 429 no se consideran una desconexión.
+- Cuando reaparece un reproductor activo y una canción, se recuperan metadatos.
+- Botón «Probar pantalla sin música» para validar el paquete experimental Motorola 24/01 con metadatos vacíos; no altera Spotify real, deja 20 s para observar y se recupera pulsando «Consultar Spotify» o automáticamente al terminar el intervalo.
+
+IMPORTANTE: aún NO está demostrado que el paquete 24/01 vacío haga mostrar literalmente «No se está reproduciendo música». Los registros anteriores contienen paquetes 24/01 para canciones, pero no una captura confirmada del estado sin música. El reloj no confirma los cambios de pantalla.
+
+Si el botón de prueba no activa la pantalla solicitada, NO interpretamos el protocolo como solucionado. Guardá registro y fotografía del reloj para investigar otra trama Bluetooth.
+
+Si Spotify se fuerza a cerrar en iOS, la aplicación NO recibe un evento oficial de «Spotify cerrado» de forma inmediata: detectará su ausencia cuando la API informe falta de reproductor y la app consiga consultar. En segundo plano iOS no garantiza consultas periódicas.
+
+INSTALACIÓN: Subir la carpeta ios-native a GitHub en el repositorio moto-watch-bridge reemplazando SOLO la carpeta anterior, verificar Actions, descargar IPA, instalar mediante Sideloadly. Guardar respaldo de Etapa 5.

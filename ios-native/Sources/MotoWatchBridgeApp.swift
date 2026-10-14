@@ -45,7 +45,7 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("PROTOTIPO NATIVO · ETAPA 5")
+                        Text("PROTOTIPO NATIVO · ETAPA 6")
                             .font(.caption.bold()).foregroundStyle(.cyan)
                         Text("Moto Watch Bridge")
                             .font(.largeTitle.bold())
@@ -109,6 +109,7 @@ struct ContentView: View {
                             ))
                             .tint(.green)
                             statusRow("Spotify", spotify.status)
+                            statusRow("Reproductor", spotify.playbackAvailability)
                             statusRow("Última canción", spotify.lastSong)
                             statusRow("Última orden", spotify.lastAction)
                             statusRow("Pantalla del reloj", watch.musicSyncStatus)
@@ -120,6 +121,11 @@ struct ContentView: View {
                                     Task { await spotify.refreshPlaybackInfo(force: true) }
                                 }.buttonStyle(.bordered)
                             }
+                            Button("Probar pantalla sin música") {
+                                spotify.testNoMusicScreen()
+                            }.buttonStyle(.bordered)
+                            Text("Prueba del paquete Motorola de reposo: si el reloj no vuelve a «No se está reproduciendo música», copiá el registro. El formato todavía es experimental. Una pausa normal no lo activa.")
+                                .font(.caption).foregroundStyle(.orange)
                             Text("Título + artista y estado Play/Pausa: 08 02 al cambiar canción, vacío al reproducir, 08 01 al pausar. Refresco automático solo con la app visible; cuando está bloqueada, se actualiza al recibir botones.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)

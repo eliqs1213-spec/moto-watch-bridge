@@ -82,6 +82,20 @@ enum WatchMusicProtocol {
         return Data(prefix + [UInt8(checksum & 0xFF), UInt8(checksum >> 8)])
     }
 
+    // Variante EXPERIMENTAL: informa un objeto musical vacío. Aún no está
+    // comprobado que el firmware Moto Watch Fit vuelva a su pantalla
+    // «No se está reproduciendo música». Se registra la escritura BLE.
+    static func encodeNoMusic() -> Data {
+        let payload: [UInt8] = dataField(1, []) + dataField(2, [])
+            + dataField(3, []) + dataField(4, [])
+        let body: [UInt8] = [0x24, 0x01] + payload
+        let length = body.count + 2
+        let prefix: [UInt8] = [0xAA, UInt8(length & 0xFF),
+                               UInt8((length >> 8) & 0xFF), 0x00] + body
+        let checksum = crc16Xmodem(prefix)
+        return Data(prefix + [UInt8(checksum & 0xFF), UInt8(checksum >> 8)])
+    }
+
     private static func crc16Xmodem(_ bytes: [UInt8]) -> UInt16 {
         var crc: UInt16 = 0
         for byte in bytes {

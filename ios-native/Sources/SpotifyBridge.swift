@@ -106,6 +106,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     @Published private(set) var lastSong: String = "Sin canción"
     @Published private(set) var lastAction: String = "Esperando comandos"
     @Published var controlEnabled: Bool = UserDefaults.standard.bool(forKey: "motowatch.spotify.enabled")
+    @Published private(set) var playbackAvailability = "Sin comprobar"
 
     private var authentication: ASWebAuthenticationSession?
     private var oauthVerifier = ""
@@ -113,6 +114,10 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var lastDeviceID: String?
     private var lastIsPlaying: Bool?
     private var lastMusicSnapshot: WatchMusicSnapshot?
+    private var unavailableChecks = 0
+    private var idleModeRequested = false
+    private let inactiveThreshold = 3
+    private var manualIdlePreviewUntil: Date?
     private var requestBusy = false
     private var lastCommandTimes: [String: Date] = [:]
     private let scopes = "user-read-playback-state user-modify-playback-state"
@@ -126,6 +131,12 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     func setEnabled(_ enabled: Bool) {
         controlEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "motowatch.spotify.enabled")
+        if !enabled {
+            sendIdle(reason: "Controles Spotify desactivados")
+            playbackAvailability = "Controles desactivados"
+        } else {
+            Task { await refreshPlaybackInfo(force: true) }
+        }
     }
 
     func authorize() {
@@ -166,6 +177,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                                                                   "redirect_uri": Self.redirect, "client_id": id,
                                                                   "code_verifier": self.oauthVerifier], priorRefreshToken: nil)
                         self.status = "Spotify autorizado"
+                        self.unavailableChecks = 0
+                        self.playbackAvailability = "Spotify autorizado · comprobando"
                         self.record("Spotify autorizado; token vigente hasta \(Date(timeIntervalSince1970: token.expiresAt))")
                         await self.refreshPlaybackInfo()
                     } catch { self.failure(error) }
@@ -182,28 +195,106 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         SecureTokenStorage.clear()
         lastDeviceID = nil
         lastIsPlaying = nil
-        setEnabled(false)
+        lastMusicSnapshot = nil
+        unavailableChecks = 0
+        // La desconexión voluntaria debe limpiar el panel aunque no haya
+        // una respuesta de Spotify o el iPhone esté sin conexión a internet.
+        controlEnabled = false
+        UserDefaults.standard.set(false, forKey: "motowatch.spotify.enabled")
+        sendIdle(reason: "Spotify desvinculado manualmente", force: true)
+        playbackAvailability = "Spotify desvinculado"
+        lastSong = "Sin canción"
         status = "Sin autorizar"
         record("Spotify desvinculado")
     }
 
+    // Botón diagnóstico: permite probar el comportamiento del firmware
+    // sin necesitar cerrar Spotify de verdad. No modifica el token ni el player.
+    func testNoMusicScreen() {
+        manualIdlePreviewUntil = Date().addingTimeInterval(20)
+        sendIdle(reason: "Prueba manual de pantalla sin música", force: true)
+        playbackAvailability = "Prueba: mensaje de reposo enviado"
+    }
+
+    private func sendIdle(reason: String, force: Bool = false) {
+        if idleModeRequested && !force { return }
+        idleModeRequested = true
+        WatchBLEManager.shared.sendNoMusic(reason: reason, force: force)
+        record("Modo sin música solicitado: \(reason) (no confirmado por firmware)")
+    }
+
+    private func markAvailable(_ playback: SpotifyPlayback, force: Bool = false) {
+        unavailableChecks = 0
+        let wasIdle = idleModeRequested
+        idleModeRequested = false
+        updateCachedPlayback(playback)
+        if playback.item != nil {
+            playbackAvailability = playback.is_playing ? "Reproduciendo" : "Pausado"
+        } else {
+            playbackAvailability = "Dispositivo disponible, sin canción identificada"
+        }
+        status = playback.is_playing ? "Spotify reproduciendo" : "Spotify pausado"
+        if let snapshot = lastMusicSnapshot, playback.item != nil {
+            WatchBLEManager.shared.sendMusic(snapshot, force: wasIdle || force)
+        }
+    }
+
+    private func markNoActivePlayer() {
+        // Spotify puede devolver HTTP 204 cuando el iPhone lleva un rato en
+        // pausa. Si conocemos una pausa previa, no inventar desconexión.
+        if lastIsPlaying == false && lastMusicSnapshot != nil {
+            playbackAvailability = "Pausado (Spotify sin datos recientes)"
+            unavailableChecks = 0
+            return
+        }
+        unavailableChecks += 1
+        if unavailableChecks < inactiveThreshold {
+            playbackAvailability = "Sin reproductor: \(unavailableChecks)/\(inactiveThreshold)"
+            record("Spotify sin reproductor: comprobación \(unavailableChecks)/\(inactiveThreshold)")
+        } else {
+            playbackAvailability = "No se está reproduciendo música"
+            status = "Spotify sin reproductor activo"
+            sendIdle(reason: "Spotify confirmó ausencia de reproductor en \(inactiveThreshold) consultas")
+        }
+    }
+
     func refreshPlaybackInfo(force: Bool = false) async {
-        // Consultas iniciadas por la interfaz, por eventos BLE o al reanudar la app.
-        // La encuesta periódica se hace SOLO con la app visible.
-        guard SecureTokenStorage.load() != nil else { return }
+        if !force, let until = manualIdlePreviewUntil, Date() < until { return }
+        if force { manualIdlePreviewUntil = nil }
+        // iOS permite consultas periódicas solo cuando la app está visible.
+        // No considerar una pausa (dispositivo disponible e is_playing=false)
+        // como desconexión. Spotify puede devolver HTTP 204 temporalmente.
+        guard SecureTokenStorage.load() != nil else {
+            playbackAvailability = "Spotify sin autorizar"
+            return
+        }
         do {
             if let playback = try await fetchPlayback() {
-                updateCachedPlayback(playback)
-                status = playback.is_playing ? "Spotify reproduciendo" : "Spotify pausado"
-                if let snapshot = lastMusicSnapshot {
-                    WatchBLEManager.shared.sendMusic(snapshot, force: force)
+                if playback.device != nil || (playback.item != nil && playback.is_playing) {
+                    markAvailable(playback, force: force)
+                } else {
+                    markNoActivePlayer()
                 }
             } else {
-                status = "Spotify no informó dispositivo (conservamos último dato)"
-                // La API puede devolver cuerpo vacío tras una pausa. No adivinar
-                // un nuevo estado ni enviar datos viejos como si fueran nuevos.
+                markNoActivePlayer()
             }
-        } catch { failure(error) }
+        } catch {
+            // No ocultar la música por fallos temporales de red o HTTP 429.
+            playbackAvailability = "Consulta fallida; estado conservado"
+            if let spotifyError = error as? SpotifyBridgeError,
+               case let .response(code, body) = spotifyError {
+                if code == 401 || (code == 400 && body.contains("invalid_grant")) {
+                    playbackAvailability = "Spotify rechazó la autorización"
+                    sendIdle(reason: "Sesión Spotify inválida")
+                } else if code == 404 && body.contains("NO_ACTIVE_DEVICE") {
+                    // Spotify confirma explícitamente que no existe dispositivo activo.
+                    unavailableChecks = inactiveThreshold
+                    playbackAvailability = "No se está reproduciendo música"
+                    sendIdle(reason: "Spotify confirmó NO_ACTIVE_DEVICE")
+                }
+            }
+            failure(error)
+        }
     }
 
     func receive(_ command: WatchCommand) {
@@ -235,7 +326,16 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             }
             do {
                 try await self.run(command)
-            } catch { self.failure(error) }
+            } catch {
+                if let spotifyError = error as? SpotifyBridgeError,
+                   case let .response(code, body) = spotifyError,
+                   code == 404 && body.contains("NO_ACTIVE_DEVICE") {
+                    self.unavailableChecks = self.inactiveThreshold
+                    self.playbackAvailability = "No se está reproduciendo música"
+                    self.sendIdle(reason: "Spotify rechazó comando: NO_ACTIVE_DEVICE")
+                }
+                self.failure(error)
+            }
         }
     }
 

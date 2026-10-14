@@ -379,6 +379,25 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         flushMusicQueue()
     }
 
+    // Spotify no disponible o desvinculado: intentar limpiar los datos musicales
+    // manteniendo la conexión BLE para batería, botones y Buscar iPhone.
+    // El efecto en la pantalla depende del firmware y se valida en el reloj real.
+    func sendNoMusic(reason: String, force: Bool = false) {
+        guard isConnected, writeCharacteristic != nil, peripheral != nil else {
+            musicSyncStatus = "Sin música (pendiente de conexión Bluetooth)"
+            record("MUSICA", "No se pudo avisar estado inactivo: Bluetooth no conectado")
+            return
+        }
+        if !force && lastMusicSignature == "NO_MUSIC" { return }
+        musicQueue.removeAll()
+        musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encodeNoMusic(), delayAfter: 0))
+        lastMusicSignature = "NO_MUSIC"
+        lastMusicSentAt = Date()
+        musicSyncStatus = "Sin música · señal enviada (pantalla no confirmada)"
+        record("MUSICA", "Estado sin música enviado: \(reason) | paquete experimental 24/01")
+        flushMusicQueue()
+    }
+
     private func flushMusicQueue() {
         guard !musicInProgress, !musicQueue.isEmpty,
               let peripheral = peripheral, let tx = writeCharacteristic else { return }
