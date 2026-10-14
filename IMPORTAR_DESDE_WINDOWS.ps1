@@ -1,0 +1,29 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$RutaRepositorio
+)
+$ErrorActionPreference = 'Stop'
+$base = Split-Path -Parent $MyInvocation.MyCommand.Path
+$destino = (Resolve-Path $RutaRepositorio).Path
+if (-not (Test-Path (Join-Path $destino '.git'))) {
+    throw "La carpeta indicada no parece ser un repositorio Git: $destino"
+}
+$paths = @(
+    '.github/workflows/build-ios-native.yml',
+    'ios-native/project.yml',
+    'ios-native/.gitignore',
+    'ios-native/Sources/MotoWatchBridgeApp.swift',
+    'ios-native/Sources/WatchBLEManager.swift',
+    'ios-native/Sources/WatchProtocol.swift'
+)
+foreach ($rel in $paths) {
+    $source = Join-Path $base $rel
+    $target = Join-Path $destino $rel
+    New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force | Out-Null
+    Copy-Item $source $target -Force
+}
+Write-Host 'Archivos copiados. No se modifico index.html.' -ForegroundColor Green
+Write-Host "Ejecuta estos comandos dentro de $destino" -ForegroundColor Yellow
+Write-Host 'git add .github/workflows/build-ios-native.yml ios-native'
+Write-Host 'git commit -m "Primera app nativa Moto Watch Fit"'
+Write-Host 'git push'
