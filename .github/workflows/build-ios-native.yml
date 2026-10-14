@@ -18,6 +18,11 @@ jobs:
       - name: Obtener código
         uses: actions/checkout@v4
 
+      - name: Verificar protocolo de salud con datos sintéticos
+        run: |
+          cat ios-native/Sources/WatchHealthProtocol.swift ios-native/Tests/ProtocolChecks.swift > "$RUNNER_TEMP/health-checks.swift"
+          swift "$RUNNER_TEMP/health-checks.swift"
+
       - name: Configurar Xcode y generar proyecto
         run: |
           xcodebuild -version

@@ -7,7 +7,7 @@ enum HealthMetric: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .steps: return "Pasos"
-        case .heartRate: return "Frecuencia cardíaca"
+        case .heartRate: return "Ritmo cardíaco"
         case .sleep: return "Sueño"
         case .stress: return "Estrés"
         case .workouts: return "Entrenamientos"
@@ -51,6 +51,9 @@ struct WatchHealthDay: Codable, Identifiable {
     var workouts: [WatchWorkout]
     var workoutsComplete: Bool
     let syncedAt: Date
+    var stepsExperimental: Bool? = nil
+    var heartRateExperimental: Bool? = nil
+    var stepsMeasuredAt: Date? = nil
     var id: String { "\(watchID)|\(dayKey)" }
 
     func value(for metric: HealthMetric) -> Double? {
@@ -107,6 +110,55 @@ final class WatchHealthStore: ObservableObject {
         }
     }
 
+    // Solo lecturas experimentales solicitadas y guardadas por el usuario.
+    // Fusiona muestras por fecha/ID, conserva sueño, estrés y entrenamientos.
+    func mergeExperimental(watchID: String, steps: WatchHealthProtocol.StepCandidate?,
+                           pulse: [WatchHealthProtocol.PulseCandidate]) throws {
+        var updated = days
+        let keys = Set(pulse.map { Self.key($0.timestamp) } + (steps.map { [Self.key($0.timestamp)] } ?? []))
+        for key in keys {
+            let previous = updated.first { $0.watchID == watchID && $0.dayKey == key }
+            var day = WatchHealthDay(watchID: watchID, dayKey: key,
+                steps: previous?.steps, sleepMinutes: previous?.sleepMinutes,
+                heartRate: previous?.heartRate ?? [], stress: previous?.stress ?? [],
+                workouts: previous?.workouts ?? [], workoutsComplete: previous?.workoutsComplete ?? false,
+                syncedAt: Date())
+            day.stepsExperimental = previous?.stepsExperimental
+            day.heartRateExperimental = previous?.heartRateExperimental
+            day.stepsMeasuredAt = previous?.stepsMeasuredAt
+            if let steps = steps, Self.key(steps.timestamp) == key,
+               steps.timestamp >= (previous?.stepsMeasuredAt ?? .distantPast),
+               previous?.steps == nil || previous?.stepsExperimental == true {
+                day.steps = steps.count
+                day.stepsMeasuredAt = steps.timestamp
+                day.stepsExperimental = true
+            }
+            let samples = pulse.filter { Self.key($0.timestamp) == key }
+            if !samples.isEmpty {
+                var indexed = Dictionary(day.heartRate.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+                for sample in samples {
+                    let id = "31/07:\(Int(sample.timestamp.timeIntervalSince1970))"
+                    indexed[id] = WatchHealthReading(id: id, timestamp: sample.timestamp, value: Double(sample.bpm))
+                }
+                day.heartRate = indexed.values.sorted { $0.timestamp < $1.timestamp }
+                day.heartRateExperimental = true
+            }
+            updated.removeAll { $0.id == day.id }
+            updated.append(day)
+        }
+        updated.sort { $0.dayKey < $1.dayKey }
+        do {
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(updated).write(to: fileURL,
+                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            days = updated
+            storageError = nil
+        } catch {
+            storageError = "No se pudo guardar el histórico en este iPhone."
+            throw error
+        }
+    }
+
     var watchIDs: [String] { Array(Set(days.map(\.watchID))).sorted() }
     func day(_ date: Date, watchID: String) -> WatchHealthDay? {
         days.first { $0.watchID == watchID && $0.dayKey == Self.key(date) }
@@ -119,3 +171,4 @@ final class WatchHealthStore: ObservableObject {
         return formatter.string(from: date)
     }
 }
+
