@@ -269,33 +269,31 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         sendIdle(reason: "Ausencia de reproductor durante al menos 30 segundos")
     }
 
-    // Sincronizar sin depender de Spotify Web API: si tenemos metadatos recientes,
-    // repetir el anuncio de canción nueva 08/02, incluso siendo la misma pista.
+    // Consultar el reproductor ACTUAL antes de reenviar el título anterior.
+    // El cache puede representar una canción vieja tras una desconexión.
     func forceWatchMusicRecovery() {
-        if let snapshot = lastMusicSnapshot, !idleModeRequested,
-           playerUnavailableSince == nil, WatchBLEManager.shared.isConnected {
-            WatchBLEManager.shared.sendMusic(snapshot, force: true, reannounce: true)
-            record("Recuperación local de metadatos solicitada")
-        }
+        guard controlEnabled else { return }
         if SpotifyAppRemoteBridge.shared.isConnected {
             SpotifyAppRemoteBridge.shared.requestCurrentPlayerState()
-        } else {
-            Task { await refreshPlaybackInfo(force: true) }
         }
+        Task { await refreshPlaybackInfo(force: true) }
+        record("Recuperación musical: consultando reproductor actual antes del reanuncio")
     }
 
     func recoverAfterWatchReady() async {
         guard controlEnabled, !recoveryInProgress else { return }
         recoveryInProgress = true
         defer { recoveryInProgress = false }
-        // Primer envío: reanuncio desde cache; no depende de red.
-        if lastMusicSnapshot != nil && !idleModeRequested && playerUnavailableSince == nil {
-            forceWatchMusicRecovery()
-        } else if SpotifyAppRemoteBridge.shared.isConnected {
+        // NO transmitir la canción antigua desde lastMusicSnapshot a ciegas:
+        // Spotify pudo seguir reproduciendo y cambiar de pista sin que iOS nos
+        // permitiera consultar la Web API durante la desconexión.
+        record("Reloj reconectado: verificando canción actual de Spotify")
+        if SpotifyAppRemoteBridge.shared.isConnected {
             SpotifyAppRemoteBridge.shared.requestCurrentPlayerState()
-        } else {
-            await refreshPlaybackInfo(force: true)
         }
+        // Forzar consulta incluso cuando el SDK está conectado: la Web API es
+        // respaldo y un resultado válido reanuncia 08/02 para esta nueva sesión.
+        await refreshPlaybackInfo(force: true)
     }
 
     // Recibe eventos de App Remote sólo en primer plano. Al bloquear el iPhone
@@ -357,8 +355,14 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                     // Un identificador viejo no debe conservarse. Verificar de nuevo
                     // sin convertir una caída de red en desconexión.
                     lastDeviceID = nil
-                    markNoActivePlayer(reason: "Spotify HTTP 404 / dispositivo no disponible")
-                    lastAction = "Dispositivo antiguo no disponible; esperando reproductor activo"
+                    // El 404 de la Web API no es prueba de que Spotify haya
+                    // detenido el audio en el iPhone (comprobado en pruebas).
+                    // No iniciar cuenta atrás de 30 s para borrar la canción.
+                    playerUnavailableSince = nil
+                    unavailableChecks = 0
+                    playbackAvailability = "Spotify 404 temporal · conservando música"
+                    lastAction = "Web API sin dispositivo; esperando nuevo estado válido"
+                    record("Spotify: HTTP 404 al consultar; no se borra la música")
                     return
                 }
             }
@@ -401,8 +405,12 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                    code == 404 && (body.contains("NO_ACTIVE_DEVICE") ||
                                    body.localizedCaseInsensitiveContains("device not found")) {
                     self.lastDeviceID = nil
-                    self.markNoActivePlayer(reason: "Spotify rechazó comando por dispositivo ausente")
-                    self.lastAction = "Dispositivo anterior ya no existe; comprobando Spotify"
+                    // Un 404 al mandar un comando NO prueba que la música paró:
+                    // el audio puede seguir sonando en el iPhone. No activar
+                    // modo sin música hasta confirmar el reproductor por GET.
+                    self.playbackAvailability = "Comando 404 · comprobando reproductor"
+                    self.lastAction = "Control Spotify no disponible; consultando estado"
+                    self.record("Spotify: HTTP 404 en comando; música no descartada")
                     await self.refreshPlaybackInfo(force: true)
                     return
                 }
