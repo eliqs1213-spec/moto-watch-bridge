@@ -4,11 +4,13 @@ enum WatchCommand: String {
     case next = "SIGUIENTE"
     case previous = "ANTERIOR"
     case toggle = "PLAY / PAUSA"
+    case findStart = "BUSCAR IPHONE: INICIAR"
+    case findStop = "BUSCAR IPHONE: DETENER"
     case unknown = "OTRO"
 }
 
 enum MotoProtocol {
-    // Capturados y contrastados con el Moto Watch Fit real.
+    // Tráfico real Moto Watch Fit, comparado con captura Motorola Edge.
     static let service = "FC9DF9F0-4899-11EE-BE56-0242AC120002"
     static let notifications = "FC9DF8F0-4899-11EE-BE56-0242AC120002"
     static let writes = "FC9DF8F1-4899-11EE-BE56-0242AC120002"
@@ -31,7 +33,14 @@ enum MotoProtocol {
         guard length + 4 == bytes.count else { return nil }
         let expected = UInt16(bytes[bytes.count - 2]) | (UInt16(bytes[bytes.count - 1]) << 8)
         guard crc16Xmodem(bytes.dropLast(2)) == expected else { return nil }
-        guard bytes[4] == 0x24, bytes[5] == 0x07 else { return .unknown }
+
+        // 0x11 0x06: comandos de Buscar teléfono, identificados con dos pruebas reales.
+        if bytes[4] == 0x11, bytes[5] == 0x06 {
+            if bytes.count == 10 && bytes[6] == 0x08 && bytes[7] == 0x01 { return .findStart }
+            if bytes.count == 8 { return .findStop }
+            return .unknown
+        }
+        guard bytes[4] == 0x24 && bytes[5] == 0x07 else { return .unknown }
         if bytes.count == 10 && bytes[6] == 0x08 {
             if bytes[7] == 0x02 { return .next }
             if bytes[7] == 0x01 { return .previous }

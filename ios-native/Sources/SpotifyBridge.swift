@@ -55,8 +55,17 @@ private struct SpotifyPlayback: Decodable {
         let id: String?
         let name: String?
     }
-    struct Song: Decodable { let name: String }
+    struct Artist: Decodable { let name: String }
+    struct Album: Decodable { let name: String }
+    struct Song: Decodable {
+        let id: String?
+        let name: String
+        let duration_ms: Int?
+        let artists: [Artist]?
+        let album: Album?
+    }
     let is_playing: Bool
+    let progress_ms: Int?
     let device: Device?
     let item: Song?
 }
@@ -103,6 +112,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var oauthState = ""
     private var lastDeviceID: String?
     private var lastIsPlaying: Bool?
+    private var lastMusicSnapshot: WatchMusicSnapshot?
     private var requestBusy = false
     private var lastCommandTimes: [String: Date] = [:]
     private let scopes = "user-read-playback-state user-modify-playback-state"
@@ -177,19 +187,30 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         record("Spotify desvinculado")
     }
 
-    func refreshPlaybackInfo() async {
+    func refreshPlaybackInfo(force: Bool = false) async {
+        // Consultas iniciadas por la interfaz, por eventos BLE o al reanudar la app.
+        // La encuesta periódica se hace SOLO con la app visible.
+        guard SecureTokenStorage.load() != nil else { return }
         do {
             if let playback = try await fetchPlayback() {
                 updateCachedPlayback(playback)
                 status = playback.is_playing ? "Spotify reproduciendo" : "Spotify pausado"
+                if let snapshot = lastMusicSnapshot {
+                    WatchBLEManager.shared.sendMusic(snapshot, force: force)
+                }
             } else {
-                status = "Sin reproductor activo informado"
+                status = "Spotify no informó dispositivo (conservamos último dato)"
+                // La API puede devolver cuerpo vacío tras una pausa. No adivinar
+                // un nuevo estado ni enviar datos viejos como si fueran nuevos.
             }
         } catch { failure(error) }
     }
 
     func receive(_ command: WatchCommand) {
-        guard command != .unknown else { return }
+        switch command {
+        case .next, .previous, .toggle: break
+        case .findStart, .findStop, .unknown: return
+        }
         guard controlEnabled else { record("Spotify deshabilitado; comando sin ejecutar"); return }
         let now = Date()
         let key = command.rawValue
@@ -230,18 +251,27 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             }
             if lastIsPlaying == nil { throw SpotifyBridgeError.emptyPlayer }
             action = lastIsPlaying! ? "pause" : "play"
-        case .unknown: return
+        case .findStart, .findStop, .unknown: return
         }
         devicePath = lastDeviceID.map { "?device_id=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)" } ?? ""
         let method = (action == "next" || action == "previous") ? "POST" : "PUT"
         _ = try await api("/me/player/\(action)\(devicePath)", method: method)
         if action == "play" { lastIsPlaying = true }
         if action == "pause" { lastIsPlaying = false }
+        if action == "play" || action == "pause", var snapshot = lastMusicSnapshot {
+            snapshot.isPlaying = action == "play"
+            lastMusicSnapshot = snapshot
+            // Actualización inmediata del icono, sin esperar respuesta de Spotify.
+            WatchBLEManager.shared.sendMusic(snapshot)
+        }
         lastAction = "Enviado: \(action.uppercased())"
         record("[SPOTIFY] \(action.uppercased()) enviado")
-        // No mantener una encuesta periódica: iOS limita la ejecución en segundo plano.
-        if UIApplication.shared.applicationState == .active {
-            try? await Task.sleep(nanoseconds: 800_000_000)
+        // Tras NEXT/PREVIOUS Spotify tarda en informar título nuevo. Consultar
+        // nuevamente mientras el evento Bluetooth mantenga despierta la app.
+        try? await Task.sleep(nanoseconds: 850_000_000)
+        await refreshPlaybackInfo()
+        if UIApplication.shared.applicationState == .active && (action == "next" || action == "previous") {
+            try? await Task.sleep(nanoseconds: 1_300_000_000)
             await refreshPlaybackInfo()
         }
     }
@@ -249,7 +279,22 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private func updateCachedPlayback(_ playback: SpotifyPlayback) {
         if let id = playback.device?.id { lastDeviceID = id }
         lastIsPlaying = playback.is_playing
-        if let name = playback.item?.name { lastSong = name }
+        if let song = playback.item {
+            lastSong = song.name
+            let artists = (song.artists ?? []).map { $0.name }.joined(separator: ", ")
+            lastMusicSnapshot = WatchMusicSnapshot(
+                id: song.id ?? song.name,
+                title: song.name,
+                artist: artists.isEmpty ? "Spotify" : artists,
+                album: song.album?.name ?? "Spotify",
+                durationMs: song.duration_ms ?? 0,
+                progressMs: playback.progress_ms ?? 0,
+                isPlaying: playback.is_playing
+            )
+        } else if var snapshot = lastMusicSnapshot {
+            snapshot.isPlaying = playback.is_playing
+            lastMusicSnapshot = snapshot
+        }
     }
 
     private func fetchPlayback() async throws -> SpotifyPlayback? {

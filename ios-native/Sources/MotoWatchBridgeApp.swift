@@ -7,6 +7,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         // Instanciar CoreBluetooth temprano es esencial para la restauración de estado.
         _ = WatchBLEManager.shared
         _ = SpotifyBridge.shared
+        _ = PhoneFinder.shared
         return true
     }
 
@@ -28,6 +29,7 @@ struct MotoWatchBridgeApp: App {
             ContentView()
                 .environmentObject(WatchBLEManager.shared)
                 .environmentObject(SpotifyBridge.shared)
+                .environmentObject(PhoneFinder.shared)
         }
     }
 }
@@ -35,17 +37,19 @@ struct MotoWatchBridgeApp: App {
 struct ContentView: View {
     @EnvironmentObject private var watch: WatchBLEManager
     @EnvironmentObject private var spotify: SpotifyBridge
+    @EnvironmentObject private var finder: PhoneFinder
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("PRUEBA NATIVA · ETAPA 2")
+                        Text("PROTOTIPO NATIVO · ETAPA 3")
                             .font(.caption.bold()).foregroundStyle(.cyan)
                         Text("Moto Watch Bridge")
                             .font(.largeTitle.bold())
-                        Text("Bluetooth + Spotify desde el iPhone. Vamos a probar el cambio de canción también con la pantalla bloqueada.")
+                        Text("Spotify, batería y Encuentra mi teléfono. Los títulos y el estado se envían al reloj; su pantalla puede tardar en refrescarse.")
                             .foregroundStyle(.secondary)
                     }
 
@@ -64,6 +68,18 @@ struct ContentView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    GroupBox("Batería del reloj") {
+                        VStack(alignment: .leading, spacing: 9) {
+                            Text(watch.batteryPercentage.map { "\($0)%" } ?? "—")
+                                .font(.largeTitle.bold()).monospacedDigit()
+                            Text(watch.batteryStatus).foregroundStyle(.secondary)
+                            Button("Consultar batería") { watch.refreshBattery() }
+                                .buttonStyle(.bordered)
+                            Text("Lee el servicio Bluetooth estándar 180F / 2A19. Si el Moto Watch Fit no lo expone, no se puede conocer su porcentaje todavía.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     GroupBox("Spotify Premium") {
@@ -91,10 +107,31 @@ struct ContentView: View {
                             statusRow("Spotify", spotify.status)
                             statusRow("Última canción", spotify.lastSong)
                             statusRow("Última orden", spotify.lastAction)
-                            Button("Consultar estado actual") {
-                                Task { await spotify.refreshPlaybackInfo() }
-                            }.buttonStyle(.bordered)
-                            Text("Para esta primera prueba Spotify debe estar reproduciendo previamente en el iPhone. Con pantalla bloqueada, cada orden podría fallar o demorarse por los límites de iOS y Spotify.")
+                            statusRow("Pantalla del reloj", watch.musicSyncStatus)
+                            HStack {
+                                Button("Consultar Spotify") {
+                                    Task { await spotify.refreshPlaybackInfo() }
+                                }.buttonStyle(.bordered)
+                                Button("Forzar metadatos") {
+                                    Task { await spotify.refreshPlaybackInfo(force: true) }
+                                }.buttonStyle(.bordered)
+                            }
+                            Text("Título + artista y estado Play/Pausa: 08 02 al cambiar canción, vacío al reproducir, 08 01 al pausar. Refresco automático solo con la app visible; cuando está bloqueada, se actualiza al recibir botones.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    GroupBox("Encuentra mi teléfono") {
+                        VStack(alignment: .leading, spacing: 9) {
+                            Text(finder.status).foregroundStyle(.secondary)
+                            statusRow("Búsqueda", finder.searching ? "Solicitada por el reloj" : "Detenida")
+                            HStack {
+                                Button("Permitir avisos") { finder.requestPermission() }
+                                    .buttonStyle(.borderedProminent)
+                                Button("Probar sonido") { finder.test() }
+                                    .buttonStyle(.bordered)
+                            }
+                            Text("Desde el reloj: Encontrar teléfono. La app intenta emitir una notificación local con sonido incluso con el iPhone bloqueado. Silencio/Concentración pueden impedirlo; Detener no corta un sonido ya emitido.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -114,7 +151,7 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("1. Conectá el reloj y esperá «Escuchando los botones».\n2. Bloqueá el iPhone durante 60 segundos.\n3. Pulsá Siguiente, Anterior y Play/Pausa, espaciados 5 segundos.\n4. Desbloqueá y revisá el registro con las horas.")
                                 .font(.subheadline)
-                            Text("No cierres la aplicación desde el selector de apps. Esta versión controla Spotify de forma experimental. No actualiza todavía metadatos en la pantalla del reloj.")
+                            Text("No cierres la app desde el selector de apps. Spotify y los metadatos en segundo plano dependen de los límites de iOS. La alarma usa notificaciones y requiere permiso.")
                                 .font(.caption).foregroundStyle(.orange)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -141,13 +178,29 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    Text("Prototipo no oficial. No lee notificaciones privadas; Spotify usa PKCE y guarda tokens en el llavero del iPhone.")
+                    Text("Prototipo no oficial. El porcentaje de batería solo está disponible si el reloj expone el servicio 180F. No se incorpora automáticamente al widget Baterías de Apple.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .padding()
             }
             .navigationTitle("Moto Watch")
             .navigationBarTitleDisplayMode(.inline)
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                finder.updateAuthorizationStatus()
+                watch.refreshBattery()
+                if spotify.controlEnabled { Task { await spotify.refreshPlaybackInfo() } }
+            }
+        }
+        .task {
+            // No afirmar que hay encuesta continua con el iPhone bloqueado.
+            while !Task.isCancelled {
+                if UIApplication.shared.applicationState == .active && watch.isConnected && spotify.controlEnabled {
+                    await spotify.refreshPlaybackInfo()
+                }
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+            }
         }
     }
 
