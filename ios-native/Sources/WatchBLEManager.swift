@@ -2,6 +2,7 @@ import Foundation
 import CoreBluetooth
 import Combine
 import UIKit
+import WidgetKit
 
 struct WatchLogEntry: Codable, Identifiable {
     let id: UUID
@@ -29,15 +30,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private let serviceUUID = CBUUID(string: MotoProtocol.service)
     private let notifyUUID = CBUUID(string: MotoProtocol.notifications)
     private let txUUID = CBUUID(string: MotoProtocol.writes)
-    private let batteryServiceUUID = CBUUID(string: "180F")
-    private let batteryLevelUUID = CBUUID(string: "2A19")
     private let storedPeripheralKey = "motowatch.last.peripheral.uuid"
     private let logStorageKey = "motowatch.debug.log.v1"
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
     private var notifyCharacteristic: CBCharacteristic?
     private var writeCharacteristic: CBCharacteristic?
-    private var batteryCharacteristic: CBCharacteristic?
     private struct PendingMusicWrite { let packet: Data; let delayAfter: TimeInterval }
     private var musicQueue: [PendingMusicWrite] = []
     private var musicInProgress = false
@@ -132,7 +130,6 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         notifyCharacteristic = nil
         writeCharacteristic = nil
-        batteryCharacteristic = nil
         musicQueue.removeAll()
         musicInProgress = false
         lastMusicSignature = nil
@@ -223,7 +220,6 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         isConnected = false
         notifyCharacteristic = nil
         writeCharacteristic = nil
-        batteryCharacteristic = nil
         musicQueue.removeAll()
         musicInProgress = false
         lastMusicSignature = nil
@@ -249,30 +245,13 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         } else {
             record("ERROR", "Servicio Motorola F9F0 no encontrado")
         }
-        if let battery = services.first(where: { $0.uuid == batteryServiceUUID }) {
-            batteryStatus = "Servicio de batería encontrado"
-            peripheral.discoverCharacteristics([batteryLevelUUID], for: battery)
-        } else {
-            batteryStatus = "No disponible (el reloj no expone 180F)"
-            record("BATERIA", "Servicio estándar 180F no encontrado; no se inventa porcentaje")
-        }
+        batteryStatus = "Batería Motorola: protocolo 10/01"
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
                     error: Error?) {
         if let error = error {
             record("ERROR", "Características: \(error.localizedDescription)")
-            return
-        }
-        if service.uuid == batteryServiceUUID {
-            guard let level = service.characteristics?.first(where: { $0.uuid == batteryLevelUUID }) else {
-                batteryStatus = "El servicio 180F no contiene 2A19"
-                return
-            }
-            batteryCharacteristic = level
-            batteryStatus = "Leyendo batería"
-            if level.properties.contains(.read) { peripheral.readValue(for: level) }
-            if level.properties.contains(.notify) { peripheral.setNotifyValue(true, for: level) }
             return
         }
         guard service.uuid == serviceUUID else { return }
@@ -311,16 +290,6 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             record("ERROR", "Lectura BLE: \(error.localizedDescription)")
             return
         }
-        if characteristic.uuid == batteryLevelUUID {
-            if let raw = characteristic.value?.first, raw <= 100 {
-                batteryPercentage = Int(raw)
-                batteryStatus = "\(raw)% leído del reloj"
-                record("BATERIA", "Nivel estándar 2A19: \(raw)%")
-            } else {
-                batteryStatus = "Lectura de batería inválida"
-            }
-            return
-        }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
         // Respuesta Motorola 10/01 observada en el registro Android.
         // Protobuf: 08 <porcentaje>; el reloj mostró 59 en una captura antigua.
@@ -336,8 +305,14 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             }
             let percentage = Int(bytes[7])
             batteryPercentage = percentage
-            batteryStatus = "\(percentage)% (protocolo Motorola, experimental)"
+            batteryStatus = "\(percentage)% (Motorola 10/01)"
+            let widgetSaved = BatteryWidgetStore.save(percentage: percentage)
             record("BATERIA", "Respuesta 10/01: \(percentage)%, trama \(MotoProtocol.hex(data))")
+            if widgetSaved {
+                WidgetCenter.shared.reloadTimelines(ofKind: BatteryWidgetStore.widgetKind)
+            } else {
+                record("WIDGET", "App Group no disponible con esta firma; el porcentaje sigue visible en iWatch")
+            }
             return
         }
         guard let command = MotoProtocol.decode(data) else {
@@ -363,11 +338,6 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     }
 
     func refreshBattery() {
-        if let peripheral = peripheral, let characteristic = batteryCharacteristic,
-           characteristic.properties.contains(.read) {
-            peripheral.readValue(for: characteristic)
-            return
-        }
         guard isConnected, peripheral != nil, let tx = writeCharacteristic,
               tx.properties.contains(.write) else {
             batteryStatus = "Sin conexión o F8F1 no admite escritura"

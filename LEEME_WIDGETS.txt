@@ -1,0 +1,26 @@
+iWatch — Etapa 5: widgets de batería, exclusivamente Motorola 10/01
+
+CAMBIOS
+- Se ha eliminado toda consulta/descubrimiento/lectura de servicio 180F y caracteristica 2A19.
+- El único porcentaje de batería aceptado se extrae de una respuesta Motorola 10/01 con CRC, longitud y rango 0-100 validados.
+- Se conserva la conexión BLE de fondo, Spotify y Encuentra mi teléfono de la Etapa 4.
+- Se añade extensión WidgetKit con formatos circular y rectangular para la pantalla bloqueada.
+- El widget muestra la última lectura válida y su hora (no un nivel en tiempo real).
+
+IMPORTANTE: APP GROUPS Y FIRMA
+Los widgets leen su valor desde el contenedor App Group group.org.motowatchbridge.shared.
+La aplicación y la extensión necesitan firmarse con el MISMO App Group autorizado en ambos perfiles de aprovisionamiento.
+La instalación de la extensión y/o el App Group puede fallar con la firma gratuita de Sideloadly.
+No se puede prometer que la extensión funcione o comparta datos con ese método de instalación.
+Si la app muestra "WidgetKit: sin App Group" el porcentaje seguirá funcionando DENTRO de iWatch,
+pero el widget quedará en «—» hasta solucionar la firma compartida.
+No es el widget Baterías de Apple: son widgets propios con WidgetKit.
+
+INSTALACIÓN
+1. Guarda el proyecto funcional de la Etapa 4 como respaldo.
+2. Arrastra la carpeta ios-native a tu GitHub, reemplazando archivos anteriores.
+3. Verifica que se suben ios-native/BatteryWidgets/BatteryWidgets.swift y ios-native/Shared/BatteryWidgetStore.swift.
+4. Espera el workflow de GitHub Actions y comprueba la compilación del archivo IPA.
+5. Si compila, prueba firmarlo con Sideloadly. Si falla por permisos App Group, conserva la Etapa 4.
+6. Abre iWatch y toca Consultar batería. En la pantalla bloqueada, mantén pulsado, Personalizar, Añadir widgets, iWatch.
+7. El dato de los widgets se actualiza con las nuevas lecturas 10/01, pero iOS decide cuándo refrescar la interfaz.

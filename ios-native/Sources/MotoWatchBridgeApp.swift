@@ -45,7 +45,7 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("PROTOTIPO NATIVO · ETAPA 4")
+                        Text("PROTOTIPO NATIVO · ETAPA 5")
                             .font(.caption.bold()).foregroundStyle(.cyan)
                         Text("Moto Watch Bridge")
                             .font(.largeTitle.bold())
@@ -77,7 +77,11 @@ struct ContentView: View {
                             Text(watch.batteryStatus).foregroundStyle(.secondary)
                             Button("Consultar batería") { watch.refreshBattery() }
                                 .buttonStyle(.bordered)
-                            Text("Consulta primero 180F / 2A19; si no existe, intenta el paquete Motorola 10/01. Su respuesta se valida y se registra antes de mostrar un porcentaje.")
+                            Text(BatteryWidgetStore.isAvailable
+                                 ? "WidgetKit: almacenamiento compartido disponible"
+                                 : "WidgetKit: sin App Group; podría necesitar otra firma")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text("Batería: exclusivamente protocolo Motorola 10/01. Solo se muestran respuestas con trama y checksum válidos.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -180,7 +184,7 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    Text("Prototipo no oficial. El porcentaje de batería solo está disponible si el reloj expone el servicio 180F. No se incorpora automáticamente al widget Baterías de Apple.")
+                    Text("iWatch usa solo batería Motorola 10/01. Los widgets propios requieren extensión firmada y App Groups autorizados; no aparecerá en el widget Baterías oficial de Apple.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .padding()
