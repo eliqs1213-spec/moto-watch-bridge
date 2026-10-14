@@ -1,0 +1,33 @@
+name: MotoWatchNativeProbe
+options:
+  bundleIdPrefix: org.motowatchbridge
+  deploymentTarget:
+    iOS: '16.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    TARGETED_DEVICE_FAMILY: '1'
+targets:
+  MotoWatchNativeProbe:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.motowatchbridge.nativeprobe
+        SWIFT_VERSION: '5.0'
+        TARGETED_DEVICE_FAMILY: '1'
+        CODE_SIGN_STYLE: Manual
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Moto Watch Bridge
+        CFBundleShortVersionString: '0.1.0'
+        CFBundleVersion: '1'
+        NSBluetoothAlwaysUsageDescription: 'Moto Watch Bridge se conecta a tu Moto Watch Fit para recibir los botones musicales.'
+        UIBackgroundModes:
+          - bluetooth-central
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
