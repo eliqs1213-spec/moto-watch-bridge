@@ -7,7 +7,7 @@ enum HealthMetric: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .steps: return "Pasos"
-        case .heartRate: return "Frecuencia cardíaca"
+        case .heartRate: return "Ritmo cardíaco"
         case .sleep: return "Sueño"
         case .stress: return "Estrés"
         case .workouts: return "Entrenamientos"

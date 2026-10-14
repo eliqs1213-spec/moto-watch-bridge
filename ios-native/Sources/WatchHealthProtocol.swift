@@ -41,6 +41,30 @@ enum WatchHealthProtocol {
         bytes += [UInt8(checksum & 255), UInt8(checksum >> 8)]
         return Data(bytes)
     }
+    // Solo identifica la ruta; no valida ni acepta los datos.
+    static func route(_ data: Data) -> (group: UInt8, command: UInt8)? {
+        let bytes = Array(data); var pos = 1
+        guard bytes.first == 0xaa, let size = readVarint(bytes, &pos), size >= 4, size <= 65536,
+              pos + 3 < bytes.count, bytes[pos] == 0, bytes[pos + 1] == 0 else { return nil }
+        return (bytes[pos + 2], bytes[pos + 3])
+    }
+    static func pulseRejectionReason(_ frame: Frame, start: Date, end: Date) -> String {
+        guard let items = fields(frame.payload) else { return "Formato Protobuf inválido" }
+        guard integer(1, in: items) == 1 else { return "Tipo de serie ausente o distinto de 1" }
+        guard let base = integer(2, in: items), base >= 1577836800 else { return "Fecha base ausente o inválida" }
+        for field in items where field.number == 3 {
+            guard let data = field.data, let sample = fields(data) else { return "Muestra anidada inválida" }
+            guard let bpm = integer(2, in: sample) else { return "Muestra sin valor o con campo duplicado" }
+            guard bpm >= 25 && bpm <= 240 else { return "Valor fuera del rango admitido; posible marcador sin lectura" }
+            let offsets = sample.filter { $0.number == 1 }
+            guard offsets.count <= 1, offsets.first == nil || offsets.first?.integer != nil else { return "Desplazamiento de tiempo inválido" }
+            let offset = integer(1, in: sample) ?? 0
+            guard offset <= 604800, base <= UInt64.max - offset else { return "Desplazamiento de tiempo fuera de límites" }
+            let date = Date(timeIntervalSince1970: Double(base + offset))
+            guard date >= start, date <= end.addingTimeInterval(300) else { return "Muestra fuera de la ventana de 24 horas" }
+        }
+        return "Respuesta no compatible con el decoder"
+    }
     static func decode(_ data: Data) -> Frame? {
         let bytes = Array(data); var pos = 1
         guard bytes.first == 0xaa, let size = readVarint(bytes, &pos), size >= 4,

@@ -38,3 +38,10 @@ expect(samples[1].timestamp.timeIntervalSince(samples[0].timestamp) == 60, "Samp
 expect(WatchHealthProtocol.pulse(longFrame, start: now, end: now) == nil, "Out-of-window samples accepted")
 print("Protocol checks passed: CRC, bounds, long frames, steps and pulse timestamps")
 
+
+expect(WatchHealthProtocol.route(damaged)?.group == 0x10, "Damaged frame should retain routing only")
+expect(WatchHealthProtocol.decode(damaged) == nil, "Routing must not bypass CRC")
+let wrongType = WatchHealthProtocol.Frame(group: 0x31, command: 0x07, payload: bytes("08 02"))
+expect(WatchHealthProtocol.pulseRejectionReason(wrongType, start: now, end: now) == "Tipo de serie ausente o distinto de 1", "Missing series diagnostic")
+expect(WatchHealthProtocol.pulseRejectionReason(longFrame, start: now, end: now) == "Muestra fuera de la ventana de 24 horas", "Time-window diagnostic")
+print("Diagnostic checks passed: routing preserves CRC rejection and reports type/time failures")

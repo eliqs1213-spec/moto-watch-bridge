@@ -419,7 +419,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
-        if let frame = WatchHealthProtocol.decode(data),
+        if let frame = WatchHealthProtocol.route(data),
            (frame.group == 0x30 && frame.command == 0x06)
             || (frame.group == 0x31 && [0x06, 0x07].contains(frame.command)) {
             let watchID = peripheral.identifier.uuidString
