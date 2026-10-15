@@ -57,6 +57,7 @@ struct ContentView: View {
     @EnvironmentObject private var watch: WatchBLEManager
     @EnvironmentObject private var spotify: SpotifyBridge
     @StateObject private var spotifyRemote = SpotifyAppRemoteBridge.shared
+    @StateObject private var musicAutoSync = MusicSyncEngine.shared
     @EnvironmentObject private var finder: PhoneFinder
     @StateObject private var batteryLive = BatteryLiveActivityManager.shared
     @StateObject private var connectionAlerts = WatchConnectionAlerts.shared
@@ -117,6 +118,7 @@ struct ContentView: View {
                 watch.refreshBattery(force: false)
                 spotifyRemote.applicationDidBecomeActive()
                 if spotify.controlEnabled {
+                    musicAutoSync.requestForegroundRecovery()
                     if spotifyRemote.isConnected {
                         spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
                     } else {
@@ -375,8 +377,11 @@ struct ContentView: View {
                                 }.buttonStyle(.bordered)
                             }
                             Divider()
-                            Text("Music Sync · diagnóstico de metadatos")
+                            Text("Music Auto Sync · recuperación")
                                 .font(.headline)
+                            statusRow("Auto Sync", musicAutoSync.status)
+                            Text("Activado por defecto: sincroniza cambios de pista, reanuncia al reconectar y al volver a iWatch cuando hace falta, y realiza una recuperación preventiva como máximo cada 3 minutos con la app visible. No garantiza ejecución periódica cuando iOS suspende la app.")
+                                .font(.caption).foregroundStyle(.secondary)
                             Button {
                                 spotify.resyncWatchMusicManually()
                             } label: {

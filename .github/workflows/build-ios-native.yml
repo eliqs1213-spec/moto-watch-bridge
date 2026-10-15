@@ -33,6 +33,11 @@ jobs:
           cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchMusicProtocol.swift ios-native/Tests/MusicFrameChecks.swift > "$RUNNER_TEMP/music-frame-checks.swift"
           swift "$RUNNER_TEMP/music-frame-checks.swift"
 
+      - name: Validar politica de Music Auto Sync
+        run: |
+          cat ios-native/Sources/MusicAutoSyncPolicy.swift ios-native/Tests/MusicAutoSyncChecks.swift > "$RUNNER_TEMP/music-auto-checks.swift"
+          swift "$RUNNER_TEMP/music-auto-checks.swift"
+
       - name: Configurar Xcode y generar proyecto
         run: |
           xcodebuild -version

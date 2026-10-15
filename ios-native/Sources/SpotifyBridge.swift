@@ -141,6 +141,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var manualResyncUntil: Date?
     private var manualIdlePreviewUntil: Date?
     private var requestBusy = false
+    private var skipNoActiveDeviceUntil: Date?
+    private var lastBlockedSkipLoggedAt = Date.distantPast
     private struct PendingWatchCommand {
         let command: WatchCommand
         let receivedAt: Date
@@ -159,8 +161,10 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         controlEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "motowatch.spotify.enabled")
         if !enabled {
+            skipNoActiveDeviceUntil = nil
             pendingWatchCommands.removeAll()
             manualResyncUntil = nil
+            MusicSyncEngine.shared.reset()
             sendIdle(reason: "Controles Spotify desactivados")
             playbackAvailability = "Controles desactivados"
             metadataSource = "Desactivado"
@@ -222,6 +226,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     func disconnectSpotify() {
+        skipNoActiveDeviceUntil = nil
+        MusicSyncEngine.shared.reset()
         pendingWatchCommands.removeAll()
         SecureTokenStorage.clear()
         lastDeviceID = nil
@@ -260,6 +266,12 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     private func markAvailable(_ playback: SpotifyPlayback, force: Bool = false) {
+        // El SDK/Web API vuelve a informar un dispositivo actual.
+        // Rehabilitar los botones inmediatamente, sin esperar el cooldown.
+        if playback.device != nil, skipNoActiveDeviceUntil != nil {
+            skipNoActiveDeviceUntil = nil
+            record("Spotify Connect: dispositivo activo recuperado; SIGUIENTE/ANTERIOR habilitados")
+        }
         unavailableChecks = 0
         playerUnavailableSince = nil
         retainedTrackWarningLogged = false
@@ -277,9 +289,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         status = playback.is_playing ? "Spotify reproduciendo" : "Spotify pausado"
         if let snapshot = lastMusicSnapshot, playback.item != nil {
             let manualResync = consumeManualResyncRequest()
-            WatchBLEManager.shared.sendMusic(snapshot,
-                                             force: wasIdle || force || manualResync,
-                                             reannounce: wasIdle || manualResync)
+            MusicSyncEngine.shared.acceptFresh(snapshot,
+                                               manual: manualResync || force,
+                                               recoveredFromIdle: wasIdle)
         }
     }
 
@@ -361,6 +373,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
 
     func recoverAfterWatchReady() async {
         guard controlEnabled, !recoveryInProgress else { return }
+        MusicSyncEngine.shared.requestReconnectRecovery()
         recoveryInProgress = true
         defer { recoveryInProgress = false }
         // NO transmitir la canción antigua desde lastMusicSnapshot a ciegas:
@@ -384,6 +397,10 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                                isPlaying: Bool) {
         guard controlEnabled else { return }
         guard !title.isEmpty else { return }
+        if skipNoActiveDeviceUntil != nil {
+            skipNoActiveDeviceUntil = nil
+            record("Spotify SDK: estado musical nativo recuperado; controles habilitados")
+        }
         unavailableChecks = 0
         playerUnavailableSince = nil
         retainedTrackWarningLogged = false
@@ -401,9 +418,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         status = isPlaying ? "Spotify App Remote · reproduciendo" : "Spotify App Remote · pausado"
         playbackAvailability = isPlaying ? "Reproduciendo (SDK)" : "Pausado (SDK)"
         let manualResync = consumeManualResyncRequest()
-        WatchBLEManager.shared.sendMusic(snapshot,
-                                         force: wasIdle || manualResync,
-                                         reannounce: wasIdle || manualResync)
+        MusicSyncEngine.shared.acceptFresh(snapshot,
+                                           manual: manualResync,
+                                           recoveredFromIdle: wasIdle)
     }
 
     func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
@@ -476,6 +493,23 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
     }
 
+    private func protectAgainstNoActiveDevice404() {
+        skipNoActiveDeviceUntil = Date().addingTimeInterval(
+            SpotifyCommandQueuePolicy.noActiveDeviceCooldownSeconds)
+        // Órdenes antiguas en cola no deben saltar canciones cuando el
+        // dispositivo reaparezca: exigen una pulsación nueva y explícita.
+        let removed = pendingWatchCommands.count
+        pendingWatchCommands.removeAll()
+        lastDeviceID = nil
+        lastIsPlaying = nil
+        if removed > 0 {
+            record("Spotify: descartadas \(removed) órdenes pendientes tras 404 sin dispositivo")
+        }
+        lastAction = "Spotify Connect sin dispositivo · abrí Spotify y reproducí una canción"
+        playbackAvailability = "Spotify 404 · sin dispositivo activo · música conservada"
+        record("Spotify: HTTP 404 NO_ACTIVE_DEVICE; pausando NEXT/PREV 20 s, sin borrar metadatos")
+    }
+
     func receive(_ command: WatchCommand) {
         switch command {
         case .next, .previous, .toggle: break
@@ -487,6 +521,16 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         let limit = command == .toggle ? 1.5 : 0.65
         if let prior = lastCommandTimes[key], now.timeIntervalSince(prior) < limit { return }
         lastCommandTimes[key] = now
+        if command != .toggle &&
+           SpotifyCommandQueuePolicy.shouldHoldSkip(until: skipNoActiveDeviceUntil, now: now) {
+            lastAction = "Spotify Connect sin dispositivo · esperando recuperación"
+            // Evitar inundar el registro si se pulsa repetidamente el reloj.
+            if now.timeIntervalSince(lastBlockedSkipLoggedAt) >= 5 {
+                record("Spotify: SIGUIENTE/ANTERIOR retenido temporalmente por 404; no se envió a Web API")
+                lastBlockedSkipLoggedAt = now
+            }
+            return
+        }
         if requestBusy {
             enqueuePendingWatchCommand(command, receivedAt: now)
             return
@@ -521,6 +565,11 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             let pending = pendingWatchCommands.removeFirst()
             guard SpotifyCommandQueuePolicy.isFresh(receivedAt: pending.receivedAt, now: now) else {
                 record("[SPOTIFY] Pendiente vencido: \(pending.command.rawValue); no se ejecuta tarde")
+                continue
+            }
+            if pending.command != .toggle &&
+               SpotifyCommandQueuePolicy.shouldHoldSkip(until: skipNoActiveDeviceUntil, now: now) {
+                record("[SPOTIFY] Pendiente descartado: Spotify Connect sin dispositivo activo")
                 continue
             }
             record("[SPOTIFY] Ejecutando pulsación pendiente: \(pending.command.rawValue)")
@@ -567,13 +616,11 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                    case let .response(code, body) = spotifyError,
                    code == 404 && (body.contains("NO_ACTIVE_DEVICE") ||
                                    body.localizedCaseInsensitiveContains("device not found")) {
-                    self.lastDeviceID = nil
+                    self.protectAgainstNoActiveDevice404()
                     // Un 404 al mandar un comando NO prueba que la música paró:
                     // el audio puede seguir sonando en el iPhone. No activar
                     // modo sin música hasta confirmar el reproductor por GET.
-                    self.playbackAvailability = "Comando 404 · comprobando reproductor"
-                    self.lastAction = "Control Spotify no disponible; consultando estado"
-                    self.record("Spotify: HTTP 404 en comando; música no descartada")
+                    self.record("Spotify: HTTP 404 en comando; comprobando reproductor sin descartar música")
                     await self.refreshPlaybackInfo(force: true)
                     return
                 }
