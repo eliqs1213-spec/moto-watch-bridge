@@ -6,6 +6,7 @@ struct VitalsProbePanel: View {
     @StateObject private var probe = WatchVitalsProbe.shared
     @StateObject private var health = WatchHealthSync.shared
     @StateObject private var stress = WatchStressProbe.shared
+    @StateObject private var sleep = WatchSleepProbe.shared
     var body: some View {
         GroupBox("Oxígeno y calorías · validar lecturas") {
             VStack(alignment: .leading, spacing: 12) {
@@ -41,6 +42,6 @@ struct VitalsProbePanel: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }
-    private var busy: Bool { !watch.isConnected || probe.isRunning || health.isRunning || stress.isRunning }
+    private var busy: Bool { !watch.isConnected || probe.isRunning || health.isRunning || stress.isRunning || sleep.isRunning }
 }
 

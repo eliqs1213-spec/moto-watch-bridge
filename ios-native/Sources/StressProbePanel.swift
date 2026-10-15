@@ -6,6 +6,7 @@ struct StressProbePanel: View {
     @StateObject private var stress = WatchStressProbe.shared
     @StateObject private var health = WatchHealthSync.shared
     @StateObject private var vitals = WatchVitalsProbe.shared
+    @StateObject private var sleep = WatchSleepProbe.shared
     var body: some View {
         GroupBox("Estrés · validar lectura del reloj") {
             VStack(alignment: .leading, spacing: 12) {
@@ -14,7 +15,7 @@ struct StressProbePanel: View {
                 Button(stress.isRunning ? "Consultando…" : "Consultar candidato de estrés") {
                     watch.refreshStressProbe()
                 }.buttonStyle(.borderedProminent)
-                    .disabled(!watch.isConnected || stress.isRunning || health.isRunning || vitals.isRunning)
+                    .disabled(!watch.isConnected || stress.isRunning || health.isRunning || vitals.isRunning || sleep.isRunning)
                 Text(stress.status).font(.caption).foregroundStyle(.secondary)
                 if !stress.samples.isEmpty {
                     Text("\(stress.samples.count) muestras · últimas 20").font(.caption.bold())
