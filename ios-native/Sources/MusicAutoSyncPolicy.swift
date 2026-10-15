@@ -26,6 +26,12 @@ enum MusicAutoSyncPolicy {
         isPlaying && inForeground && watchConnected
     }
 
+    static func confirmsFreshTransition(expected: String?, actual: String,
+                                        isPlaying: Bool, inForeground: Bool,
+                                        receivedAt: Date, expiresAt: Date) -> Bool {
+        expected == actual && isPlaying && inForeground && receivedAt <= expiresAt
+    }
+
     static func decide(changed: Bool,
                        manual: Bool,
                        recoveredFromIdle: Bool,
