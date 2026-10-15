@@ -16,10 +16,17 @@ final class MusicSyncEngine: ObservableObject {
     private var pendingUntil = Date.distantPast
     private var lastSubmittedSignature: String?
     private var lastAnnouncedAt = Date.distantPast
+    private var transitionVerification: DispatchWorkItem?
+    private var pendingTransitionSignature: String?
+    private var pendingTransitionUntil = Date.distantPast
 
     private init() {}
 
     func reset() {
+        transitionVerification?.cancel()
+        transitionVerification = nil
+        pendingTransitionSignature = nil
+        pendingTransitionUntil = .distantPast
         pendingRecovery = nil
         lastSubmittedSignature = nil
         lastAnnouncedAt = .distantPast
@@ -56,7 +63,16 @@ final class MusicSyncEngine: ObservableObject {
         let recoveryIsCurrent = pendingRecovery != nil && now <= pendingUntil
         let isReconnect = recoveryIsCurrent && pendingRecovery == .reconnect
         let elapsed = now.timeIntervalSince(lastAnnouncedAt)
-        let decision = MusicAutoSyncPolicy.decide(
+        // Releer Spotify después de un cambio real permite recuperar un
+        // reproductor que aceptó la escritura BLE pero no refrescó su pantalla.
+        // Solo actuar sobre la MISMA pista confirmada, una única vez.
+        let recoveredTransition = pendingTransitionSignature == signature &&
+            now <= pendingTransitionUntil && snapshot.isPlaying &&
+            UIApplication.shared.applicationState == .active
+        if pendingTransitionSignature != nil {
+            pendingTransitionSignature = nil
+        }
+        let decision = recoveredTransition ? .recovery : MusicAutoSyncPolicy.decide(
             changed: signature != lastSubmittedSignature,
             manual: manual,
             recoveredFromIdle: recoveredFromIdle,
@@ -71,19 +87,29 @@ final class MusicSyncEngine: ObservableObject {
         case .none:
             return
         case .changed:
-            watch.sendMusic(snapshot)
+            // Forzar envío completo incluso si la firma BLE basada en URI no
+            // refleja un cambio de título/artista/álbum en menos de 25 s.
+            watch.sendMusic(snapshot, force: true, reannounce: true)
             status = "Auto Sync · cambio de canción/estado enviado (pantalla no verificada)"
+            if MusicAutoSyncPolicy.shouldVerifyTransition(
+                isPlaying: snapshot.isPlaying,
+                inForeground: UIApplication.shared.applicationState == .active,
+                watchConnected: watch.isConnected
+            ) {
+                scheduleOneShotVerification(of: signature)
+            }
         case .manual:
             watch.sendMusic(snapshot, force: true, reannounce: true)
             status = "Auto Sync · resincronización manual enviada (pantalla no verificada)"
         case .recovery:
             watch.sendMusic(snapshot, force: true, reannounce: true)
-            status = isReconnect
-                ? "Auto Sync · recuperando tras reconexión (pantalla no verificada)"
-                : "Auto Sync · recuperando al abrir iWatch (pantalla no verificada)"
-            watch.record("MUSICA-AUTO", isReconnect
-                ? "Reanuncio controlado tras reconexión con pista validada"
-                : "Reanuncio controlado al volver a primer plano con pista validada")
+            status = recoveredTransition ? "Auto Sync · segunda verificación de cambio natural" :
+                (isReconnect ? "Auto Sync · recuperando tras reconexión (pantalla no verificada)"
+                             : "Auto Sync · recuperando al abrir iWatch (pantalla no verificada)")
+            watch.record("MUSICA-AUTO", recoveredTransition
+                ? "Reanuncio único tras cambio natural con canción nuevamente verificada"
+                : isReconnect ? "Reanuncio controlado tras reconexión con pista validada"
+                              : "Reanuncio controlado al volver a primer plano con pista validada")
         case .heartbeat:
             watch.sendMusic(snapshot, force: true, reannounce: true)
             status = "Auto Sync · reanuncio preventivo espaciado (pantalla no verificada)"
@@ -91,5 +117,27 @@ final class MusicSyncEngine: ObservableObject {
         }
         lastSubmittedSignature = signature
         lastAnnouncedAt = now
+    }
+
+    private func scheduleOneShotVerification(of signature: String) {
+        transitionVerification?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self,
+                  self.lastSubmittedSignature == signature,
+                  WatchBLEManager.shared.isConnected,
+                  UIApplication.shared.applicationState == .active else { return }
+            self.pendingTransitionSignature = signature
+            self.pendingTransitionUntil = Date().addingTimeInterval(
+                MusicAutoSyncPolicy.transitionVerificationLifetime)
+            WatchBLEManager.shared.record("MUSICA-AUTO",
+                "Verificación única del cambio natural: consultando estado actual, sin reutilizar caché")
+            // Si no hay respuesta válida o la canción ya cambió, el reanuncio
+            // no se realiza. La lectura del SDK tiene prioridad sobre Web API.
+            SpotifyBridge.shared.forceWatchMusicRecovery()
+        }
+        transitionVerification = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + MusicAutoSyncPolicy.transitionVerificationDelay,
+            execute: work)
     }
 }
