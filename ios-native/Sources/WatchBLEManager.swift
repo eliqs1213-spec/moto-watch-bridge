@@ -35,11 +35,13 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var peripheral: CBPeripheral?
     private var notifyCharacteristic: CBCharacteristic?
     private var writeCharacteristic: CBCharacteristic?
-    private enum OutboundKind { case music, battery, notification, health, vitals, sleepRead }
+    private typealias OutboundKind = WatchTrafficKind
     private struct PendingMusicWrite {
         let packet: Data
         let delayAfter: TimeInterval
         let kind: OutboundKind
+        var noticeWatchID: String? = nil
+        var expiresAt: Date? = nil
     }
     private var sleepAssembler = WatchHealthFrameAssembler(commands: [0x09])
     private var vitalsAssembler = WatchHealthFrameAssembler(commands: [0x0C, 0x12])
@@ -52,6 +54,16 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWriteIsVitals = false
     private var currentWriteIsHealth = false
     private var currentWriteIsBattery = false
+    private var currentWriteIsNotification = false
+    private var writeTimeout: DispatchWorkItem?
+    private var writeSequence = 0
+    private var musicNotBefore = Date.distantPast
+    private var queueWake: DispatchWorkItem?
+    private var batteryRefresh: DispatchWorkItem?
+    private var reconnectFailures = 0
+    private var scanTimeout: DispatchWorkItem?
+    private var logSave: DispatchWorkItem?
+    @Published private(set) var notificationStatus = "Sin avisos pendientes"
     private var batteryQuerySentAt: Date? = nil
     private var lastMusicSignature: String?
     private var lastMusicSentAt = Date.distantPast
@@ -78,7 +90,13 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         isConnected = false
         notifyCharacteristic = nil
         writeCharacteristic = nil
-        musicQueue.removeAll()
+        prunePendingNotices()
+        musicQueue.removeAll { $0.kind != .notification }
+        writeTimeout?.cancel(); writeTimeout = nil
+        queueWake?.cancel(); queueWake = nil
+        batteryRefresh?.cancel(); batteryRefresh = nil
+        musicNotBefore = .distantPast
+        currentWriteIsNotification = false
         musicInProgress = false
         currentWriteIsBattery = false
         musicAfterDelay = 0
@@ -108,12 +126,30 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         let item = WatchLogEntry(id: UUID(), timestamp: Date(), kind: kind, message: message)
         events.append(item)
         if events.count > 200 { events.removeFirst(events.count - 200) }
-        if let data = try? JSONEncoder().encode(events) {
-            UserDefaults.standard.set(data, forKey: logStorageKey)
-        }
+        guard logSave == nil else { return }
+        let save = DispatchWorkItem { [weak self] in self?.flushLog() }
+        logSave = save
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: save)
+    }
+
+    func flushLog() {
+        logSave?.cancel(); logSave = nil
+        if let data = try? JSONEncoder().encode(events) { UserDefaults.standard.set(data, forKey: logStorageKey) }
+    }
+
+    func pauseAuxiliaryWork() {
+        // Se conserva el enlace, la suscripción y la cola de notificaciones.
+        batteryRefresh?.cancel(); batteryRefresh = nil
+        if central.isScanning { central.stopScan() }
+        flushLog()
+    }
+    func resumeAuxiliaryWork() {
+        autoConnectIfNeeded()
+        if isConnected { refreshBattery(force: false); scheduleBatteryRefresh() }
     }
 
     func clearLog() {
+        logSave?.cancel(); logSave = nil
         events.removeAll()
         UserDefaults.standard.removeObject(forKey: logStorageKey)
         record("SISTEMA", "Registro limpiado")
@@ -147,6 +183,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
 
     func autoConnectIfNeeded() {
         guard autoReconnectEnabled, !manuallyDisconnected,
+              !reconnectScheduled,
               central.state == .poweredOn,
               !isConnected, !central.isScanning else { return }
         if let p = peripheral, p.state == .connected {
@@ -212,13 +249,24 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         record("BLE", "Escaneo BLE: buscando Moto Watch Fit")
         // En nuestras pruebas el reloj anuncia su nombre, no necesariamente el UUID de servicio.
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        scanTimeout?.cancel()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self = self, self.central.isScanning else { return }
+            self.central.stopScan()
+            self.connectionStatus = "Reloj no encontrado; tocá Conectar para volver a buscar"
+        }
+        scanTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20, execute: timeout)
     }
 
     func disconnect() {
         manuallyDisconnected = true
         UserDefaults.standard.set(true, forKey: "motowatch.ble.manualDisconnect")
+        musicQueue.removeAll { $0.kind == .notification }
+        notificationStatus = "Avisos pendientes cancelados por desconexión manual"
         resetConnectionTransport()
         central.stopScan()
+        scanTimeout?.cancel(); scanTimeout = nil
         if let p = peripheral, p.state != .disconnected {
             central.cancelPeripheralConnection(p)
         }
@@ -285,6 +333,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     }
 
     func centralManager(_ central: CBCentralManager, didConnect device: CBPeripheral) {
+        reconnectFailures = 0
         peripheral = device
         device.delegate = self
         watchName = device.name ?? "Moto Watch Fit"
@@ -308,7 +357,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         guard autoReconnectEnabled, !manuallyDisconnected, !reconnectScheduled,
               central.state == .poweredOn else { return }
         reconnectScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+        reconnectFailures += 1
+        let delay = WatchTrafficPolicy.reconnectDelay(failures: reconnectFailures)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self = self else { return }
             self.reconnectScheduled = false
             self.autoConnectIfNeeded()
@@ -323,8 +374,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         record("BLE", "Reloj desconectado\(error.map { ": " + $0.localizedDescription } ?? "")")
         if !manuallyDisconnected && autoReconnectEnabled && central.state == .poweredOn {
             connectionStatus = "Esperando reconexión"
-            central.connect(device, options: nil)
-            record("BLE", "Reconexión automática solicitada")
+            scheduleReconnectIfNeeded()
         }
     }
 
@@ -378,8 +428,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         // Se ejecuta una única vez por sesión BLE, aunque iOS repita callbacks.
         guard !isConnected else { return }
         isConnected = true
+        reconnectFailures = 0
         connectionStatus = "Escuchando botones · F8F1 listo"
         record("BLE", "Sesión lista: F8F0 notificando y F8F1 escribible")
+        flushMusicQueue()
+        scheduleBatteryRefresh()
         let connectionID = readyConnectionID
         pendingConnectionAlertID = connectionID
         refreshBattery()
@@ -566,14 +619,14 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     }
 
     @discardableResult
-    func refreshHealth() -> Task<Bool, Never>? {
+    func refreshHealth(includePulse: Bool = true) -> Task<Bool, Never>? {
         guard isConnected, let device = peripheral else { return nil }
         healthAssembler.reset()
         let watchID = device.identifier.uuidString
         return Task { @MainActor [weak self] in
             guard UIApplication.shared.applicationState == .active else { return false }
             guard !WatchHealthSync.shared.isRunning, !WatchStressProbe.shared.isRunning, !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return false }
-            WatchHealthSync.shared.begin(watchID: watchID, clearPending: { [weak self] in
+            WatchHealthSync.shared.begin(watchID: watchID, includePulse: includePulse, clearPending: { [weak self] in
                 self?.musicQueue.removeAll { $0.kind == .health }
                 self?.healthAssembler.reset()
             }) { [weak self] data in
@@ -612,7 +665,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     }
 
     @discardableResult
-    func refreshVitalsProbe(_ mode: WatchVitalsProbe.Mode) -> Task<Bool, Never>? {
+    func refreshVitalsProbe(_ mode: WatchVitalsProbe.Mode, validatedOnly: Bool = false) -> Task<Bool, Never>? {
         guard isConnected, let device = peripheral else { return nil }
         let watchID = device.identifier.uuidString
         return Task { @MainActor [weak self] in
@@ -620,7 +673,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             guard let self = self, !WatchHealthSync.shared.isRunning,
                   !WatchStressProbe.shared.isRunning, !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return false }
             self.vitalsAssembler.reset()
-            WatchVitalsProbe.shared.begin(mode: mode, watchID: watchID, cleanup: { [weak self] in
+            WatchVitalsProbe.shared.begin(mode: mode, watchID: watchID, validatedOnly: validatedOnly, cleanup: { [weak self] in
                 self?.musicQueue.removeAll { $0.kind == .vitals }
                 self?.vitalsAssembler.reset()
             }) { [weak self] data in
@@ -659,21 +712,22 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
     }
 
-    func refreshBattery() {
+    func refreshBattery(force: Bool = true) {
         guard isConnected, peripheral != nil, let tx = writeCharacteristic,
               tx.properties.contains(.write) else {
             batteryStatus = "Sin conexión o F8F1 no admite escritura"
             record("BATERIA", "No se pudo enviar consulta Motorola 10/01")
             return
         }
-        guard Date().timeIntervalSince(batteryQuerySentAt ?? .distantPast) > 3 else {
+        guard !musicQueue.contains(where: { $0.kind == .battery }), !currentWriteIsBattery,
+              Date().timeIntervalSince(batteryQuerySentAt ?? .distantPast) > (force ? 3 : 1800) else {
             batteryStatus = "Consulta Motorola 10/01 ya solicitada; esperando respuesta"
             return
         }
         batteryQuerySentAt = Date()
-        // La batería tiene prioridad sobre metadatos musicales pendientes.
+        // Consulta auxiliar de baja prioridad.
         let packet = Data([0xAA, 0x04, 0x00, 0x00, 0x10, 0x01, 0x7E, 0xFD])
-        musicQueue.insert(PendingMusicWrite(packet: packet, delayAfter: 0, kind: .battery), at: 0)
+        musicQueue.append(PendingMusicWrite(packet: packet, delayAfter: 0, kind: .battery))
         batteryStatus = "Esperando respuesta Motorola 10/01"
         record("BATERIA", "Enviando consulta Motorola 10/01: \(MotoProtocol.hex(packet))")
         flushMusicQueue()
@@ -683,9 +737,10 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     // No se guardan remitente ni mensaje en el log, por privacidad.
     @discardableResult
     func sendNotification(source: String, sender: String, message: String) -> Bool {
-        guard isConnected, let peripheral = peripheral, let tx = writeCharacteristic,
-              tx.properties.contains(.write) else {
-            record("NOTIFICACION", "No enviada: reloj BLE sin conexión de escritura")
+        guard !manuallyDisconnected, let target = healthWatchID,
+              isConnected || autoReconnectEnabled else {
+            notificationStatus = "No encolada: conectá el reloj"
+            record("NOTIFICACION", notificationStatus)
             return false
         }
         let filterKey = "motowatch.notification.\(source.lowercased()).enabled"
@@ -693,15 +748,47 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             record("NOTIFICACION", "Origen desactivado: \(source)")
             return false
         }
+        prunePendingNotices()
+        guard musicQueue.filter({ $0.kind == .notification }).count < 100 else {
+            notificationStatus = "Cola de avisos llena; no se aceptó el nuevo aviso"
+            record("NOTIFICACION", notificationStatus); return false
+        }
         guard let packet = WatchNotificationProtocol.encode(source: source, sender: sender, message: message),
-              packet.count <= peripheral.maximumWriteValueLength(for: .withResponse) else {
+              !isConnected || packet.count <= (peripheral?.maximumWriteValueLength(for: .withResponse) ?? 0) else {
             record("NOTIFICACION", "No enviada: texto vacío o trama demasiado grande para MTU")
             return false
         }
-        musicQueue.append(PendingMusicWrite(packet: packet, delayAfter: 0, kind: .notification))
+        musicQueue.append(PendingMusicWrite(packet: packet, delayAfter: 0, kind: .notification,
+            noticeWatchID: target, expiresAt: Date().addingTimeInterval(120)))
+        notificationStatus = isConnected ? "Aviso encolado con prioridad" : "Aviso pendiente: reconectando (máximo 2 minutos)"
         record("NOTIFICACION", "Encolada trama 25/02 para \(source), bytes=\(packet.count)")
         flushMusicQueue()
+        if !isConnected { autoConnectIfNeeded() }
         return true
+    }
+
+    private func prunePendingNotices() {
+        let before = musicQueue.filter { $0.kind == .notification }.count
+        musicQueue.removeAll {
+            $0.kind == .notification && !WatchTrafficPolicy.acceptsNotice(
+                target: $0.noticeWatchID, current: healthWatchID, expiresAt: $0.expiresAt, now: Date())
+        }
+        if musicQueue.filter({ $0.kind == .notification }).count < before {
+            notificationStatus = "Avisos pendientes vencidos o de otro reloj descartados"
+            record("NOTIFICACION", notificationStatus)
+        }
+    }
+
+    private func scheduleBatteryRefresh() {
+        batteryRefresh?.cancel()
+        let connectionID = readyConnectionID
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.isConnected, self.readyConnectionID == connectionID else { return }
+            if UIApplication.shared.applicationState == .active { self.refreshBattery(force: false) }
+            self.scheduleBatteryRefresh()
+        }
+        batteryRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1800, execute: work)
     }
 
     // Usar la codificación probada en Windows: anuncio 08 02 de canción
@@ -712,9 +799,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             musicSyncStatus = "Requiere Bluetooth conectado y F8F1"
             return
         }
-        let signature = "\(snapshot.id)|\(snapshot.isPlaying)"
+        let signature = "\(snapshot.id)|\(snapshot.isPlaying)|\(snapshot.title)|\(snapshot.artist)"
         let changed = signature != lastMusicSignature
-        if !force && !reannounce && !changed && Date().timeIntervalSince(lastMusicSentAt) < 25 { return }
+        if !force && !reannounce && !changed { return }
         let trackChanged = lastMusicSignature == nil || lastMusicSignature?.components(separatedBy: "|").first != snapshot.id
         let steady = WatchMusicProtocol.encode(snapshot, code: snapshot.isPlaying ? .empty : .one)
         // Reemplazar SOLO metadatos antiguos; no descartar WhatsApp ni batería.
@@ -750,13 +837,26 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     }
 
     private func flushMusicQueue() {
-        guard !musicInProgress, !musicQueue.isEmpty,
+        prunePendingNotices()
+        guard isConnected, !musicInProgress, !musicQueue.isEmpty,
               let peripheral = peripheral, let tx = writeCharacteristic else { return }
-        let next = musicQueue.removeFirst()
+        guard let index = WatchTrafficPolicy.nextIndex(musicQueue.map(\.kind), musicReady: Date() >= musicNotBefore) else {
+            queueWake?.cancel()
+            let connectionID = readyConnectionID
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self, self.readyConnectionID == connectionID else { return }
+                self.flushMusicQueue()
+            }
+            queueWake = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0.01, musicNotBefore.timeIntervalSinceNow), execute: work)
+            return
+        }
+        let next = musicQueue.remove(at: index)
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
         guard tx.properties.contains(.write), next.packet.count <= maxLength else {
             musicSyncStatus = "El paquete no cabe en el tamaño BLE disponible"
             record("ERROR", "Escritura F8F1 inválida: tamaño \(next.packet.count), máximo \(maxLength)")
+            if next.kind == .notification { notificationStatus = "Aviso rechazado: tamaño no compatible con este enlace" }
             flushMusicQueue()
             return
         }
@@ -765,15 +865,33 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsVitals = next.kind == .vitals
         currentWriteIsHealth = next.kind == .health
         currentWriteIsBattery = next.kind == .battery
+        currentWriteIsNotification = next.kind == .notification
         musicAfterDelay = next.delayAfter
         record("BLE-TX", "F8F1: \(next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
+        writeSequence += 1
+        let sequence = writeSequence
+        let connectionID = readyConnectionID
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self = self, self.musicInProgress, self.writeSequence == sequence,
+                  self.readyConnectionID == connectionID else { return }
+            if self.currentWriteIsNotification {
+                self.notificationStatus = "Aviso con resultado incierto; no se duplica el envío"
+            }
+            self.record("ERROR", "Escritura sin confirmación en 8 s; recuperando enlace")
+            self.resetConnectionTransport()
+            self.central.cancelPeripheralConnection(peripheral)
+        }
+        writeTimeout?.cancel(); writeTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: timeout)
         peripheral.writeValue(next.packet, for: tx, type: .withResponse)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic,
                     error: Error?) {
         guard characteristic.uuid == txUUID, musicInProgress,
+              characteristic === writeCharacteristic,
               peripheral.identifier == self.peripheral?.identifier else { return }
+        writeTimeout?.cancel(); writeTimeout = nil
         musicInProgress = false
         let isSleep = currentWriteIsSleep
         currentWriteIsSleep = false
@@ -783,8 +901,14 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsHealth = false
         let isBattery = currentWriteIsBattery
         currentWriteIsBattery = false
+        let isNotice = currentWriteIsNotification
+        currentWriteIsNotification = false
         if let error = error {
-            if isBattery { batteryStatus = "Error de consulta Motorola" }
+            if isNotice {
+                notificationStatus = "Falló la escritura del aviso; no se reenvía para evitar duplicados"
+                record("NOTIFICACION", notificationStatus)
+            }
+            else if isBattery { batteryStatus = "Error de consulta Motorola" }
             else if isSleep {
                 Task { @MainActor in WatchSleepProbe.shared.cancel() }
                 musicQueue.removeAll { $0.kind == .sleepRead }
@@ -803,23 +927,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 }
                 musicQueue.removeAll { $0.kind == .health }
             }
-            else { musicSyncStatus = "Error al escribir metadatos" }
+            else { musicSyncStatus = "Error al escribir metadatos"; lastMusicSignature = nil }
             record("ERROR", "Escritura F8F1: \(error.localizedDescription)")
             // Una escritura fallida no debe borrar otros avisos ya encolados.
             flushMusicQueue()
             return
         }
         let delay = musicAfterDelay
-        let connectionID = readyConnectionID
-        if musicQueue.isEmpty && !isBattery && !isHealth && !isVitals && !isSleep { musicSyncStatus = "Datos enviados; pantalla no confirmada" }
-        if delay > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self = self, self.readyConnectionID == connectionID else { return }
-                self.flushMusicQueue()
-            }
-        } else {
-            flushMusicQueue()
+        if isNotice { notificationStatus = "Aviso escrito por Bluetooth; visualización no confirmada" }
+        if !isNotice && !isBattery && !isHealth && !isVitals && !isSleep {
+            musicNotBefore = Date().addingTimeInterval(delay)
+            if musicQueue.isEmpty { musicSyncStatus = "Datos enviados; pantalla no confirmada" }
         }
+        flushMusicQueue()
     }
 }
-

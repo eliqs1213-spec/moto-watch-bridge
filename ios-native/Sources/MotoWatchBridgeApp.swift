@@ -15,6 +15,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         WatchBLEManager.shared.record("SISTEMA", "iPhone: aplicación en segundo plano")
+        WatchBLEManager.shared.pauseAuxiliaryWork()
         SpotifyAppRemoteBridge.shared.applicationDidEnterBackground()
     }
 
@@ -23,6 +24,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        WatchBLEManager.shared.resumeAuxiliaryWork()
         SpotifyAppRemoteBridge.shared.applicationDidBecomeActive()
     }
 }
@@ -289,10 +291,10 @@ struct ContentView: View {
                 finder.updateAuthorizationStatus()
                 connectionAlerts.refreshPermissionStatus()
                 watch.autoConnectIfNeeded()
-                watch.refreshBattery()
+                watch.refreshBattery(force: false)
                 spotifyRemote.applicationDidBecomeActive()
                 if spotify.controlEnabled {
-                    if spotifyRemote.isConnected {
+                    if spotifyRemote.isConnected && !spotifyRemote.metadataEventsActive {
                         spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
                     } else {
                         Task { await spotify.refreshPlaybackInfo() }
@@ -304,14 +306,14 @@ struct ContentView: View {
             // No afirmar que hay encuesta continua con el iPhone bloqueado.
             while !Task.isCancelled {
                 if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
-                    if spotifyRemote.isConnected {
-                        // Recupera cambios aun cuando la suscripción del SDK no emita el evento.
+                    if spotifyRemote.isConnected && !spotifyRemote.metadataEventsActive {
+                        // Solo consultar si faltan los eventos nativos.
                         spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
-                    } else if watch.isConnected {
+                    } else if !spotifyRemote.isConnected && watch.isConnected {
                         await spotify.refreshPlaybackInfo()
                     }
                 }
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { break }
             }
         }
     }

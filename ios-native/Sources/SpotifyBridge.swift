@@ -130,6 +130,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     // Cada evento nativo invalida consultas Web todavía pendientes.
     // Evita que un GET /me/player lento reemplace una pista más nueva del SDK.
     private var sdkMetadataRevision: UInt64 = 0
+    private var playbackFetchInProgress = false
+    private var nextPlaybackRefresh = Date.distantPast
+    private var playbackFailures = 0
     private var recoveryInProgress = false
     private var unavailableChecks = 0
     private var idleModeRequested = false
@@ -348,6 +351,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
+        guard !playbackFetchInProgress, force || Date() >= nextPlaybackRefresh else { return }
         if !force, let until = manualIdlePreviewUntil, Date() < until { return }
         if force { manualIdlePreviewUntil = nil }
         // Incluso las consultas forzadas deben respetar la prioridad nativa.
@@ -365,7 +369,11 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             return
         }
         do {
+            playbackFetchInProgress = true
+            defer { playbackFetchInProgress = false }
             let playback = try await fetchPlayback()
+            playbackFailures = 0
+            nextPlaybackRefresh = Date().addingTimeInterval(playback?.is_playing == true ? 30 : 120)
             // Un callback App Remote llegó mientras esperaba HTTP: sus metadatos
             // son más recientes que la respuesta Web y tienen prioridad.
             if sdkMetadataRevision != nativeRevisionAtStart { return }
@@ -383,6 +391,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                 markNoActivePlayer()
             }
         } catch {
+            playbackFailures += 1
+            nextPlaybackRefresh = Date().addingTimeInterval(min(300, 30 * pow(2, Double(min(playbackFailures - 1, 4)))))
             if sdkMetadataRevision != nativeRevisionAtStart { return }
             if SpotifyAppRemoteBridge.shared.isConnected &&
                SpotifyAppRemoteBridge.shared.hasNativeMetadata { return }

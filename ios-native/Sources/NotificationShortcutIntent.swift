@@ -7,7 +7,7 @@ import Foundation
 // bloqueado debe verificarse en el dispositivo real.
 struct SendWatchNotificationIntent: AppIntent {
     static var title: LocalizedStringResource = "Enviar notificación al Moto Watch"
-    static var description = IntentDescription("Envía al Moto Watch Fit una notificación recibida por Atajos. Requiere conexión BLE activa con iWatch.")
+    static var description = IntentDescription("Encola un aviso con prioridad. Si el reloj conocido está temporalmente desconectado, espera hasta 2 minutos mientras iOS permita ejecutar iWatch.")
     static var openAppWhenRun: Bool = false
 
     @Parameter(title: "Aplicación", description: "WhatsApp, Instagram o iWatch")
@@ -25,7 +25,7 @@ struct SendWatchNotificationIntent: AppIntent {
             source: appName, sender: sender, message: message
         )
         if result {
-            return .result(dialog: "Aviso enviado al Moto Watch")
+            return .result(dialog: "Aviso encolado para el Moto Watch")
         } else {
             return .result(dialog: "No se pudo enviar: comprobá Bluetooth, conexión o contenido")
         }
