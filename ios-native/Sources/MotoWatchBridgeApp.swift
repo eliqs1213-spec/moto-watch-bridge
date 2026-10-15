@@ -67,19 +67,184 @@ struct ContentView: View {
         return version.hasPrefix("0.") ? String(version.dropFirst(2)) : version
     }
 
+    @State private var showSettings = false
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 17) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("IWATCH · ETAPA \(stageVersion)")
-                            .font(.caption.bold()).foregroundStyle(.cyan)
-                        Text("Moto Watch Bridge")
-                            .font(.largeTitle.bold())
-                        Text("Spotify, batería y Encuentra mi teléfono. Los títulos y el estado se envían al reloj; su pantalla puede tardar en refrescarse.")
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 20) {
+                    watchHero
+                    connectionCard
+                    batteryCard
+                    musicCard
+                    finderCard
+                    HStack(spacing: 12) {
+                        Image(systemName: "bell.badge.fill").foregroundStyle(.pink)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Tus avisos, primero").font(.subheadline.bold())
+                            Text(watch.notificationStatus).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }.padding(16).background(Color.pink.opacity(0.07), in: RoundedRectangle(cornerRadius: 20))
+                    Button { showSettings = true } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "slider.horizontal.3").foregroundStyle(.indigo)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Ajustes y diagnóstico").font(.headline)
+                                Text("Spotify, avisos, pantalla de bloqueo y registro").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary)
+                        }.padding(18).watchCard()
+                    }.buttonStyle(.plain)
+                    Text("iWatch · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                        .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                }.padding(20)
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("iWatch").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                    .accessibilityLabel("Ajustes de iWatch")
+            }
+        }
+        .sheet(isPresented: $showSettings) { settingsSheet }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                finder.updateAuthorizationStatus()
+                connectionAlerts.refreshPermissionStatus()
+                watch.autoConnectIfNeeded()
+                watch.refreshBattery(force: false)
+                spotifyRemote.applicationDidBecomeActive()
+                if spotify.controlEnabled {
+                    if spotifyRemote.isConnected {
+                        spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
+                    } else {
+                        Task { await spotify.refreshPlaybackInfo() }
                     }
+                }
+            }
+        }
+        .task {
+            // No afirmar que hay encuesta continua con el iPhone bloqueado.
+            while !Task.isCancelled {
+                if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
+                    if spotifyRemote.isConnected {
+                        // Recupera cambios aun cuando la suscripción del SDK no emita el evento.
+                        spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
+                    } else if watch.isConnected {
+                        await spotify.refreshPlaybackInfo()
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+            }
+        }
+    }
 
+    private var watchHero: some View {
+        HStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Tu reloj,\na tu ritmo").font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
+                Text("Todo conectado, en un solo lugar.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            ZStack {
+                RoundedRectangle(cornerRadius: 30).fill(Color.cyan.opacity(0.12)).frame(width: 94, height: 112)
+                Image(systemName: "watch.analog").font(.system(size: 70, weight: .light)).foregroundStyle(.cyan)
+            }.accessibilityHidden(true)
+        }.padding(.vertical, 8)
+    }
+    private var connectionCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            cardHeading("Tu Moto Watch", symbol: "antenna.radiowaves.left.and.right", color: .cyan)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(watch.watchName).font(.title3.bold())
+                    Text(watch.connectionStatus).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Label(watch.isConnected ? "Conectado" : "Sin conexión", systemImage: watch.isConnected ? "checkmark.circle.fill" : "circle.dashed")
+                    .font(.caption.bold()).foregroundStyle(watch.isConnected ? Color.green : Color.secondary)
+            }
+            if !watch.isConnected {
+                Button { watch.connectToWatch() } label: { Label("Conectar reloj", systemImage: "link").frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent).tint(.cyan)
+            }
+            Toggle("Reconexión automática", isOn: Binding(get: { watch.autoReconnectEnabled }, set: { watch.setAutoReconnect($0) }))
+                .font(.subheadline).tint(.cyan)
+        }.padding(18).watchCard()
+    }
+    private var batteryCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            cardHeading("Energía para tu día", symbol: "battery.75percent", color: .green)
+            HStack(spacing: 22) {
+                ZStack {
+                    Circle().stroke(Color.green.opacity(0.12), lineWidth: 9)
+                    if let percentage = watch.batteryPercentage, watch.isConnected {
+                        Circle().trim(from: 0, to: CGFloat(min(max(percentage, 0), 100)) / 100)
+                            .stroke(Color.green, style: StrokeStyle(lineWidth: 9, lineCap: .round)).rotationEffect(.degrees(-90))
+                    }
+                    Text(watch.isConnected ? watch.batteryPercentage.map { "\($0)%" } ?? "—" : "—")
+                        .font(.title2.bold()).monospacedDigit()
+                }.frame(width: 88, height: 88)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Batería del reloj").font(.headline)
+                    Text(watch.batteryStatus).font(.caption).foregroundStyle(.secondary)
+                    Button("Consultar batería") { watch.refreshBattery() }
+                        .font(.caption.bold()).buttonStyle(.bordered).tint(.green).disabled(!watch.isConnected)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }.padding(18).watchCard()
+    }
+    private var musicCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            cardHeading("Tu música", symbol: "music.note", color: .green)
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "music.note.list").font(.system(size: 30))
+                    .foregroundStyle(.green).frame(width: 64, height: 72)
+                    .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 16))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(spotify.lastSong).font(.headline).fixedSize(horizontal: false, vertical: true)
+                    Text(spotify.playbackAvailability).font(.caption).foregroundStyle(.secondary)
+                    Text(spotifyRemote.isConnected ? "Conectado con Spotify" : spotify.status)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Toggle("Controles desde el reloj", isOn: Binding(get: { spotify.controlEnabled }, set: { spotify.setEnabled($0) }))
+                .font(.subheadline).tint(.green)
+            HStack {
+                Button { spotify.forceWatchMusicRecovery() } label: { Label("Actualizar canción", systemImage: "arrow.clockwise") }
+                    .buttonStyle(.bordered).tint(.green)
+                Spacer(minLength: 0)
+                Button("Configurar") { showSettings = true }.font(.subheadline)
+            }
+            Text("Siguiente, anterior y reproducir/pausar desde tu Moto Watch.")
+                .font(.caption).foregroundStyle(.secondary)
+        }.padding(18).watchCard()
+    }
+    private var finderCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            cardHeading("Siempre a mano", symbol: "iphone.radiowaves.left.and.right", color: .indigo)
+            Text("Encontrá tu iPhone").font(.title3.bold())
+            Text(finder.status).font(.caption).foregroundStyle(.secondary)
+            Text("Hacelo sonar desde la función de búsqueda del reloj.")
+                .font(.subheadline).foregroundStyle(.secondary)
+            HStack {
+                Button { finder.test() } label: { Label("Probar sonido", systemImage: "speaker.wave.2.fill") }
+                    .buttonStyle(.borderedProminent).tint(.indigo)
+                Button("Detener") { finder.stop() }.buttonStyle(.bordered).tint(.indigo)
+            }
+        }.padding(18).watchCard()
+    }
+    private func cardHeading(_ title: String, symbol: String, color: Color) -> some View {
+        Label(title, systemImage: symbol).font(.subheadline.bold()).foregroundStyle(color)
+    }
+    private var settingsSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
                     GroupBox("Conexión") {
                         VStack(alignment: .leading, spacing: 10) {
                             statusRow("Bluetooth", watch.bluetoothStatus)
@@ -277,44 +442,10 @@ struct ContentView: View {
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
-
-                    Text("iWatch usa solo batería Motorola 10/01. La Actividad en vivo no usa App Groups, pero necesita que la extensión WidgetKit quede firmada y registrada. El widget fijo es diagnóstico, no muestra el porcentaje real.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                .padding()
-            }
-            .navigationTitle("Moto Watch")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .onChange(of: scenePhase) { phase in
-            if phase == .active {
-                finder.updateAuthorizationStatus()
-                connectionAlerts.refreshPermissionStatus()
-                watch.autoConnectIfNeeded()
-                watch.refreshBattery(force: false)
-                spotifyRemote.applicationDidBecomeActive()
-                if spotify.controlEnabled {
-                    if spotifyRemote.isConnected {
-                        spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
-                    } else {
-                        Task { await spotify.refreshPlaybackInfo() }
-                    }
-                }
-            }
-        }
-        .task {
-            // No afirmar que hay encuesta continua con el iPhone bloqueado.
-            while !Task.isCancelled {
-                if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
-                    if spotifyRemote.isConnected {
-                        // Recupera cambios aun cuando la suscripción del SDK no emita el evento.
-                        spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
-                    } else if watch.isConnected {
-                        await spotify.refreshPlaybackInfo()
-                    }
-                }
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
-            }
+                }.padding(20).groupBoxStyle(WatchSettingsGroupStyle())
+            }.background(Color(uiColor: .systemGroupedBackground))
+                .navigationTitle("Ajustes y diagnóstico").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Listo") { showSettings = false } } }
         }
     }
 
@@ -332,5 +463,21 @@ struct ContentView: View {
             Text("\(count)").font(.title2.bold()).monospacedDigit()
             Text(title).font(.caption2)
         }.frame(maxWidth: .infinity)
+    }
+}
+
+private extension View {
+    func watchCard() -> some View {
+        self.frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.primary.opacity(0.04)))
+    }
+}
+private struct WatchSettingsGroupStyle: GroupBoxStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            configuration.label.font(.headline).foregroundStyle(.indigo)
+            configuration.content
+        }.padding(18).watchCard()
     }
 }
