@@ -32,6 +32,9 @@ struct HealthHistoryView: View {
     @StateObject private var store = WatchHealthStore.shared
     @StateObject private var sync = HealthDashboardSync.shared
     @EnvironmentObject private var watch: WatchBLEManager
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var visible = false
+    @State private var today = Date()
     @AppStorage("motowatch.health.selectedWatch") private var selectedWatch = ""
     private var ids: [String] { Array(Set(store.watchIDs + [watch.healthWatchID].compactMap { $0 })).sorted() }
     private var watchID: String {
@@ -51,12 +54,13 @@ struct HealthHistoryView: View {
                         }.pickerStyle(.menu)
                     }
                     updatePanel
-                    Text("Tus últimas lecturas").font(.title2.bold())
+                    Text("Hoy · \(today.formatted(date: .abbreviated, time: .omitted))").font(.title2.bold())
                     ForEach(HealthMetric.allCases.filter { $0 != .workouts }) { metric in
                         NavigationLink {
                             HealthMetricHistoryView(metric: metric, watchID: watchID, store: store)
                         } label: {
-                            HealthMetricCard(metric: metric, snapshot: store.latest(metric, watchID: watchID))
+                            HealthMetricCard(metric: metric, snapshot: store.latest(metric, watchID: watchID, dates: [today]),
+                                emptyTitle: "Sin registros de hoy", emptyDetail: "Consultá el histórico para ver días anteriores")
                         }.buttonStyle(.plain)
                     }
                     Label("Entrenamientos: sincronización pendiente", systemImage: "figure.run")
@@ -75,6 +79,15 @@ struct HealthHistoryView: View {
                     .accessibilityLabel("Diagnóstico de salud")
             }
         }
+        .onAppear { today = Date(); visible = true; sync.setVisibility(true, active: scenePhase == .active, watch: watch) }
+        .onDisappear { visible = false; sync.setVisibility(false, active: scenePhase == .active, watch: watch) }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { today = Date() }
+            sync.setVisibility(visible, active: phase == .active, watch: watch)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in today = Date() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in today = Date() }
+        .onChange(of: watch.isConnected) { _ in sync.connectionChanged(watch: watch) }
     }
     private var header: some View {
         HStack(alignment: .top) {
@@ -95,7 +108,7 @@ struct HealthHistoryView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Tu reloj, al día").font(.headline)
-                    Text("Consultar y guardar las últimas lecturas").font(.caption).foregroundStyle(.secondary)
+                    Text("Automático mientras consultás Salud").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button { selectedWatch = watch.healthWatchID ?? watchID; sync.update(watch: watch) } label: {
@@ -106,6 +119,8 @@ struct HealthHistoryView: View {
             }
             if sync.isRunning { ProgressView(value: sync.progress).tint(.pink) }
             Text(sync.status).font(.caption).foregroundStyle(.secondary)
+            Text("Pasos y calorías: 5 min · Mediciones: 15 min · Sueño: 1 h. Actualizar consulta todo ahora.")
+                .font(.caption2).foregroundStyle(.secondary)
             ForEach(sync.issues, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
         }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
     }
@@ -114,18 +129,20 @@ struct HealthHistoryView: View {
 private struct HealthMetricCard: View {
     let metric: HealthMetric
     let snapshot: HealthSnapshot?
+    var emptyTitle = "Sin registros"
+    var emptyDetail = "Consultá tu reloj para empezar"
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: metric.symbol).font(.title2).foregroundStyle(metric.color)
                 .frame(width: 48, height: 54).background(metric.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 16))
             VStack(alignment: .leading, spacing: 6) {
                 Text(metric.title).font(.subheadline.bold()).foregroundStyle(metric.color)
-                Text(snapshot.map { metric.formatted($0.value) } ?? "Sin registros")
+                Text(snapshot.map { metric.formatted($0.value) } ?? emptyTitle)
                     .font(.title2.bold()).foregroundStyle(.primary)
                 if let snapshot = snapshot {
                     Text("\(metric == .sleep ? "Último descanso" : "Medición"): \(snapshot.measuredAt.formatted(date: .abbreviated, time: .shortened))")
                     Text("Actualizado: \(snapshot.updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                } else { Text("Consultá tu reloj para empezar") }
+                } else { Text(emptyDetail) }
             }.font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(metric.color)
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -144,7 +161,7 @@ private struct HealthMetricHistoryView: View {
     @AppStorage("motowatch.sleep.goal.hours") private var goalHours = 8.0
     init(metric: HealthMetric, watchID: String, store: WatchHealthStore) {
         self.metric = metric; self.watchID = watchID; self.store = store
-        _date = State(initialValue: min(store.latest(metric, watchID: watchID)?.measuredAt ?? Date(), Date()))
+        _date = State(initialValue: Date())
     }
     private var dates: [Date] { period.dates(containing: date) }
     private var records: [WatchHealthDay] { dates.compactMap { store.day($0, watchID: watchID) } }

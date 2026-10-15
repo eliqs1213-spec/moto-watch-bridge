@@ -15,6 +15,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         WatchBLEManager.shared.record("SISTEMA", "iPhone: aplicación en segundo plano")
+        WatchBLEManager.shared.pauseAuxiliaryWork()
         SpotifyAppRemoteBridge.shared.applicationDidEnterBackground()
     }
 
@@ -23,6 +24,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        WatchBLEManager.shared.resumeAuxiliaryWork()
         SpotifyAppRemoteBridge.shared.applicationDidBecomeActive()
     }
 }
@@ -289,7 +291,7 @@ struct ContentView: View {
                 finder.updateAuthorizationStatus()
                 connectionAlerts.refreshPermissionStatus()
                 watch.autoConnectIfNeeded()
-                watch.refreshBattery()
+                watch.refreshBattery(force: false)
                 spotifyRemote.applicationDidBecomeActive()
                 if spotify.controlEnabled {
                     if spotifyRemote.isConnected {

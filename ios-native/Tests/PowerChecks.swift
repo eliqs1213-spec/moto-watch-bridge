@@ -1,0 +1,27 @@
+import Foundation
+
+let traffic: [WatchTrafficKind] = [.battery, .health, .music, .notification, .notification, .sleepRead]
+expect(WatchTrafficPolicy.nextIndex(traffic, musicReady: true) == 3, "A notification must bypass queued health, music and battery")
+expect(WatchTrafficPolicy.nextIndex([.notification, .notification], musicReady: true) == 0, "Notice FIFO order changed")
+expect(WatchTrafficPolicy.nextIndex([.music, .notification], musicReady: false) == 1, "Music handshake delay blocked notice")
+expect(WatchTrafficPolicy.nextIndex([.music, .health], musicReady: false) == 1, "Music delay stalled unrelated traffic")
+expect(WatchTrafficPolicy.nextIndex([.music], musicReady: false) == nil, "Music handshake delay was skipped")
+expect(WatchTrafficPolicy.nextIndex([.battery, .health, .music], musicReady: true) == 2, "Music controls should precede health")
+expect(WatchTrafficPolicy.nextIndex([.battery, .sleepRead, .vitals], musicReady: true) == 1, "Equal-priority reads must preserve FIFO")
+let policyTime = Date(timeIntervalSince1970: 1800000000)
+expect(WatchTrafficPolicy.acceptsNotice(target: "a", current: "a", expiresAt: policyTime.addingTimeInterval(120), now: policyTime), "Pending notice should survive a short disconnect for the same watch")
+expect(!WatchTrafficPolicy.acceptsNotice(target: "a", current: "b", expiresAt: policyTime.addingTimeInterval(120), now: policyTime), "Notice leaked to another watch")
+expect(!WatchTrafficPolicy.acceptsNotice(target: "a", current: "a", expiresAt: policyTime, now: policyTime), "Expired notice accepted")
+expect(!WatchTrafficPolicy.acceptsNotice(target: nil, current: "a", expiresAt: policyTime.addingTimeInterval(120), now: policyTime), "Untargeted notice accepted")
+expect(WatchTrafficPolicy.reconnectDelay(failures: 1) == 1, "First reconnect should be prompt")
+expect(WatchTrafficPolicy.reconnectDelay(failures: 4) == 8, "Reconnect failures should back off")
+expect(WatchTrafficPolicy.reconnectDelay(failures: 100) == 60, "Reconnect backoff must be capped")
+var refreshSchedule = HealthRefreshSchedule()
+expect(refreshSchedule.due(watchID: "a", now: policyTime).count == 5, "First health visit should query all groups")
+for group in HealthRefreshGroup.allCases { refreshSchedule.mark(group, watchID: "a", at: policyTime) }
+expect(refreshSchedule.due(watchID: "a", now: policyTime.addingTimeInterval(299)).isEmpty, "Automatic health queries too frequent")
+expect(refreshSchedule.due(watchID: "a", now: policyTime.addingTimeInterval(300)) == [.counters], "Five-minute refresh should only read daily counters")
+expect(refreshSchedule.due(watchID: "a", now: policyTime.addingTimeInterval(900)) == [.counters, .pulse, .stress, .oxygen], "Fifteen-minute refresh must exclude sleep")
+expect(refreshSchedule.due(watchID: "a", now: policyTime.addingTimeInterval(3600)).count == 5, "Hourly sleep refresh missing")
+expect(refreshSchedule.due(watchID: "b", now: policyTime).count == 5, "Health throttle mixed different watches")
+print("Power checks passed: notification priority, FIFO, music handshake isolation, notice recovery/expiry/recipient, reconnect backoff and health intervals")

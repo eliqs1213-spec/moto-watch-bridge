@@ -17,6 +17,7 @@ final class WatchVitalsProbe: ObservableObject {
     private var start = Date.distantPast
     private var end = Date.distantPast
     private var channel = 0
+    private var validatedOnly = false
     private var selector: UInt64 = 1
     private var trySecond = false
     private var cursor: UInt64 = 0
@@ -33,10 +34,10 @@ final class WatchVitalsProbe: ObservableObject {
         messages.append(message)
         if messages.count > 45 { messages.removeFirst(messages.count - 45) }
     }
-    func begin(mode: Mode, watchID: String, cleanup: @escaping () -> Void, send: @escaping (Data) -> Bool) {
+    func begin(mode: Mode, watchID: String, validatedOnly: Bool = false, cleanup: @escaping () -> Void, send: @escaping (Data) -> Bool) {
         guard !isRunning, !WatchHealthSync.shared.isRunning, !WatchStressProbe.shared.isRunning,
               UIApplication.shared.applicationState == .active else { return }
-        self.mode = mode; self.watchID = watchID; self.cleanup = cleanup; self.send = send
+        self.mode = mode; self.watchID = watchID; self.validatedOnly = validatedOnly; self.cleanup = cleanup; self.send = send
         readings = []; counters = []; counterTime = nil; messages = []
         end = Date(); start = end.addingTimeInterval(-86400)
         channel = 0; selector = 1; trySecond = false; isRunning = true
@@ -78,7 +79,7 @@ final class WatchVitalsProbe: ObservableObject {
         }
     }
     private func nextChannel() {
-        if channel == 0 { channel = 1; requestIndex() }
+        if channel == 0 && !validatedOnly { channel = 1; requestIndex() }
         else { finish(readings.isEmpty ? "Sin muestras candidatas. Revisá el diagnóstico." : "Lecturas candidatas recibidas; compará valor y hora con el reloj.") }
     }
     func progress(received: Int, expected: Int) {
@@ -144,4 +145,3 @@ final class WatchVitalsProbe: ObservableObject {
         isRunning = false; waitingForIndex = false; status = message; note(message)
     }
 }
-

@@ -20,7 +20,7 @@ jobs:
 
       - name: Verificar protocolo de salud con datos sintéticos
         run: |
-          cat ios-native/Sources/WatchHealthProtocol.swift ios-native/Sources/WatchHealthStore.swift ios-native/Sources/HealthHistoryPeriod.swift ios-native/Tests/ProtocolChecks.swift ios-native/Tests/HealthStoreChecks.swift > "$RUNNER_TEMP/health-checks.swift"
+          cat ios-native/Sources/WatchHealthProtocol.swift ios-native/Sources/WatchHealthStore.swift ios-native/Sources/HealthHistoryPeriod.swift ios-native/Sources/WatchTrafficPolicy.swift ios-native/Tests/ProtocolChecks.swift ios-native/Tests/HealthStoreChecks.swift ios-native/Tests/PowerChecks.swift > "$RUNNER_TEMP/health-checks.swift"
           swift "$RUNNER_TEMP/health-checks.swift"
 
       - name: Configurar Xcode y generar proyecto

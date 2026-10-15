@@ -14,6 +14,8 @@ struct NotificationsView: View {
             Form {
                 Section("Conexión al reloj") {
                     LabeledContent("Bluetooth", value: watch.connectionStatus)
+                    Text(watch.notificationStatus).font(.caption).foregroundStyle(.secondary)
+                    Text("Los avisos tienen prioridad. Si se corta el enlace, los pendientes esperan hasta 2 minutos en memoria para el mismo reloj.").font(.caption).foregroundStyle(.secondary)
                     Text("No depende de Windows. Mantener iWatch conectada al Moto Watch Fit.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -34,7 +36,7 @@ struct NotificationsView: View {
                         .lineLimit(2...4)
                     Button("Enviar al Moto Watch") {
                         status = watch.sendNotification(source: source, sender: sender, message: message)
-                            ? "Trama 25/02 enviada al reloj"
+                            ? "Aviso encolado con prioridad"
                             : "No enviado: conexión BLE o mensaje inválido"
                     }
                     .buttonStyle(.borderedProminent)
@@ -49,7 +51,7 @@ struct NotificationsView: View {
                         .foregroundStyle(.orange)
                 }
                 Section("Privacidad") {
-                    Text("El remitente y el mensaje no se guardan en el registro de iWatch. Solo registramos el origen y el tamaño del paquete BLE.")
+                    Text("El remitente y el mensaje no se guardan en el registro de iWatch. Solo registramos el origen y el tamaño del paquete BLE. Los avisos pendientes se conservan temporalmente en memoria, sin guardarlos en disco.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

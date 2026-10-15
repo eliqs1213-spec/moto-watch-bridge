@@ -9,6 +9,7 @@ final class WatchHealthSync: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var steps: WatchHealthProtocol.StepCandidate?
     @Published private(set) var pulse: [WatchHealthProtocol.PulseCandidate] = []
+    @Published private(set) var activeCalories: (value: UInt64, timestamp: Date)?
     @Published private(set) var saved = false
     @Published private(set) var stepsDetail = "Sin consultar"
     @Published private(set) var heartRateDetail = "Sin consultar"
@@ -40,33 +41,33 @@ final class WatchHealthSync: ObservableObject {
 
     var canSave: Bool { !isRunning && !saved && (steps != nil || !pulse.isEmpty) }
 
-    func begin(watchID: String, clearPending: @escaping () -> Void, send: @escaping (Data) -> Bool) {
+    func begin(watchID: String, includePulse: Bool = true, clearPending: @escaping () -> Void, send: @escaping (Data) -> Bool) {
         guard !isRunning, UIApplication.shared.applicationState == .active else { return }
         self.watchID = watchID
         self.send = send
         self.clearPending = clearPending
-        steps = nil; pulse = []; saved = false
+        steps = nil; pulse = []; activeCalories = nil; saved = false
         diagnostics = []
         requestedSelector = 1
         probeSecondSelector = false
         pulseCursor = 0
         secondSelectorCompleted = false
         stepsDetail = "Esperando respuesta 30/06"
-        heartRateDetail = "Esperando índice 31/06"
+        heartRateDetail = includePulse ? "Esperando índice 31/06" : "No solicitado en esta actualización de contadores"
         end = Date()
         start = end.addingTimeInterval(-86400)
         isRunning = true
-        waitingForIndex = true; waitingForSteps = true; waitingForPulse = false
+        waitingForIndex = includePulse; waitingForSteps = true; waitingForPulse = false
         requestID = UUID()
-        status = "Consultando pasos y las últimas 24 horas de ritmo cardíaco…"
+        status = includePulse ? "Consultando contadores y ritmo cardíaco…" : "Consultando pasos y calorías activas…"
         let payload: [UInt8] = [0x08] + WatchHealthProtocol.varint(UInt64(start.timeIntervalSince1970))
             + [0x10] + WatchHealthProtocol.varint(UInt64(end.timeIntervalSince1970))
         guard send(WatchHealthProtocol.encode(group: 0x30, command: 0x06)),
-              send(WatchHealthProtocol.encode(group: 0x31, command: 0x06, payload: payload)) else {
+              (!includePulse || send(WatchHealthProtocol.encode(group: 0x31, command: 0x06, payload: payload))) else {
             cancel(message: "Conectá el Moto Watch para consultar salud")
             return
         }
-        note("Consultas 30/06 y 31/06 encoladas; ventana de 24 horas")
+        note(includePulse ? "Consultas 30/06 y 31/06 encoladas; ventana de 24 horas" : "Consulta 30/06 única para pasos y calorías activas")
         let id = requestID
         deadline?.cancel()
         deadline = Task { [weak self] in
@@ -107,6 +108,10 @@ final class WatchHealthSync: ObservableObject {
         if frame.group == 0x30 {
             guard waitingForSteps else { return true }
             waitingForSteps = false
+            if let result = VitalsCandidateProtocol.counters(frame, now: Date()), result.timestamp >= start,
+               let counter = result.values.first(where: { $0.field == 9 }) {
+                activeCalories = (counter.value, result.timestamp)
+            }
             if let candidate = WatchHealthProtocol.steps(frame), candidate.timestamp >= start,
                candidate.timestamp <= Date().addingTimeInterval(300) {
                 steps = candidate
@@ -199,7 +204,7 @@ final class WatchHealthSync: ObservableObject {
         clearPending?(); clearPending = nil
         deadline?.cancel(); deadline = nil
         isRunning = false; waitingForIndex = false; waitingForPulse = false; waitingForSteps = false
-        steps = nil; pulse = []; saved = false; send = nil
+        steps = nil; pulse = []; activeCalories = nil; saved = false; send = nil
         status = message
         stepsDetail = message
         heartRateDetail = message
@@ -247,4 +252,3 @@ final class WatchHealthSync: ObservableObject {
         }
     }
 }
-
