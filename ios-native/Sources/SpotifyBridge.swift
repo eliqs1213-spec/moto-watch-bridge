@@ -138,6 +138,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private let inactiveGraceSeconds: TimeInterval = 30
     private var playerUnavailableSince: Date?
     private var retainedTrackWarningLogged = false
+    private var manualResyncUntil: Date?
     private var manualIdlePreviewUntil: Date?
     private var requestBusy = false
     private struct PendingWatchCommand {
@@ -159,6 +160,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         UserDefaults.standard.set(enabled, forKey: "motowatch.spotify.enabled")
         if !enabled {
             pendingWatchCommands.removeAll()
+            manualResyncUntil = nil
             sendIdle(reason: "Controles Spotify desactivados")
             playbackAvailability = "Controles desactivados"
             metadataSource = "Desactivado"
@@ -228,6 +230,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         unavailableChecks = 0
         playerUnavailableSince = nil
         retainedTrackWarningLogged = false
+        manualResyncUntil = nil
         SpotifyAppRemoteBridge.shared.disable()
         // La desconexión voluntaria debe limpiar el panel aunque no haya
         // una respuesta de Spotify o el iPhone esté sin conexión a internet.
@@ -273,7 +276,10 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
         status = playback.is_playing ? "Spotify reproduciendo" : "Spotify pausado"
         if let snapshot = lastMusicSnapshot, playback.item != nil {
-            WatchBLEManager.shared.sendMusic(snapshot, force: wasIdle || force)
+            let manualResync = consumeManualResyncRequest()
+            WatchBLEManager.shared.sendMusic(snapshot,
+                                             force: wasIdle || force || manualResync,
+                                             reannounce: wasIdle || manualResync)
         }
     }
 
@@ -316,6 +322,28 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             metadataSource = "Sin reproductor confirmado"
             sendIdle(reason: "Sin reproductor ni canción previa después de 30 segundos")
         }
+    }
+
+    // Una resincronización manual exige un estado NUEVO de Spotify; nunca
+    // reenviamos la última pista en caché sin verificarla. El pedido expira
+    // para que una consulta futura no provoque un reanuncio inesperado.
+    func resyncWatchMusicManually() {
+        guard controlEnabled, WatchBLEManager.shared.isConnected else {
+            lastAction = "Resincronización: se requieren controles Spotify y reloj conectado"
+            record("MUSICA-DIAG: sin envío, controles o Bluetooth no disponibles")
+            return
+        }
+        manualResyncUntil = Date().addingTimeInterval(20)
+        WatchBLEManager.shared.captureNextMusicFrames()
+        lastAction = "Resincronización: consultando canción actual"
+        record("MUSICA-DIAG: solicitando estado fresco; reanuncio forzado si Spotify responde")
+        forceWatchMusicRecovery()
+    }
+
+    private func consumeManualResyncRequest() -> Bool {
+        guard let expiry = manualResyncUntil else { return false }
+        manualResyncUntil = nil
+        return Date() <= expiry
     }
 
     // Consultar el reproductor ACTUAL antes de reenviar el título anterior.
@@ -372,7 +400,10 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         metadataSource = "Spotify iOS SDK · App Remote"
         status = isPlaying ? "Spotify App Remote · reproduciendo" : "Spotify App Remote · pausado"
         playbackAvailability = isPlaying ? "Reproduciendo (SDK)" : "Pausado (SDK)"
-        WatchBLEManager.shared.sendMusic(snapshot, force: wasIdle, reannounce: wasIdle)
+        let manualResync = consumeManualResyncRequest()
+        WatchBLEManager.shared.sendMusic(snapshot,
+                                         force: wasIdle || manualResync,
+                                         reannounce: wasIdle || manualResync)
     }
 
     func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
