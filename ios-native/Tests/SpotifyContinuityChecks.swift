@@ -21,3 +21,23 @@ verify(SpotifyPlaybackContinuityPolicy.decide(unavailableSeconds: 10, hasLastTra
 verify(SpotifyPlaybackContinuityPolicy.decide(unavailableSeconds: 45, hasLastTrack: true, graceSeconds: 60), .waiting,
        "Tolerancia personalizada")
 print("Spotify playback continuity checks: OK")
+
+
+func verifyCheck(_ ok: Bool, _ name: String) {
+    guard ok else { fatalError(name) }
+}
+
+let baseline = Date(timeIntervalSince1970: 1_000_000)
+verifyCheck(SpotifyCommandQueuePolicy.isFresh(receivedAt: baseline,
+                now: baseline.addingTimeInterval(0)), "Comando recién recibido")
+verifyCheck(SpotifyCommandQueuePolicy.isFresh(receivedAt: baseline,
+                now: baseline.addingTimeInterval(6)), "Comando válido a 6 s")
+verifyCheck(!SpotifyCommandQueuePolicy.isFresh(receivedAt: baseline,
+                now: baseline.addingTimeInterval(6.1)), "Comando caducado")
+verifyCheck(SpotifyCommandQueuePolicy.maxPending == 2, "Límite de cola")
+verifyCheck(SpotifyCommandQueuePolicy.isTransientHTTP(502), "HTTP 502 es transitorio")
+verifyCheck(SpotifyCommandQueuePolicy.isTransientHTTP(503), "HTTP 503 es transitorio")
+verifyCheck(SpotifyCommandQueuePolicy.isTransientHTTP(429), "HTTP 429 es transitorio")
+verifyCheck(!SpotifyCommandQueuePolicy.isTransientHTTP(404), "404 no es transitorio 5xx")
+verifyCheck(!SpotifyCommandQueuePolicy.isTransientHTTP(401), "401 exige autorizar")
+print("Spotify pending commands checks: OK")
