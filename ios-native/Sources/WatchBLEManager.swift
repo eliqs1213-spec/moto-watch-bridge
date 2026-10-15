@@ -25,6 +25,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     @Published private(set) var batteryPercentage: Int? = nil
     @Published private(set) var batteryStatus = "Sin lectura"
     @Published private(set) var musicSyncStatus = "Sin sincronizar"
+    // Observación voluntaria de botones, sin enviarlos a Spotify. No altera
+    // el flujo normal mientras está apagada.
+    @Published private(set) var musicObservationEnabled = false
+    @Published private(set) var mediaGATTStatus = "Sin servicios inspeccionados"
+    private var musicObservationUntil: Date?
+    private var musicObservationTimeout: DispatchWorkItem?
 
     private let serviceUUID = CBUUID(string: MotoProtocol.service)
     private let notifyUUID = CBUUID(string: MotoProtocol.notifications)
@@ -78,6 +84,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     // que pertenecían a la conexión anterior. Un callback antiguo tampoco debe
     // reanudar una cola obsoleta tras una restauración de iOS.
     private func resetConnectionTransport() {
+        setMusicObservationEnabled(false)
+        mediaGATTStatus = "Sin servicios inspeccionados en esta conexión"
         Task { @MainActor in WatchHealthSync.shared.cancel(); WatchStressProbe.shared.cancel(); WatchVitalsProbe.shared.cancel(); WatchSleepProbe.shared.cancel() }
         sleepAssembler.reset()
         currentWriteIsSleep = false
@@ -135,6 +143,23 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     func flushLog() {
         logSave?.cancel(); logSave = nil
         if let data = try? JSONEncoder().encode(events) { UserDefaults.standard.set(data, forKey: logStorageKey) }
+    }
+
+    func setMusicObservationEnabled(_ enabled: Bool) {
+        musicObservationTimeout?.cancel()
+        musicObservationTimeout = nil
+        musicObservationEnabled = enabled
+        musicObservationUntil = enabled ? Date().addingTimeInterval(90) : nil
+        record("MEDIA", enabled
+               ? "Modo observación activado por 90 s; los botones NO controlarán Spotify durante la prueba"
+               : "Modo observación desactivado; controles Spotify normales")
+        if enabled {
+            let timeout = DispatchWorkItem { [weak self] in
+                self?.setMusicObservationEnabled(false)
+            }
+            musicObservationTimeout = timeout
+            DispatchQueue.main.asyncAfter(deadline: .now() + 90, execute: timeout)
+        }
     }
 
     func pauseAuxiliaryWork() {
@@ -384,6 +409,17 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         let services = peripheral.services ?? []
+        // Inspección pasiva: no se exploran ni escriben características nuevas.
+        // La ausencia de HID entre servicios visibles NO descarta un perfil
+        // gestionado directamente por iOS. AMS está alojado en el iPhone, no
+        // entre los servicios GATT del reloj.
+        let hasVisibleHID = services.contains {
+            let id = $0.uuid.uuidString.uppercased()
+            return id == "1812" || id == "00001812-0000-1000-8000-00805F9B34FB"
+        }
+        mediaGATTStatus = "\(services.count) servicios visibles · HID " +
+            (hasVisibleHID ? "observado" : "no visible (no concluyente)")
+        record("MEDIA", mediaGATTStatus)
         if let motorola = services.first(where: { $0.uuid == serviceUUID }) {
             peripheral.discoverCharacteristics([notifyUUID, txUUID], for: motorola)
         } else {
@@ -609,7 +645,14 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         switch command {
         case .findStart: PhoneFinder.shared.start()
         case .findStop: PhoneFinder.shared.stop()
-        case .next, .previous, .toggle: SpotifyBridge.shared.receive(command)
+        case .next, .previous, .toggle:
+            if musicObservationEnabled,
+               let until = musicObservationUntil, Date() < until {
+                record("MEDIA", "OBSERVACIÓN: \(command.rawValue) recibido por BLE; NO reenviado a Spotify")
+            } else {
+                if musicObservationEnabled { setMusicObservationEnabled(false) }
+                SpotifyBridge.shared.receive(command)
+            }
         case .unknown: break
         }
     }

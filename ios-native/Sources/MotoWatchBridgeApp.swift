@@ -412,6 +412,27 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
+                    GroupBox("Control multimedia de iOS · prueba experimental") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Auditoría pasiva del reloj: no cambia el emparejamiento ni escribe comandos nuevos.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text(watch.mediaGATTStatus)
+                                .font(.subheadline)
+                            Text("HID puede estar oculto para las apps por iOS. AMS es un servicio del iPhone: la lista de servicios del reloj no permite confirmar su compatibilidad.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Toggle("Observar botones sin controlar Spotify (90 s)", isOn: Binding(
+                                get: { watch.musicObservationEnabled },
+                                set: { watch.setMusicObservationEnabled($0) }
+                            ))
+                            .tint(.orange)
+                            Text("Solo durante la prueba, Siguiente/Anterior/Play-Pausa se registran sin ejecutarse. Los metadatos y notificaciones siguen funcionando. El modo se desactiva automáticamente a los 90 segundos o al desconectar el reloj.")
+                                .font(.caption).foregroundStyle(.orange)
+                            Text("Probá con música reproduciéndose y el iPhone bloqueado. Después abrí Registro persistente: buscá «OBSERVACIÓN» y las horas. Esta prueba no activa AMS/HID ni demuestra soporte de control universal.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     GroupBox("Prueba con pantalla bloqueada") {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("1. Conectá el reloj y esperá «Escuchando los botones».\n2. Bloqueá el iPhone durante 60 segundos.\n3. Pulsá Siguiente, Anterior y Play/Pausa, espaciados 5 segundos.\n4. Desbloqueá y revisá el registro con las horas.")
