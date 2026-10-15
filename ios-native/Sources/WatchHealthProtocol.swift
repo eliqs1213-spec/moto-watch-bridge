@@ -227,3 +227,78 @@ enum WatchStressProtocol {
         return result
     }
 }
+
+
+// Candidatos para comparación, sin interpretación clínica ni unidades asignadas.
+enum VitalsCandidateProtocol {
+    struct Reading: Identifiable {
+        let channel: String
+        let timestamp: Date
+        let value: Int
+        var id: String { "\(channel):\(Int64(timestamp.timeIntervalSince1970))" }
+    }
+    struct Counter: Identifiable {
+        let field: Int
+        let value: UInt64
+        var id: Int { field }
+        var label: String { field == 9 ? "Calorías activas" : "Contador B (sin identificar)" }
+        var unitSuffix: String { field == 9 ? " kcal" : "" }
+    }
+    struct CounterResult { let timestamp: Date; let values: [Counter] }
+    static func counters(_ frame: WatchHealthProtocol.Frame, now: Date) -> CounterResult? {
+        guard frame.group == 0x30, frame.command == 0x06,
+              let fields = WatchHealthProtocol.fields(frame.payload),
+              let seconds = WatchHealthProtocol.integer(6, in: fields), seconds >= 1577836800,
+              Double(seconds) <= now.timeIntervalSince1970 + 300 else { return nil }
+        var values: [Counter] = []
+        // Campo 9: candidato principal. Campo 3: contador alternativo, podría
+        // representar distancia. No se supone que ambos sean calorías.
+        for field in [9, 3] {
+            let matches = fields.filter { $0.number == field }
+            guard matches.count <= 1 else { return nil }
+            if let value = WatchHealthProtocol.integer(field, in: fields) {
+                guard value <= 10000000 else { return nil }
+                values.append(Counter(field: field, value: value))
+            } else if !matches.isEmpty { return nil }
+        }
+        guard !values.isEmpty else { return nil }
+        return CounterResult(timestamp: Date(timeIntervalSince1970: Double(seconds)), values: values)
+    }
+    static func oxygenCursor(_ fields: [WatchHealthProtocol.Field], indexCommand: UInt8,
+                             start: Date, end: Date) -> UInt64? {
+        guard [0x0B, 0x11].contains(indexCommand),
+              let value = WatchHealthProtocol.integer(2, in: fields) else { return nil }
+        // 31/0B anuncia un cursor pequeño en iPhone; puede ser ordinal.
+        // No interpretar ese cursor como fecha de la muestra.
+        if indexCommand == 0x0B && value > 0 && value <= 65535 { return value }
+        guard value >= 1577836800, Double(value) >= start.timeIntervalSince1970 - 1,
+              Double(value) <= end.timeIntervalSince1970 else { return nil }
+        return value
+    }
+    static func schema(_ frame: WatchHealthProtocol.Frame) -> String {
+        guard let fields = WatchHealthProtocol.fields(frame.payload) else { return "Protobuf inválido" }
+        return fields.prefix(14).map { field in
+            "\(field.number):" + (field.integer != nil ? "varint" : "bytes")
+        }.joined(separator: ",")
+    }
+    static func oxygenCandidates(_ frame: WatchHealthProtocol.Frame, command: UInt8, selector: UInt64,
+                                 start: Date, end: Date) -> [Reading]? {
+        guard [0x0C, 0x12].contains(command), frame.group == 0x31, frame.command == command,
+              let fields = WatchHealthProtocol.fields(frame.payload),
+              WatchHealthProtocol.integer(1, in: fields) == selector,
+              let base = WatchHealthProtocol.integer(2, in: fields), base >= 1577836800 else { return nil }
+        var result: [Reading] = []
+        for item in fields where item.number == 3 {
+            guard let data = item.data, let sample = WatchHealthProtocol.fields(data),
+                  let value = WatchHealthProtocol.integer(2, in: sample), value <= 100 else { return nil }
+            let offsets = sample.filter { $0.number == 1 }
+            guard offsets.count <= 1, offsets.first == nil || offsets.first?.integer != nil else { return nil }
+            let offset = WatchHealthProtocol.integer(1, in: sample) ?? 0
+            guard offset <= 604800, base <= UInt64.max - offset else { return nil }
+            let date = Date(timeIntervalSince1970: Double(base + offset))
+            guard date >= start, date <= end.addingTimeInterval(300) else { return nil }
+            result.append(Reading(channel: command == 0x0C ? "A" : "B", timestamp: date, value: Int(value)))
+        }
+        return result
+    }
+}

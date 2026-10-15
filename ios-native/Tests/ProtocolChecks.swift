@@ -125,3 +125,35 @@ case .unrelated: break
 default: fatalError("Stress intercepted by pulse-only assembler")
 }
 print("Stress candidate checks passed: bounds, selector, timestamps, frame routing and fragmentation")
+
+let caloriePayload: [UInt8] = [0x18, 0x2a, 0x30] + WatchHealthProtocol.varint(1799999900) + [0x48, 0x64]
+let calorieFrame = WatchHealthProtocol.decode(WatchHealthProtocol.encode(group: 0x30, command: 0x06, payload: caloriePayload))!
+let calorieRows = VitalsCandidateProtocol.counters(calorieFrame, now: now)!
+expect(calorieRows.values.count == 2 && calorieRows.values[0].field == 9 && calorieRows.values[0].value == 100, "Raw counters changed units or fields")
+expect(VitalsCandidateProtocol.counters(longFrame, now: now) == nil, "Pulse accepted as calories")
+let futureCalorie = WatchHealthProtocol.Frame(group: 0x30, command: 0x06, payload: Data([0x30] + WatchHealthProtocol.varint(1800001000) + [0x48, 0x01]))
+expect(VitalsCandidateProtocol.counters(futureCalorie, now: now) == nil, "Future counters accepted")
+let oxygenFrameA = WatchHealthProtocol.Frame(group: 0x31, command: 0x0C, payload: Data(stressPayload))
+let oxygenFrameB = WatchHealthProtocol.Frame(group: 0x31, command: 0x12, payload: Data(stressPayload))
+expect(VitalsCandidateProtocol.oxygenCandidates(oxygenFrameA, command: 0x0C, selector: 1, start: now.addingTimeInterval(-20000), end: now)?.first?.channel == "A", "Candidate A label failed")
+expect(VitalsCandidateProtocol.oxygenCandidates(oxygenFrameB, command: 0x12, selector: 1, start: now.addingTimeInterval(-20000), end: now)?.first?.channel == "B", "Candidate B label failed")
+expect(VitalsCandidateProtocol.oxygenCandidates(oxygenFrameA, command: 0x12, selector: 1, start: now.addingTimeInterval(-20000), end: now) == nil, "Cross-channel oxygen accepted")
+expect(VitalsCandidateProtocol.oxygenCandidates(stressFrame, command: 0x0E, selector: 1, start: now.addingTimeInterval(-20000), end: now) == nil, "Confirmed stress command reused as oxygen")
+let oxygenData = WatchHealthProtocol.encode(group: 0x31, command: 0x0C, payload: stressPayload)
+var oxygenAssembler = WatchHealthFrameAssembler(commands: [0x0C, 0x12])
+_ = oxygenAssembler.consume(Data(oxygenData.prefix(509)), now: now)
+switch oxygenAssembler.consume(Data(oxygenData.dropFirst(509)), now: now) {
+case .complete(let data): expect(WatchHealthProtocol.decode(data)?.command == 0x0C, "Oxygen CRC or fragment routing failed")
+default: fatalError("Oxygen fragment reconstruction failed")
+}
+print("Vitals candidate checks passed: raw counters, dates, candidate isolation and fragmented replies")
+
+let ordinalIndexFields = WatchHealthProtocol.fields(Data([0x08, 0x01, 0x10, 0x01, 0x18, 0x07]))!
+expect(VitalsCandidateProtocol.oxygenCursor(ordinalIndexFields, indexCommand: 0x0B, start: now.addingTimeInterval(-86400), end: now) == 1, "Small oxygen cursor rejected")
+expect(VitalsCandidateProtocol.oxygenCursor(ordinalIndexFields, indexCommand: 0x11, start: now.addingTimeInterval(-86400), end: now) == nil, "Temporal index accepted ordinal cursor")
+let zeroCursor = WatchHealthProtocol.fields(Data([0x10, 0x00]))!
+expect(VitalsCandidateProtocol.oxygenCursor(zeroCursor, indexCommand: 0x0B, start: now.addingTimeInterval(-86400), end: now) == nil, "Zero ordinal accepted")
+let duplicateCursor = WatchHealthProtocol.fields(Data([0x10, 0x01, 0x10, 0x02]))!
+expect(VitalsCandidateProtocol.oxygenCursor(duplicateCursor, indexCommand: 0x0B, start: now.addingTimeInterval(-86400), end: now) == nil, "Duplicate cursor accepted")
+expect(calorieRows.values[0].label == "Calorías activas" && calorieRows.values[0].unitSuffix == " kcal", "Validated active calorie label")
+print("Oxygen cursor checks passed: small cursor, temporal separation, zero and duplicate rejection")
