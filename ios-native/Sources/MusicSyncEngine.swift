@@ -66,9 +66,11 @@ final class MusicSyncEngine: ObservableObject {
         // Releer Spotify después de un cambio real permite recuperar un
         // reproductor que aceptó la escritura BLE pero no refrescó su pantalla.
         // Solo actuar sobre la MISMA pista confirmada, una única vez.
-        let recoveredTransition = pendingTransitionSignature == signature &&
-            now <= pendingTransitionUntil && snapshot.isPlaying &&
-            UIApplication.shared.applicationState == .active
+        let recoveredTransition = MusicAutoSyncPolicy.confirmsFreshTransition(
+            expected: pendingTransitionSignature, actual: signature,
+            isPlaying: snapshot.isPlaying,
+            inForeground: UIApplication.shared.applicationState == .active,
+            receivedAt: now, expiresAt: pendingTransitionUntil)
         if pendingTransitionSignature != nil {
             pendingTransitionSignature = nil
         }
