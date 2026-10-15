@@ -1,3 +1,5 @@
+> Documento histórico. Sus instrucciones corresponden a una etapa anterior. Consultar la [guía vigente](../../README.md) y el [estado actual](../ESTADO_ACTUAL.md).
+
 # iWatch 8.2.1 — Hotfix de reconexión y recuperación musical
 
 Corrección experimental sobre 8.2 para Moto Watch Fit, iPhone y Spotify. **Sintaxis Swift comprobada localmente; pendiente compilación macOS con GitHub Actions y prueba en dispositivo real**.
