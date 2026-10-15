@@ -9,7 +9,7 @@ final class MusicSyncEngine: ObservableObject {
     static let shared = MusicSyncEngine()
 
     @Published private(set) var status = "Auto Sync listo · esperando Spotify"
-    private enum RecoveryReason {
+    private enum RecoveryReason: Equatable {
         case foreground, reconnect
     }
     private var pendingRecovery: RecoveryReason?
