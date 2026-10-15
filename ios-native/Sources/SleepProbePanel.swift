@@ -37,7 +37,7 @@ struct SleepProbePanel: View {
                 }
                 Text("Se suman las sesiones que terminaron en el día consultado. La duración informada por el reloj puede ser menor que el tiempo entre inicio y fin. Las etapas todavía están pendientes de identificar.")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Lectura de validación: las sesiones no se guardan todavía en el histórico.")
+                Text("Este panel consulta sin guardar. Actualizar en Salud consulta y guarda las sesiones.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Copiar diagnóstico de sueño") { UIPasteboard.general.string = sleep.report }
                     .buttonStyle(.bordered)
