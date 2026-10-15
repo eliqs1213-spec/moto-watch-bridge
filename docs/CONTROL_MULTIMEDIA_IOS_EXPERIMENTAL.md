@@ -60,6 +60,47 @@ Referencias oficiales:
 - No se deben enviar escrituras desconocidas ni intentar emular un
   teclado/dispositivo HID desde iWatch.
 
+## Hallazgo de nRF Connect (15 de octubre de 2026)
+
+En el **Moto Watch Fit** conectado a nRF Connect desde iPhone se observaron
+los siguientes valores de Device Information:
+
+| Campo | Valor observado |
+| --- | --- |
+| Manufacturer Name | `RivieraWaves SAS` |
+| Model Number | `RW-BLE-1.0` |
+| Hardware Revision | `1.0.0` |
+| Firmware Revision | `6.1.2` |
+| Software Revision | `6.3.0` |
+| System ID | `1234 56FF FE9A BCDE` |
+| PnP ID | `025E 0440 0000 03` |
+
+**Hallazgo externo:** el repositorio de investigación del Samsung Galaxy Fit3
+`Astroisback/Fit3Free` documenta exactamente los mismos valores y los
+mismos UUID propietarios `1B7E8251-2877-41C3-B46E-CF057C562023` y
+`8AC32D3F-5CB9-4D44-BEC2-EE689169F626`, y los identifica como
+valores por defecto del fabricante de la pila Bluetooth en su contexto.
+Fuente:
+https://github.com/Astroisback/Fit3Free/blob/master/README.md
+
+**Interpretación conservadora:** estos campos **no prueban** que el firmware
+general del Motorola sea la versión 6.1.2/6.3.0, ni que los dos wearables
+compartan firmware completo o compatibilidad AMS/HID. Podrían representar
+valores por defecto de una implementación BLE común. No dirigir escrituras
+ni asumir semántica multimedia en los UUID coincidentes.
+
+La documentación oficial de Apple define que AMS es publicado por el
+**iPhone** y que el **accesorio** debe actuar como cliente del servicio.
+iWatch no puede convertir su central BLE en un accesorio que emite AMS
+hacia la instancia local del propio iOS usando APIs públicas:
+https://developer.apple.com/library/archive/documentation/CoreBluetooth/Reference/AppleMediaService_Reference/Specification/Specification.html
+
+**Siguiente evidencia útil:** verificar el modelo y la versión auténtica
+en Ajustes → Acerca de del propio reloj (sin publicar el número de serie)
+y ejecutar la prueba observacional de esta rama. Si no existe control
+nativo, investigar documentación o tráfico que demuestre una operación
+AMS desde el firmware, no inferirla de la lista GATT del reloj.
+
 ## Próximo paso según el resultado
 
 - **Control nativo observado:** caracterizar el canal (AMS, HID o
