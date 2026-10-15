@@ -799,9 +799,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             musicSyncStatus = "Requiere Bluetooth conectado y F8F1"
             return
         }
-        let signature = "\(snapshot.id)|\(snapshot.isPlaying)|\(snapshot.title)|\(snapshot.artist)"
+        let signature = "\(snapshot.id)|\(snapshot.isPlaying)"
         let changed = signature != lastMusicSignature
-        if !force && !reannounce && !changed { return }
+        if !force && !reannounce && !changed && Date().timeIntervalSince(lastMusicSentAt) < 25 { return }
         let trackChanged = lastMusicSignature == nil || lastMusicSignature?.components(separatedBy: "|").first != snapshot.id
         let steady = WatchMusicProtocol.encode(snapshot, code: snapshot.isPlaying ? .empty : .one)
         // Reemplazar SOLO metadatos antiguos; no descartar WhatsApp ni batería.

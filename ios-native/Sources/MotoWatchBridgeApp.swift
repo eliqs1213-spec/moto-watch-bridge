@@ -307,13 +307,13 @@ struct ContentView: View {
             while !Task.isCancelled {
                 if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
                     if spotifyRemote.isConnected {
-                        // Respaldo rápido de los eventos nativos, como en la versión anterior.
+                        // Recupera cambios aun cuando la suscripción del SDK no emita el evento.
                         spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
-                    } else if !spotifyRemote.isConnected && watch.isConnected {
+                    } else if watch.isConnected {
                         await spotify.refreshPlaybackInfo()
                     }
                 }
-                do { try await Task.sleep(nanoseconds: 6_000_000_000) } catch { break }
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
             }
         }
     }
