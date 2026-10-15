@@ -6,6 +6,15 @@ import Foundation
 enum SpotifyCommandQueuePolicy {
     static let maxPending = 2
     static let expirationSeconds: TimeInterval = 6
+    // Después de NO_ACTIVE_DEVICE no insistir en NEXT/PREV a cada pulsación.
+    // Reabrir Spotify o recibir un estado Web/SDK con dispositivo activo
+    // libera el bloqueo inmediatamente.
+    static let noActiveDeviceCooldownSeconds: TimeInterval = 20
+
+    static func shouldHoldSkip(until: Date?, now: Date) -> Bool {
+        guard let until = until else { return false }
+        return now < until
+    }
 
     static func isFresh(receivedAt: Date, now: Date) -> Bool {
         let seconds = now.timeIntervalSince(receivedAt)
