@@ -101,6 +101,30 @@ y ejecutar la prueba observacional de esta rama. Si no existe control
 nativo, investigar documentación o tráfico que demuestre una operación
 AMS desde el firmware, no inferirla de la lista GATT del reloj.
 
+## Identificación del firmware principal (video del reloj, 15/10/2026)
+
+En Ajustes → Acerca de, **el propio Moto Watch Fit** muestra:
+
+- Dispositivo: `Moto Watch Fit`
+- Modelo: `XT2541-1`
+- Número de versión: `V1.73.20`
+
+Fuente: video compartido en conversación; **no publicar el número de serie ni
+la dirección Bluetooth que aparecen en el video**.
+
+Motorola confirma el modelo comercial `XT2541-1` en documentación oficial:
+https://help.motorola.com/hc/apps/settings/legal/accessory/en-us/T1258144410.html
+
+El manual oficial de Moto Watch Fit documenta controles musicales remotos
+mediante la app de Android y aclara que su aplicación complementaria es solo
+para Android. Eso **no certifica** AMS/HID en iOS ni acredita que se pueda
+activar con un paquete Motorola:
+https://en-us.support.motorola.com/app/answers/detail/a_id/185697/~/user-guide---moto-watch-fit
+
+La versión `V1.73.20` es la información que el reloj presenta; NO
+confundirla con las revisiones genéricas de la pila BLE que expone nRF
+(`6.1.2` y `6.3.0`). No se obtuvo un protocolo de activación AMS/HID.
+
 ## Próximo paso según el resultado
 
 - **Control nativo observado:** caracterizar el canal (AMS, HID o
