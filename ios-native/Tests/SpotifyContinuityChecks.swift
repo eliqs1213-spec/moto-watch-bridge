@@ -40,4 +40,16 @@ verifyCheck(SpotifyCommandQueuePolicy.isTransientHTTP(503), "HTTP 503 es transit
 verifyCheck(SpotifyCommandQueuePolicy.isTransientHTTP(429), "HTTP 429 es transitorio")
 verifyCheck(!SpotifyCommandQueuePolicy.isTransientHTTP(404), "404 no es transitorio 5xx")
 verifyCheck(!SpotifyCommandQueuePolicy.isTransientHTTP(401), "401 exige autorizar")
+let missingSince = Date(timeIntervalSince1970: 2_000_000)
+let blockingUntil = missingSince.addingTimeInterval(SpotifyCommandQueuePolicy.noActiveDeviceCooldownSeconds)
+verifyCheck(SpotifyCommandQueuePolicy.noActiveDeviceCooldownSeconds == 20, "Cooldown ante 404 debe ser 20 s")
+verifyCheck(SpotifyCommandQueuePolicy.shouldHoldSkip(until: blockingUntil, now: missingSince),
+            "No filtra tormenta inicial 404")
+verifyCheck(SpotifyCommandQueuePolicy.shouldHoldSkip(until: blockingUntil, now: missingSince.addingTimeInterval(19)),
+            "No filtra repetición antes de 20 s")
+verifyCheck(!SpotifyCommandQueuePolicy.shouldHoldSkip(until: blockingUntil, now: missingSince.addingTimeInterval(20)),
+            "El cooldown no se libera a los 20 s")
+verifyCheck(!SpotifyCommandQueuePolicy.shouldHoldSkip(until: nil, now: missingSince),
+            "No permitir controles cuando no hay bloqueo")
+
 print("Spotify pending commands checks: OK")
