@@ -40,6 +40,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         let packet: Data
         let delayAfter: TimeInterval
         let kind: OutboundKind
+        var musicStage: String? = nil
         var noticeWatchID: String? = nil
         var expiresAt: Date? = nil
     }
@@ -55,6 +56,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWriteIsHealth = false
     private var currentWriteIsBattery = false
     private var currentWriteIsNotification = false
+    private var currentMusicStage: String? = nil
+    private var musicDiagnosticUntil = Date.distantPast
+    private var musicDiagnosticPacketsLeft = 0
     private var writeTimeout: DispatchWorkItem?
     private var writeSequence = 0
     private var musicNotBefore = Date.distantPast
@@ -97,6 +101,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         batteryRefresh?.cancel(); batteryRefresh = nil
         musicNotBefore = .distantPast
         currentWriteIsNotification = false
+        currentMusicStage = nil
+        musicDiagnosticPacketsLeft = 0
         musicInProgress = false
         currentWriteIsBattery = false
         musicAfterDelay = 0
@@ -791,6 +797,15 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         DispatchQueue.main.asyncAfter(deadline: .now() + 1800, execute: work)
     }
 
+    // El registro hexadecimal puede revelar nombres de canciones y artistas.
+    // Se activa solo por una acción explícita del usuario y por dos escrituras
+    // musicales como máximo, dentro de una ventana de 20 s.
+    func captureNextMusicFrames() {
+        musicDiagnosticPacketsLeft = 2
+        musicDiagnosticUntil = Date().addingTimeInterval(20)
+        record("MUSICA-DIAG", "Captura puntual de hasta 2 paquetes 24/01 activada (20 s); contiene nombres de canciones en HEX")
+    }
+
     // Usar la codificación probada en Windows: anuncio 08 02 de canción
     // nueva y estado estable vacío al reproducir / 08 01 al pausar.
     func sendMusic(_ snapshot: WatchMusicSnapshot, force: Bool = false,
@@ -805,11 +820,15 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         let trackChanged = lastMusicSignature == nil || lastMusicSignature?.components(separatedBy: "|").first != snapshot.id
         let steady = WatchMusicProtocol.encode(snapshot, code: snapshot.isPlaying ? .empty : .one)
         // Reemplazar SOLO metadatos antiguos; no descartar WhatsApp ni batería.
+        let removed = musicQueue.filter { $0.kind == .music }.count
         musicQueue.removeAll { $0.kind == .music }
-        if (trackChanged || force || reannounce) && snapshot.isPlaying {
-            musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encode(snapshot, code: .two), delayAfter: 0.8, kind: .music))
+        if removed > 0 {
+            record("MUSICA", "Secuencia musical pendiente sustituida: \(removed) paquetes anteriores; prevalece la canción más reciente")
         }
-        musicQueue.append(PendingMusicWrite(packet: steady, delayAfter: 0, kind: .music))
+        if (trackChanged || force || reannounce) && snapshot.isPlaying {
+            musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encode(snapshot, code: .two), delayAfter: 0.8, kind: .music, musicStage: "ANUNCIO"))
+        }
+        musicQueue.append(PendingMusicWrite(packet: steady, delayAfter: 0, kind: .music, musicStage: "ESTADO"))
         lastMusicSignature = signature
         lastMusicSentAt = Date()
         musicSyncStatus = "Enviando: \(snapshot.title) · \(snapshot.isPlaying ? "PLAY" : "PAUSA")"
@@ -828,7 +847,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         if !force && lastMusicSignature == "NO_MUSIC" { return }
         musicQueue.removeAll { $0.kind == .music }
-        musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encodeNoMusic(), delayAfter: 0, kind: .music))
+        musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encodeNoMusic(), delayAfter: 0, kind: .music, musicStage: "SIN_MUSICA"))
         lastMusicSignature = "NO_MUSIC"
         lastMusicSentAt = Date()
         musicSyncStatus = "Sin música · señal enviada (pantalla no confirmada)"
@@ -866,7 +885,17 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsHealth = next.kind == .health
         currentWriteIsBattery = next.kind == .battery
         currentWriteIsNotification = next.kind == .notification
+        currentMusicStage = next.kind == .music ? next.musicStage : nil
         musicAfterDelay = next.delayAfter
+        if next.kind == .music && musicDiagnosticPacketsLeft > 0 {
+            if Date() <= musicDiagnosticUntil {
+                musicDiagnosticPacketsLeft -= 1
+                record("MUSICA-DIAG", "TX \(next.musicStage ?? "ETAPA_DESCONOCIDA") · \(next.packet.count) bytes · HEX: \(MotoProtocol.hex(next.packet))")
+            } else {
+                musicDiagnosticPacketsLeft = 0
+                record("MUSICA-DIAG", "Captura puntual expirada antes del siguiente paquete")
+            }
+        }
         record("BLE-TX", "F8F1: \(next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
         writeSequence += 1
         let sequence = writeSequence
@@ -903,6 +932,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsBattery = false
         let isNotice = currentWriteIsNotification
         currentWriteIsNotification = false
+        let completedMusicStage = currentMusicStage
+        currentMusicStage = nil
         if let error = error {
             if isNotice {
                 notificationStatus = "Falló la escritura del aviso; no se reenvía para evitar duplicados"
@@ -928,6 +959,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 musicQueue.removeAll { $0.kind == .health }
             }
             else { musicSyncStatus = "Error al escribir metadatos"; lastMusicSignature = nil }
+            if let completedMusicStage = completedMusicStage {
+                record("MUSICA-DIAG", "BLE rechazó \(completedMusicStage): \(error.localizedDescription)")
+            }
             record("ERROR", "Escritura F8F1: \(error.localizedDescription)")
             // Una escritura fallida no debe borrar otros avisos ya encolados.
             flushMusicQueue()
@@ -937,7 +971,10 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         if isNotice { notificationStatus = "Aviso escrito por Bluetooth; visualización no confirmada" }
         if !isNotice && !isBattery && !isHealth && !isVitals && !isSleep {
             musicNotBefore = Date().addingTimeInterval(delay)
-            if musicQueue.isEmpty { musicSyncStatus = "Datos enviados; pantalla no confirmada" }
+            if let completedMusicStage = completedMusicStage {
+                record("MUSICA-DIAG", "BLE confirmó escritura \(completedMusicStage); firmware/pantalla NO verificados")
+            }
+            if musicQueue.isEmpty { musicSyncStatus = "Escrituras BLE confirmadas; pantalla no verificada" }
         }
         flushMusicQueue()
     }
