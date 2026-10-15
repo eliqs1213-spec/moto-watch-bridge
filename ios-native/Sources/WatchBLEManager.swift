@@ -41,6 +41,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         let delayAfter: TimeInterval
         let kind: OutboundKind
     }
+    private var stressAssembler = WatchHealthFrameAssembler(commands: [0x0E])
     private var healthAssembler = WatchHealthFrameAssembler()
     private var musicQueue: [PendingMusicWrite] = []
     private var musicInProgress = false
@@ -61,7 +62,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     // que pertenecían a la conexión anterior. Un callback antiguo tampoco debe
     // reanudar una cola obsoleta tras una restauración de iOS.
     private func resetConnectionTransport() {
-        Task { @MainActor in WatchHealthSync.shared.cancel() }
+        Task { @MainActor in WatchHealthSync.shared.cancel(); WatchStressProbe.shared.cancel() }
+        stressAssembler.reset()
         currentWriteIsHealth = false
         healthAssembler.reset()
         readyConnectionID += 1
@@ -421,6 +423,19 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
+        switch stressAssembler.consume(data) {
+        case .pending(let received, let expected):
+            Task { @MainActor in WatchStressProbe.shared.progress(received: received, expected: expected) }
+            return
+        case .complete(let message):
+            let watchID = peripheral.identifier.uuidString
+            Task { @MainActor in WatchStressProbe.shared.receive(message, watchID: watchID) }
+            return
+        case .rejected(let reason):
+            Task { @MainActor in WatchStressProbe.shared.rejected(reason) }
+            return
+        case .unrelated: break
+        }
         switch healthAssembler.consume(data) {
         case .pending(let received, let expected):
             Task { @MainActor in
@@ -440,10 +455,14 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         if let frame = WatchHealthProtocol.route(data),
            (frame.group == 0x30 && frame.command == 0x06)
-            || (frame.group == 0x31 && [0x06, 0x07].contains(frame.command)) {
+            || (frame.group == 0x31 && [0x06, 0x07, 0x0D, 0x0E].contains(frame.command)) {
             let watchID = peripheral.identifier.uuidString
             Task { @MainActor in
-                _ = WatchHealthSync.shared.receive(data, watchID: watchID)
+                if frame.group == 0x31 && [0x0D, 0x0E].contains(frame.command) {
+                    WatchStressProbe.shared.receive(data, watchID: watchID)
+                } else {
+                    _ = WatchHealthSync.shared.receive(data, watchID: watchID)
+                }
             }
             return
         }
@@ -500,9 +519,30 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         healthAssembler.reset()
         let watchID = device.identifier.uuidString
         Task { @MainActor [weak self] in
+            guard !WatchStressProbe.shared.isRunning else { return }
             WatchHealthSync.shared.begin(watchID: watchID, clearPending: { [weak self] in
                 self?.musicQueue.removeAll { $0.kind == .health }
                 self?.healthAssembler.reset()
+            }) { [weak self] data in
+                guard let self = self, self.isConnected,
+                      self.peripheral?.identifier.uuidString == watchID,
+                      let tx = self.writeCharacteristic, tx.properties.contains(.write) else { return false }
+                self.musicQueue.append(PendingMusicWrite(packet: data, delayAfter: 0, kind: .health))
+                self.flushMusicQueue()
+                return true
+            }
+        }
+    }
+
+    func refreshStressProbe() {
+        guard isConnected, let device = peripheral else { return }
+        let watchID = device.identifier.uuidString
+        Task { @MainActor [weak self] in
+            guard let self = self, !WatchHealthSync.shared.isRunning, !WatchStressProbe.shared.isRunning else { return }
+            self.stressAssembler.reset()
+            WatchStressProbe.shared.begin(watchID: watchID, cleanup: { [weak self] in
+                self?.musicQueue.removeAll { $0.kind == .health }
+                self?.stressAssembler.reset()
             }) { [weak self] data in
                 guard let self = self, self.isConnected,
                       self.peripheral?.identifier.uuidString == watchID,
@@ -635,7 +675,13 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         if let error = error {
             if isBattery { batteryStatus = "Error de consulta Motorola" }
             else if isHealth {
-                Task { @MainActor in WatchHealthSync.shared.cancel(message: "Falló la consulta Bluetooth de salud") }
+                Task { @MainActor in
+                    if WatchStressProbe.shared.isRunning {
+                        WatchStressProbe.shared.cancel()
+                    } else {
+                        WatchHealthSync.shared.cancel(message: "Falló la consulta Bluetooth de salud")
+                    }
+                }
                 musicQueue.removeAll { $0.kind == .health }
             }
             else { musicSyncStatus = "Error al escribir metadatos" }

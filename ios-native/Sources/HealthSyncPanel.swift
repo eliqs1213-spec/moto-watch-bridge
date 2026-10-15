@@ -4,6 +4,7 @@ import UIKit
 struct HealthSyncPanel: View {
     @EnvironmentObject private var watch: WatchBLEManager
     @StateObject private var sync = WatchHealthSync.shared
+    @StateObject private var stress = WatchStressProbe.shared
     var body: some View {
         GroupBox("Pasos y ritmo cardíaco · prueba experimental") {
             VStack(alignment: .leading, spacing: 12) {
@@ -11,7 +12,7 @@ struct HealthSyncPanel: View {
                     .font(.subheadline).foregroundStyle(.secondary)
                 Button(sync.isRunning ? "Consultando…" : "Consultar Moto Watch") {
                     watch.refreshHealth()
-                }.buttonStyle(.borderedProminent).disabled(!watch.isConnected || sync.isRunning)
+                }.buttonStyle(.borderedProminent).disabled(!watch.isConnected || sync.isRunning || stress.isRunning)
                 Text(sync.status).font(.caption).foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Pasos: " + sync.stepsDetail)

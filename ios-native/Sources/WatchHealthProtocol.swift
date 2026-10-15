@@ -148,6 +148,8 @@ struct WatchHealthFrameAssembler {
         case complete(Data)
         case rejected(String)
     }
+    private let commands: Set<UInt8>
+    init(commands: Set<UInt8> = [0x07]) { self.commands = commands }
     private var buffer = Data()
     private var expected = 0
     private var began = Date.distantPast
@@ -157,14 +159,14 @@ struct WatchHealthFrameAssembler {
         if !buffer.isEmpty && now.timeIntervalSince(began) > 20 { reset() }
         // Tramas completas intercaladas no son continuaciones del histórico.
         if let frame = WatchHealthProtocol.decode(data) {
-            if frame.group == 0x31 && frame.command == 0x07 {
+            if frame.group == 0x31 && commands.contains(frame.command) {
                 reset()
                 return .complete(data)
             }
             return .unrelated
         }
         if let route = WatchHealthProtocol.route(data) {
-            if route.group == 0x31 && route.command == 0x07 {
+            if route.group == 0x31 && commands.contains(route.command) {
                 let bytes = Array(data); var position = 1
                 guard let length = WatchHealthProtocol.readVarint(bytes, &position),
                       length <= 65536 else { reset(); return .rejected("Longitud anunciada fuera de límites") }
@@ -192,5 +194,36 @@ struct WatchHealthFrameAssembler {
         let message = buffer
         reset()
         return .complete(message)
+    }
+}
+
+ 
+// El grupo es candidato a estrés; no se considera semánticamente confirmado.
+// Este decoder comprueba estructura, fechas y rango, no la categoría real.
+enum WatchStressProtocol {
+    struct Sample: Identifiable {
+        let timestamp: Date
+        let value: Int
+        var id: Int64 { Int64(timestamp.timeIntervalSince1970) }
+    }
+    static func decode(_ frame: WatchHealthProtocol.Frame, selector: UInt64,
+                       start: Date, end: Date) -> [Sample]? {
+        guard frame.group == 0x31, frame.command == 0x0E,
+              let fields = WatchHealthProtocol.fields(frame.payload),
+              WatchHealthProtocol.integer(1, in: fields) == selector,
+              let base = WatchHealthProtocol.integer(2, in: fields), base >= 1577836800 else { return nil }
+        var result: [Sample] = []
+        for item in fields where item.number == 3 {
+            guard let data = item.data, let sample = WatchHealthProtocol.fields(data),
+                  let value = WatchHealthProtocol.integer(2, in: sample), value <= 100 else { return nil }
+            let offsets = sample.filter { $0.number == 1 }
+            guard offsets.count <= 1, offsets.first == nil || offsets.first?.integer != nil else { return nil }
+            let offset = WatchHealthProtocol.integer(1, in: sample) ?? 0
+            guard offset <= 604800, base <= UInt64.max - offset else { return nil }
+            let timestamp = Date(timeIntervalSince1970: Double(base + offset))
+            guard timestamp >= start, timestamp <= end.addingTimeInterval(300) else { return nil }
+            result.append(Sample(timestamp: timestamp, value: Int(value)))
+        }
+        return result
     }
 }
