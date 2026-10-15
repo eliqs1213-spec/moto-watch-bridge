@@ -824,11 +824,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         // a medias puede dejar al firmware en «Poné música».
         // Si la pareja ANUNCIO+ESTADO todavía estaba toda en cola,
         // sustituirla por completo: prevalece la canción más reciente.
-        let hasPendingAnnouncement = musicQueue.contains {
-            $0.kind == .music && $0.musicStage == "ANUNCIO"
-        }
-        let completingOldState: PendingMusicWrite? = hasPendingAnnouncement ? nil :
-            musicQueue.first { $0.kind == .music && $0.musicStage == "ESTADO" }
+        let pendingMusicStages = musicQueue.filter { $0.kind == .music }
+            .compactMap { $0.musicStage }
+        let preserveClosingState = WatchMusicSequencePolicy.preserveClosingState(
+            stages: pendingMusicStages)
+        let completingOldState: PendingMusicWrite? = preserveClosingState ?
+            musicQueue.first { $0.kind == .music && $0.musicStage == "ESTADO" } : nil
         let removed = musicQueue.filter { $0.kind == .music }.count
         musicQueue.removeAll { $0.kind == .music }
         if let completingOldState = completingOldState {
