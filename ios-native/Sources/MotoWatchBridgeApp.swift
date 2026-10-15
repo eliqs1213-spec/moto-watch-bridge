@@ -374,6 +374,19 @@ struct ContentView: View {
                                     spotify.forceWatchMusicRecovery()
                                 }.buttonStyle(.bordered)
                             }
+                            Divider()
+                            Text("Music Sync · diagnóstico de metadatos")
+                                .font(.headline)
+                            Button {
+                                spotify.resyncWatchMusicManually()
+                            } label: {
+                                Label("Resincronizar reproductor", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!watch.isConnected || !spotify.controlEnabled)
+                            Text("Consulta una canción actual y fuerza un anuncio 24/01 con su estado. Guarda hasta dos paquetes en HEX durante 20 segundos en el registro persistente. El HEX revela títulos/artistas; compartilo solo si querés. La escritura BLE no confirma la pantalla del reloj.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Divider()
                             Button("Probar pantalla sin música") {
                                 spotify.testNoMusicScreen()
                             }.buttonStyle(.bordered)
