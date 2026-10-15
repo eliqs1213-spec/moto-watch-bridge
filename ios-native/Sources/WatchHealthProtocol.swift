@@ -241,7 +241,8 @@ enum VitalsCandidateProtocol {
         let field: Int
         let value: UInt64
         var id: Int { field }
-        var label: String { field == 9 ? "Candidato A" : "Candidato B" }
+        var label: String { field == 9 ? "Calorías activas" : "Contador B (sin identificar)" }
+        var unitSuffix: String { field == 9 ? " kcal" : "" }
     }
     struct CounterResult { let timestamp: Date; let values: [Counter] }
     static func counters(_ frame: WatchHealthProtocol.Frame, now: Date) -> CounterResult? {
@@ -262,6 +263,23 @@ enum VitalsCandidateProtocol {
         }
         guard !values.isEmpty else { return nil }
         return CounterResult(timestamp: Date(timeIntervalSince1970: Double(seconds)), values: values)
+    }
+    static func oxygenCursor(_ fields: [WatchHealthProtocol.Field], indexCommand: UInt8,
+                             start: Date, end: Date) -> UInt64? {
+        guard [0x0B, 0x11].contains(indexCommand),
+              let value = WatchHealthProtocol.integer(2, in: fields) else { return nil }
+        // 31/0B anuncia un cursor pequeño en iPhone; puede ser ordinal.
+        // No interpretar ese cursor como fecha de la muestra.
+        if indexCommand == 0x0B && value > 0 && value <= 65535 { return value }
+        guard value >= 1577836800, Double(value) >= start.timeIntervalSince1970 - 1,
+              Double(value) <= end.timeIntervalSince1970 else { return nil }
+        return value
+    }
+    static func schema(_ frame: WatchHealthProtocol.Frame) -> String {
+        guard let fields = WatchHealthProtocol.fields(frame.payload) else { return "Protobuf inválido" }
+        return fields.prefix(14).map { field in
+            "\(field.number):" + (field.integer != nil ? "varint" : "bytes")
+        }.joined(separator: ",")
     }
     static func oxygenCandidates(_ frame: WatchHealthProtocol.Frame, command: UInt8, selector: UInt64,
                                  start: Date, end: Date) -> [Reading]? {

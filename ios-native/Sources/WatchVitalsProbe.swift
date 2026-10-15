@@ -44,7 +44,7 @@ final class WatchVitalsProbe: ObservableObject {
             waitingForIndex = false
             status = "Consultando contadores candidatos a calorías"
             guard send(WatchHealthProtocol.encode(group: 0x30, command: 0x06)) else { finish("No se pudo encolar la consulta"); return }
-            note("Consulta 30/06 encolada; no se asignan unidades ni tipo activo/total")
+            note("Consulta 30/06 encolada; campo 9 validado como calorías activas, campo 3 sin identificar")
         } else { requestIndex() }
         guard isRunning else { return }
         timer?.cancel()
@@ -104,7 +104,7 @@ final class WatchVitalsProbe: ObservableObject {
                 finish("Contadores ausentes, fuera de límites o con fecha inválida"); return
             }
             counters = result.values; counterTime = result.timestamp
-            finish("Contadores recibidos; compará con el reloj. Unidad y calorías activas/totales sin confirmar.")
+            finish("Calorías activas recibidas; el contador alternativo sigue sin identificar.")
             return
         }
         if waitingForIndex {
@@ -113,17 +113,18 @@ final class WatchVitalsProbe: ObservableObject {
             let indicator = WatchHealthProtocol.integer(1, in: fields)
             note("Indicador candidato: " + (indicator.map { String($0) } ?? "ausente"))
             guard WatchHealthProtocol.canProbeFirstPulseBlock(indicator),
-                  let cursor = WatchHealthProtocol.integer(2, in: fields),
-                  Double(cursor) >= start.timeIntervalSince1970 - 1, Double(cursor) <= end.timeIntervalSince1970 else {
+                  let cursor = VitalsCandidateProtocol.oxygenCursor(fields, indexCommand: indexCommand, start: start, end: end) else {
                 note("Índice sin registros/cursor compatibles; se prueba siguiente candidato")
                 nextChannel(); return
             }
+            note(cursor < 1577836800 ? "Cursor pequeño/ordinal admitido para 31/0B; no es fecha de medición" : "Cursor temporal dentro de la ventana")
             self.cursor = cursor; trySecond = indicator == 2; waitingForIndex = false
             requestSamples(); return
         }
         guard frame.command == dataCommand else { return }
         guard let result = VitalsCandidateProtocol.oxygenCandidates(frame, command: dataCommand, selector: selector, start: start.addingTimeInterval(-1), end: end) else {
             note("Muestras candidatas rechazadas: formato, selector, rango o fechas")
+            note("Estructura recibida: " + VitalsCandidateProtocol.schema(frame))
             nextChannel(); return
         }
         var indexed = Dictionary(readings.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })

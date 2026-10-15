@@ -9,11 +9,11 @@ struct VitalsProbePanel: View {
     var body: some View {
         GroupBox("Oxígeno y calorías · validar lecturas") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Compará los candidatos con el reloj. No se guardan en el histórico ni se consideran categorías confirmadas.")
+                Text("Oxígeno sigue en validación. El contador de calorías activas ya fue comparado con el reloj. Estas lecturas no se guardan en el histórico.")
                     .font(.subheadline).foregroundStyle(.secondary)
                 Button("Consultar candidatos de oxígeno") { watch.refreshVitalsProbe(.oxygen) }
                     .buttonStyle(.borderedProminent).disabled(busy)
-                Button("Consultar candidatos de calorías del día") { watch.refreshVitalsProbe(.calories) }
+                Button("Consultar calorías activas del día") { watch.refreshVitalsProbe(.calories) }
                     .buttonStyle(.bordered).disabled(busy)
                 Text(probe.status).font(.caption).foregroundStyle(.secondary)
                 if probe.mode == .oxygen {
@@ -29,9 +29,9 @@ struct VitalsProbePanel: View {
                         Text(time.formatted(date: .abbreviated, time: .shortened)).font(.caption)
                     }
                     ForEach(probe.counters) { counter in
-                        Text("\(counter.label): \(counter.value.formatted())").font(.subheadline.bold())
+                        Text("\(counter.label): \(counter.value.formatted())\(counter.unitSuffix)").font(.subheadline.bold())
                     }
-                    Text("Compará estos valores crudos con las kcal totales del día que muestra el reloj. La unidad y el tipo de cada contador siguen pendientes de validar. No se calculan calorías desde los pasos.")
+                    Text("Calorías activas corresponde al contador validado con el reloj. El contador B sigue sin identificar. Estas lecturas todavía no se guardan en el histórico.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Button("Copiar diagnóstico de candidatos") { UIPasteboard.general.string = probe.report }

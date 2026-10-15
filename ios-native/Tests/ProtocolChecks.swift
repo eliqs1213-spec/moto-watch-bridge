@@ -147,3 +147,13 @@ case .complete(let data): expect(WatchHealthProtocol.decode(data)?.command == 0x
 default: fatalError("Oxygen fragment reconstruction failed")
 }
 print("Vitals candidate checks passed: raw counters, dates, candidate isolation and fragmented replies")
+
+let ordinalIndexFields = WatchHealthProtocol.fields(Data([0x08, 0x01, 0x10, 0x01, 0x18, 0x07]))!
+expect(VitalsCandidateProtocol.oxygenCursor(ordinalIndexFields, indexCommand: 0x0B, start: now.addingTimeInterval(-86400), end: now) == 1, "Small oxygen cursor rejected")
+expect(VitalsCandidateProtocol.oxygenCursor(ordinalIndexFields, indexCommand: 0x11, start: now.addingTimeInterval(-86400), end: now) == nil, "Temporal index accepted ordinal cursor")
+let zeroCursor = WatchHealthProtocol.fields(Data([0x10, 0x00]))!
+expect(VitalsCandidateProtocol.oxygenCursor(zeroCursor, indexCommand: 0x0B, start: now.addingTimeInterval(-86400), end: now) == nil, "Zero ordinal accepted")
+let duplicateCursor = WatchHealthProtocol.fields(Data([0x10, 0x01, 0x10, 0x02]))!
+expect(VitalsCandidateProtocol.oxygenCursor(duplicateCursor, indexCommand: 0x0B, start: now.addingTimeInterval(-86400), end: now) == nil, "Duplicate cursor accepted")
+expect(calorieRows.values[0].label == "Calorías activas" && calorieRows.values[0].unitSuffix == " kcal", "Validated active calorie label")
+print("Oxygen cursor checks passed: small cursor, temporal separation, zero and duplicate rejection")
