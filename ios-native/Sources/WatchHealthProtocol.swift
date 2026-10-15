@@ -302,3 +302,54 @@ enum VitalsCandidateProtocol {
         return result
     }
 }
+
+
+enum WatchSleepProtocol {
+    struct Session: Identifiable {
+        let startedAt: Date
+        let endedAt: Date
+        let minutes: Double
+        var id: String { "\(Int64(startedAt.timeIntervalSince1970)):\(Int64(endedAt.timeIntervalSince1970))" }
+    }
+    private static func float32(_ number: Int, in data: Data) -> Float? {
+        let bytes = Array(data); var pos = 0; var found: Float?
+        while pos < bytes.count {
+            guard let tag = WatchHealthProtocol.readVarint(bytes, &pos) else { return nil }
+            let field = Int(tag >> 3)
+            switch tag & 7 {
+            case 0:
+                guard WatchHealthProtocol.readVarint(bytes, &pos) != nil, field != number else { return nil }
+            case 2:
+                guard let length = WatchHealthProtocol.readVarint(bytes, &pos), length <= UInt64(bytes.count - pos), field != number else { return nil }
+                pos += Int(length)
+            case 1, 5:
+                let width = tag & 7 == 1 ? 8 : 4
+                guard pos + width <= bytes.count else { return nil }
+                if field == number {
+                    guard width == 4, found == nil else { return nil }
+                    let bits = UInt32(bytes[pos]) | (UInt32(bytes[pos + 1]) << 8)
+                        | (UInt32(bytes[pos + 2]) << 16) | (UInt32(bytes[pos + 3]) << 24)
+                    found = Float(bitPattern: bits)
+                }
+                pos += width
+            default: return nil
+            }
+        }
+        return found
+    }
+    static func decode(_ frame: WatchHealthProtocol.Frame, start: Date, end: Date) -> Session? {
+        guard frame.group == 0x31, frame.command == 0x09,
+              let fields = WatchHealthProtocol.fields(frame.payload),
+              WatchHealthProtocol.integer(1, in: fields) == 1,
+              let began = WatchHealthProtocol.integer(4, in: fields),
+              let ended = WatchHealthProtocol.integer(5, in: fields),
+              began >= 1577836800, ended > began, ended - began <= 172800,
+              let minutes = float32(6, in: frame.payload), minutes.isFinite,
+              minutes > 0, minutes <= 1440,
+              Double(minutes) <= Double(ended - began) / 60 + 5 else { return nil }
+        let startedAt = Date(timeIntervalSince1970: Double(began))
+        let endedAt = Date(timeIntervalSince1970: Double(ended))
+        guard startedAt >= start.addingTimeInterval(-1), endedAt <= end.addingTimeInterval(300) else { return nil }
+        return Session(startedAt: startedAt, endedAt: endedAt, minutes: Double(minutes))
+    }
+}

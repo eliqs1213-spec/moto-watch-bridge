@@ -157,3 +157,30 @@ let duplicateCursor = WatchHealthProtocol.fields(Data([0x10, 0x01, 0x10, 0x02]))
 expect(VitalsCandidateProtocol.oxygenCursor(duplicateCursor, indexCommand: 0x0B, start: now.addingTimeInterval(-86400), end: now) == nil, "Duplicate cursor accepted")
 expect(calorieRows.values[0].label == "Calorías activas" && calorieRows.values[0].unitSuffix == " kcal", "Validated active calorie label")
 print("Oxygen cursor checks passed: small cursor, temporal separation, zero and duplicate rejection")
+
+func sleepFixture(start: UInt64, end: UInt64, minutes: Float, stageCount: Int = 0) -> Data {
+    var payload: [UInt8] = [0x08, 0x01]
+    if stageCount > 0 { payload += [0x12] + WatchHealthProtocol.varint(UInt64(stageCount)) + Array(repeating: 0x02, count: stageCount) }
+    payload += [0x20] + WatchHealthProtocol.varint(start) + [0x28] + WatchHealthProtocol.varint(end)
+    let bits = minutes.bitPattern
+    payload += [0x35, UInt8(bits & 255), UInt8((bits >> 8) & 255), UInt8((bits >> 16) & 255), UInt8(bits >> 24)]
+    return WatchHealthProtocol.encode(group: 0x31, command: 0x09, payload: payload)
+}
+let sleepOneData = sleepFixture(start: 1799960000, end: 1799963600, minutes: 60.5)
+let sleepTwoData = sleepFixture(start: 1799970000, end: 1799977500, minutes: 120.5, stageCount: 600)
+let sleepOne = WatchSleepProtocol.decode(WatchHealthProtocol.decode(sleepOneData)!, start: now.addingTimeInterval(-50000), end: now)!
+let sleepTwo = WatchSleepProtocol.decode(WatchHealthProtocol.decode(sleepTwoData)!, start: now.addingTimeInterval(-50000), end: now)!
+expect(Int((sleepOne.minutes + sleepTwo.minutes).rounded()) == 181, "Multiple-session total or float minutes incorrect")
+expect(sleepOne.id != sleepTwo.id, "Distinct sleep sessions share ID")
+let reversedSleep = WatchHealthProtocol.decode(sleepFixture(start: 1799977500, end: 1799970000, minutes: 10))!
+expect(WatchSleepProtocol.decode(reversedSleep, start: now.addingTimeInterval(-50000), end: now) == nil, "Reversed sleep dates accepted")
+let nanSleep = WatchHealthProtocol.decode(sleepFixture(start: 1799970000, end: 1799977500, minutes: .nan))!
+expect(WatchSleepProtocol.decode(nanSleep, start: now.addingTimeInterval(-50000), end: now) == nil, "Nonfinite sleep accepted")
+expect(WatchSleepProtocol.decode(longFrame, start: now.addingTimeInterval(-50000), end: now) == nil, "Pulse decoded as sleep")
+var sleepAssembler = WatchHealthFrameAssembler(commands: [0x09])
+_ = sleepAssembler.consume(Data(sleepTwoData.prefix(509)), now: now)
+switch sleepAssembler.consume(Data(sleepTwoData.dropFirst(509)), now: now) {
+case .complete(let data): expect(WatchSleepProtocol.decode(WatchHealthProtocol.decode(data)!, start: now.addingTimeInterval(-50000), end: now) != nil, "Fragmented sleep decode failed")
+default: fatalError("Sleep fragments not reconstructed")
+}
+print("Sleep checks passed: float minutes, separate sessions, sum, dates, nonfinite rejection and fragmentation")

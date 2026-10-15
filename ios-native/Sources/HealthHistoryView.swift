@@ -66,6 +66,7 @@ struct HealthHistoryView: View {
                     HealthSyncPanel()
                     StressProbePanel()
                     VitalsProbePanel()
+                    SleepProbePanel()
                     DatePicker("Consultar día", selection: $date, in: ...Date(), displayedComponents: .date)
                     ForEach(HealthMetric.allCases) { metric in
                         NavigationLink {
