@@ -1,3 +1,5 @@
+DOCUMENTO HISTÓRICO: describe una etapa anterior. No usar como instrucciones actuales. Consultar README.md y docs/ESTADO_ACTUAL.md desde la raíz del repositorio.
+
 iWatch — Etapa 5: widgets de batería, exclusivamente Motorola 10/01
 
 CAMBIOS

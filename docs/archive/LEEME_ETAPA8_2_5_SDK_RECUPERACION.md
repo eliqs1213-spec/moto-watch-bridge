@@ -1,3 +1,5 @@
+> Documento histórico. Sus instrucciones corresponden a una etapa anterior. Consultar la [guía vigente](../../README.md) y el [estado actual](../ESTADO_ACTUAL.md).
+
 # iWatch · Etapa 8.2.5 · Recuperación de Spotify App Remote
 
 Esta entrega corrige la etiqueta de versión 8.2.1 que estaba escrita a mano, añade diagnóstico de conexión nativa, conserva el SDK como fuente prioritaria si entrega datos y consulta `getPlayerState` cada 6 segundos mientras iWatch está visible. La Spotify Web API es respaldo cuando App Remote no tiene conexión ni estado. La Web API ya no reemplaza una lectura nativa válida mientras el SDK esté conectado.

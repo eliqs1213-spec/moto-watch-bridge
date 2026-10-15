@@ -1,3 +1,5 @@
+DOCUMENTO HISTÓRICO: describe una etapa anterior. No usar como instrucciones actuales. Consultar README.md y docs/ESTADO_ACTUAL.md desde la raíz del repositorio.
+
 MOTO WATCH BRIDGE — ETAPA 4: ALARMA CONTINUA + BATERÍA MOTOROLA (EXPERIMENTAL)
 ================================================================================
 

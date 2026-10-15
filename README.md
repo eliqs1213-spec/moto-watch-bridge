@@ -1,74 +1,49 @@
-# Moto Watch Bridge — primera aplicación nativa iOS
+# iWatch · Moto Watch Bridge
 
-**Objetivo:** comprobar que el Moto Watch Fit envía **Siguiente, Anterior y Play/Pausa** a una app de iPhone incluso con el teléfono bloqueado.
+App nativa de iPhone para conectar un **Moto Watch Fit**: controles de Spotify, avisos mediante Atajos, batería, búsqueda del teléfono e histórico de salud del reloj.
 
-Esta es la **etapa 1: Bluetooth solamente**. No controla Spotify todavía y no accede a WhatsApp ni Instagram. El sitio `index.html` de Bluefy **no se modifica**.
+**Última versión de la app: 0.8.4.5 (build 845).** Cierre de trabajo: 15 de octubre de 2026, Argentina. El código de este cierre incluye todas las mejoras; `main` todavía no contiene los PR de desarrollo apilados. Ver [estado de ramas y validación](docs/ESTADO_ACTUAL.md).
 
-## 1. Subir al repositorio
+## Empezar
 
-Copiá los contenidos de este ZIP **a la raíz de tu repositorio** `moto-watch-bridge`, conservando las carpetas:
+- [Última compilación verificada](https://github.com/eliqs1213-spec/moto-watch-bridge/actions/runs/38676992260): descargar el artefacto **MotoWatchNativeProbe-unsigned**, descomprimirlo y firmar/instalar el IPA.
+- [Compilar e instalar](docs/COMPILAR_E_INSTALAR.md).
+- [Estado actual y funciones](docs/ESTADO_ACTUAL.md).
+- [Arquitectura y protocolo](docs/ARQUITECTURA.md).
+- [Pendientes para la próxima sesión](docs/PENDIENTES.md).
+- [Cambios de versión](CHANGELOG.md).
 
-- `.github/workflows/build-ios-native.yml`
-- `ios-native/project.yml`
-- `ios-native/Sources/MotoWatchBridgeApp.swift`
-- `ios-native/Sources/WatchBLEManager.swift`
-- `ios-native/Sources/WatchProtocol.swift`
+Los artefactos de Actions caducan a los 14 días según el workflow. Si el enlace ya no permite descargar, generar otra compilación desde la rama que contiene los cambios. Un IPA descargado de Actions está sin firmar.
 
-No reemplaces ni borres tu archivo `index.html`. Esta app se compila por separado de la web de Bluefy.
+## Qué incluye
 
-Una forma sencilla desde Windows (con Git instalado) es clonar el repositorio, copiar las carpetas `.github` e `ios-native` dentro, y ejecutar:
+| Área | Comportamiento actual |
+| --- | --- |
+| Salud | Pasos, ritmo cardíaco, oxígeno, estrés, calorías activas y sueño; solo Moto Watch, sin Apple Salud. |
+| Histórico | Portada de hoy, último valor con fecha de medición y actualización; detalle por día, semana o mes. Guardado local en el iPhone. |
+| Actualización | Botón manual y consultas automáticas mientras Salud esté visible y la app activa. |
+| Spotify | SDK prioritario, Web API de respaldo y funcionamiento restaurado al anterior a la optimización de ahorro. |
+| Notificaciones | Prioridad de envío; dependen de la automatización de Atajos. La app no lee directamente todas las notificaciones del iPhone. |
+| iWatch | Tarjetas para conexión, batería, música y búsqueda; configuración completa en «Ajustes y diagnóstico». |
 
-```powershell
-git add .github/workflows/build-ios-native.yml ios-native
-git commit -m "Primera app nativa iOS para Moto Watch Fit"
-git push
+No se garantiza la ejecución permanente de Atajos ni la entrega con Bluetooth apagado o fuera de alcance. La compilación y las pruebas sintéticas no reemplazan la validación con el iPhone bloqueado y el reloj real. El ahorro de batería aún no fue medido.
+
+## Estructura
+
+```text
+ios-native/                  App nativa: única fuente de código iOS
+  Sources/                   Swift de la app
+  Shared/                    Atributos de la actividad en vivo
+  BatteryWidgets/            Extensión WidgetKit
+  Resources/                 Sonido de búsqueda
+  Tests/                     Comprobaciones con datos sintéticos
+  project.yml                Proyecto XcodeGen y versión de app/extensión
+.github/workflows/           Compilación y publicación del IPA
+docs/                        Documentación vigente
+docs/archive/                Notas de etapas anteriores, fuera de vigencia
+index.html                   Puente web de Bluefy, conservado por separado
 ```
 
-## 2. Compilar en GitHub Actions
+No copiar Swift ni `project.yml` a la raíz. Las copias antiguas de esa ubicación no participaban en la compilación y se retiraron para evitar editar o subir una versión equivocada. [Detalle de la limpieza](docs/LIMPIEZA_REPOSITORIO.md).
 
-1. Abrí el repositorio en GitHub, pestaña **Actions**.
-2. Elegí **Compilar Moto Watch Bridge iOS**.
-3. Tocá **Run workflow** (rama `main`).
-4. Esperá a que finalice con check verde.
-5. Dentro de esa ejecución, bajá el artefacto **MotoWatchNativeProbe-unsigned**.
-6. Descomprimí el ZIP descargado de GitHub: adentro estará `MotoWatchNativeProbe-unsigned.ipa`.
-
-El workflow utiliza un equipo macOS de GitHub. El `.ipa` está **sin firmar** porque las credenciales Apple se aplican localmente desde Windows en el siguiente paso. **Nunca subas tu contraseña de Apple a GitHub.**
-
-## 3. Instalar en iPhone desde Windows
-
-1. Instalá Sideloadly **solo desde** https://sideloadly.io/ .
-2. Conectá el iPhone 15 a Windows por cable y pulsá **Confiar** en el iPhone, si te lo pregunta.
-3. Abrí Sideloadly y arrastrá `MotoWatchNativeProbe-unsigned.ipa`.
-4. Seleccioná tu iPhone. Usá tu cuenta Apple dentro de Sideloadly para que firme e instale la app (no compartas la contraseña con nadie ni la envíes por chat).
-5. En el iPhone, si es necesario, activá **Modo desarrollador** en Ajustes > Privacidad y seguridad; confiá en el certificado desde Ajustes > General > VPN y gestión de dispositivos.
-6. Abrí **Moto Watch Bridge**, concedé el permiso Bluetooth y conectá el reloj.
-
-Con cuentas Apple gratuitas normalmente hay que renovar la firma aproximadamente cada **7 días**.
-
-## 4. Prueba clave: iPhone bloqueado
-
-- Cerrá el puente de Windows y desconectá Bluefy y el Motorola Edge del reloj.
-- En la app nativa, tocá **Conectar reloj**. Esperá el texto **«Escuchando los botones»**.
-- Bloqueá el iPhone durante 60 segundos. En ese tiempo pulsá **Siguiente**, luego **Anterior** y luego **Play/Pausa**; separá las pulsaciones por unos cinco segundos.
-- Desbloqueá el iPhone y comprobá los contadores y las horas del registro; tocá **Copiar registro** y pegalo en el chat.
-
-**Importante:** no fuerces el cierre de Moto Watch Bridge desde el selector de aplicaciones. iOS puede suspender o terminar una app por diversos motivos aunque tenga modo Bluetooth central.
-
-## Si algo falla
-
-- **GitHub Actions en rojo:** pasá el nombre y texto del paso rojo.
-- **Sideloadly no encuentra el iPhone:** revisá el cable, el botón Confiar, y los requisitos de iTunes/iCloud de la versión web de Apple en Windows que publica Sideloadly.
-- **Conecta pero no recibe botones:** confirmá que `Notificaciones F8F0 activadas` aparezca en el registro y desconectá los otros dispositivos.
-- **No aparecen botones con el teléfono bloqueado:** copiá el registro incluyendo los eventos `SISTEMA` y `RELOJ`, para distinguir falta de recepción frente a entrega demorada al desbloquear.
-
-## Notas técnicas
-
-- CoreBluetooth `UIBackgroundModes = bluetooth-central`.
-- `CBCentralManagerOptionRestoreIdentifierKey` para restauración de estado.
-- UUID Motorola custom: servicio `FC9DF9F0`, notificaciones `FC9DF8F0` y escritura `FC9DF8F1` (suffix Motorola).
-- Protocolo Motorola `AA` + longitud + payload + CRC-16/XMODEM.
-- Comandos reconocidos: `AA 06 00 00 24 07 08 02 74 67` (siguiente), `AA 06 00 00 24 07 08 01 17 57` (anterior), `AA 04 00 00 24 07 E9 54` (play/pausa).
-- Los registros se guardan localmente en el iPhone, sin servidor de terceros.
-
-**No es una aplicación firmada ni compilada aún:** el workflow realiza la compilación en GitHub. Por ahora el resultado solo ha sido validado en código y formato, no en iPhone real.
+No subir contraseñas, tokens, sesiones Spotify, bugreports ni capturas de tráfico con datos personales. Las sesiones de Spotify se gestionan localmente; los diagnósticos de avisos no deben incluir remitente ni mensaje.

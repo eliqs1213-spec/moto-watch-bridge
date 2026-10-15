@@ -1,3 +1,5 @@
+DOCUMENTO HISTÓRICO: describe una etapa anterior. No usar como instrucciones actuales. Consultar README.md y docs/ESTADO_ACTUAL.md desde la raíz del repositorio.
+
 MOTO WATCH BRIDGE – ETAPA 2: SPOTIFY NATIVO
 
 Esta entrega es una PRUEBA, no una versión estable. Guardá el IPA anterior como respaldo.

@@ -1,3 +1,5 @@
+> Documento histórico. Sus instrucciones corresponden a una etapa anterior. Consultar la [guía vigente](../../README.md) y el [estado actual](../ESTADO_ACTUAL.md).
+
 # Pasos y pulso experimental — 0.8.3.1 / build 831
 
 En Salud, conectar el reloj y tocar Consultar Moto Watch. Se consulta 30/06 y el índice 31/06 para las últimas 24 horas; si hay un cursor válido se pide 31/07. Las respuestas pasan controles de longitud varint, CRC y límites Protobuf. CoreBluetooth entrega los valores ATT completos tras reconstruir ACL.

@@ -1,3 +1,5 @@
+> Documento histórico. Sus instrucciones corresponden a una etapa anterior. Consultar la [guía vigente](../../README.md) y el [estado actual](../ESTADO_ACTUAL.md).
+
 # iWatch — Etapa 8.2.4 · Corrección de compilación de Spotify SDK
 
 ## Qué se corrigió

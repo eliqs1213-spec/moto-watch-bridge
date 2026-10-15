@@ -1,3 +1,5 @@
+> Documento histórico. Sus instrucciones corresponden a una etapa anterior. Consultar la [guía vigente](../../README.md) y el [estado actual](../ESTADO_ACTUAL.md).
+
 # iWatch — Etapa 8.2: Reconexión BLE + Aviso de batería + Recuperación de Spotify
 
 **Versión experimental** construida sobre iWatch 8.1, probada anteriormente por el usuario con Spotify (SDK/Web API) y WhatsApp por Atajos. Esta versión **todavía requiere compilación en GitHub Actions y pruebas reales en iPhone**.

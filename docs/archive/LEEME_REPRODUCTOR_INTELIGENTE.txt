@@ -1,3 +1,5 @@
+DOCUMENTO HISTÓRICO: describe una etapa anterior. No usar como instrucciones actuales. Consultar README.md y docs/ESTADO_ACTUAL.md desde la raíz del repositorio.
+
 iWatch — Etapa 6 / Reproductor inteligente (EXPERIMENTAL)
 
 Se conserva TODO lo implementado en Etapa 5: Spotify (siguiente, anterior, play/pausa), lectura de batería exclusivamente Motorola 10/01, alarma para encontrar iPhone, y los dos widgets de batería.

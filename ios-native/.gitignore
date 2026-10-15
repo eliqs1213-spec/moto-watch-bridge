@@ -2,4 +2,5 @@ MotoWatchNativeProbe.xcodeproj/
 build/
 DerivedData/
 Sources/Info.plist
+BatteryWidgets/Info.plist
 .DS_Store

@@ -1,3 +1,5 @@
+DOCUMENTO HISTÓRICO: describe una etapa anterior. No usar como instrucciones actuales. Consultar README.md y docs/ESTADO_ACTUAL.md desde la raíz del repositorio.
+
 iWatch — ETAPA 7: BATERÍA EN PANTALLA BLOQUEADA SIN APP GROUPS
 
 POR QUÉ: Sideloadly instaló iWatch sin el permiso com.apple.security.application-groups.

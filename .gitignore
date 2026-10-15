@@ -1,0 +1,19 @@
+# Archivos generados por Xcode y herramientas locales
+.DS_Store
+Thumbs.db
+**/xcuserdata/
+*.xcuserstate
+**/DerivedData/
+**/build/
+*.ipa
+*.xcarchive/
+*.xcresult/
+*.dSYM/
+
+# Configuración local y capturas con posibles datos personales
+.env
+.env.*
+!.env.example
+bugreport-*.zip
+*.btsnoop
+btsnoop_hci.log

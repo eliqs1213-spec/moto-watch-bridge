@@ -1,3 +1,5 @@
+> Documento histórico. Sus instrucciones corresponden a una etapa anterior. Consultar la [guía vigente](../../README.md) y el [estado actual](../ESTADO_ACTUAL.md).
+
 # iWatch — Etapa 8: Notificaciones desde Atajos de iOS 27
 
 ## La novedad
