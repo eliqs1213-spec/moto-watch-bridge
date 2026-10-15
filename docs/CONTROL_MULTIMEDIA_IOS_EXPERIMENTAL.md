@@ -101,6 +101,34 @@ y ejecutar la prueba observacional de esta rama. Si no existe control
 nativo, investigar documentación o tráfico que demuestre una operación
 AMS desde el firmware, no inferirla de la lista GATT del reloj.
 
+### Actualización crítica sobre los UUID compartidos
+
+Al investigar la coincidencia también se encontró que **el servicio
+`1B7E8251-2877-41C3-B46E-CF057C562023` y la característica
+`8AC32D3F-5CB9-4D44-BEC2-EE689169F626` se utilizan explícitamente en
+código público de Infineon/Cypress para ejemplos Bluetooth "Hello Sensor"**,
+independientes de Samsung y Motorola:
+
+- https://github.com/Infineon/mtb-example-btsdk-ble-hello-client-20736/blob/master/hello_sensor.h
+- https://github.com/Infineon/linux-example-btstack-hello-sensor
+
+La misma característica aparece como indicador del estado Wi-Fi en el manual
+del módulo Argox WM100-BW:
+https://manuals.plus/argox/wm100-bw-combo-module-manual
+
+**Corrección de interpretación previa:** aunque Fit3Free especula que
+`1B7E8251` sería un canal Samsung Accessory Protocol, **no se debe
+identificar así el canal del Motorola por coincidencia del UUID**. Estos
+identificadores pueden haber sido copiados de ejemplos SDK y no demuestran
+hardware compartido, un protocolo Samsung, HID, AMS, ni un mecanismo de
+actualización de firmware. La semántica del canal Motorola permanece
+desconocida. No enviar escrituras exploratorias a esa característica.
+
+La coincidencia de las cadenas RivieraWaves/RW-BLE/6.1.2/6.3.0, junto con
+los valores de ejemplo System ID y PnP ID, apunta a **valores por defecto
+de la pila BLE**; no identifica el firmware principal. El reloj declara
+independientemente su firmware `V1.73.20`.
+
 ## Identificación del firmware principal (video del reloj, 15/10/2026)
 
 En Ajustes → Acerca de, **el propio Moto Watch Fit** muestra:
