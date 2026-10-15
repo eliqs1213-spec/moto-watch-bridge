@@ -373,7 +373,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             defer { playbackFetchInProgress = false }
             let playback = try await fetchPlayback()
             playbackFailures = 0
-            nextPlaybackRefresh = Date().addingTimeInterval(playback?.is_playing == true ? 30 : 120)
+            // La consulta periódica vuelve a 6 s; el filtro BLE evita reenviar datos iguales.
+            nextPlaybackRefresh = Date().addingTimeInterval(5)
             // Un callback App Remote llegó mientras esperaba HTTP: sus metadatos
             // son más recientes que la respuesta Web y tienen prioridad.
             if sdkMetadataRevision != nativeRevisionAtStart { return }

@@ -294,7 +294,7 @@ struct ContentView: View {
                 watch.refreshBattery(force: false)
                 spotifyRemote.applicationDidBecomeActive()
                 if spotify.controlEnabled {
-                    if spotifyRemote.isConnected && !spotifyRemote.metadataEventsActive {
+                    if spotifyRemote.isConnected {
                         spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
                     } else {
                         Task { await spotify.refreshPlaybackInfo() }
@@ -306,14 +306,14 @@ struct ContentView: View {
             // No afirmar que hay encuesta continua con el iPhone bloqueado.
             while !Task.isCancelled {
                 if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
-                    if spotifyRemote.isConnected && !spotifyRemote.metadataEventsActive {
-                        // Solo consultar si faltan los eventos nativos.
+                    if spotifyRemote.isConnected {
+                        // Respaldo rápido de los eventos nativos, como en la versión anterior.
                         spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
                     } else if !spotifyRemote.isConnected && watch.isConnected {
                         await spotify.refreshPlaybackInfo()
                     }
                 }
-                do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { break }
+                do { try await Task.sleep(nanoseconds: 6_000_000_000) } catch { break }
             }
         }
     }
