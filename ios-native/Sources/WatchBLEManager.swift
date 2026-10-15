@@ -561,12 +561,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
     }
 
-    func refreshHealth() {
-        guard isConnected, let device = peripheral else { return }
+    var healthWatchID: String? {
+        peripheral?.identifier.uuidString ?? UserDefaults.standard.string(forKey: storedPeripheralKey)
+    }
+
+    @discardableResult
+    func refreshHealth() -> Task<Bool, Never>? {
+        guard isConnected, let device = peripheral else { return nil }
         healthAssembler.reset()
         let watchID = device.identifier.uuidString
-        Task { @MainActor [weak self] in
-            guard !WatchStressProbe.shared.isRunning, !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return }
+        return Task { @MainActor [weak self] in
+            guard UIApplication.shared.applicationState == .active else { return false }
+            guard !WatchHealthSync.shared.isRunning, !WatchStressProbe.shared.isRunning, !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return false }
             WatchHealthSync.shared.begin(watchID: watchID, clearPending: { [weak self] in
                 self?.musicQueue.removeAll { $0.kind == .health }
                 self?.healthAssembler.reset()
@@ -578,14 +584,17 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 self.flushMusicQueue()
                 return true
             }
+            return true
         }
     }
 
-    func refreshStressProbe() {
-        guard isConnected, let device = peripheral else { return }
+    @discardableResult
+    func refreshStressProbe() -> Task<Bool, Never>? {
+        guard isConnected, let device = peripheral else { return nil }
         let watchID = device.identifier.uuidString
-        Task { @MainActor [weak self] in
-            guard let self = self, !WatchHealthSync.shared.isRunning, !WatchStressProbe.shared.isRunning, !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return }
+        return Task { @MainActor [weak self] in
+            guard UIApplication.shared.applicationState == .active else { return false }
+            guard let self = self, !WatchHealthSync.shared.isRunning, !WatchStressProbe.shared.isRunning, !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return false }
             self.stressAssembler.reset()
             WatchStressProbe.shared.begin(watchID: watchID, cleanup: { [weak self] in
                 self?.musicQueue.removeAll { $0.kind == .health }
@@ -598,15 +607,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 self.flushMusicQueue()
                 return true
             }
+            return true
         }
     }
 
-    func refreshVitalsProbe(_ mode: WatchVitalsProbe.Mode) {
-        guard isConnected, let device = peripheral else { return }
+    @discardableResult
+    func refreshVitalsProbe(_ mode: WatchVitalsProbe.Mode) -> Task<Bool, Never>? {
+        guard isConnected, let device = peripheral else { return nil }
         let watchID = device.identifier.uuidString
-        Task { @MainActor [weak self] in
+        return Task { @MainActor [weak self] in
+            guard UIApplication.shared.applicationState == .active else { return false }
             guard let self = self, !WatchHealthSync.shared.isRunning,
-                  !WatchStressProbe.shared.isRunning, !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return }
+                  !WatchStressProbe.shared.isRunning, !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return false }
             self.vitalsAssembler.reset()
             WatchVitalsProbe.shared.begin(mode: mode, watchID: watchID, cleanup: { [weak self] in
                 self?.musicQueue.removeAll { $0.kind == .vitals }
@@ -619,15 +631,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 self.flushMusicQueue()
                 return true
             }
+            return true
         }
     }
 
-    func refreshSleepProbe(day: Date) {
-        guard isConnected, let device = peripheral else { return }
+    @discardableResult
+    func refreshSleepProbe(day: Date) -> Task<Bool, Never>? {
+        guard isConnected, let device = peripheral else { return nil }
         let watchID = device.identifier.uuidString
-        Task { @MainActor [weak self] in
+        return Task { @MainActor [weak self] in
+            guard UIApplication.shared.applicationState == .active else { return false }
             guard let self = self, !WatchHealthSync.shared.isRunning, !WatchStressProbe.shared.isRunning,
-                  !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return }
+                  !WatchVitalsProbe.shared.isRunning, !WatchSleepProbe.shared.isRunning else { return false }
             self.sleepAssembler.reset()
             WatchSleepProbe.shared.begin(day: day, watchID: watchID, cleanup: { [weak self] in
                 self?.musicQueue.removeAll { $0.kind == .sleepRead }
@@ -640,6 +655,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 self.flushMusicQueue()
                 return true
             }
+            return true
         }
     }
 

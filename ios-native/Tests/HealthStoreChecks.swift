@@ -1,0 +1,78 @@
+import Foundation
+
+// A fixture written with exactly the fields used before 0.8.4.
+struct LegacyDay: Encodable {
+    let watchID: String; let dayKey: String; let steps: Int?; let sleepMinutes: Double?
+    let heartRate: [WatchHealthReading]; let stress: [WatchHealthReading]; let workouts: [WatchWorkout]
+    let workoutsComplete: Bool; let syncedAt: Date
+    let stepsExperimental: Bool?; let heartRateExperimental: Bool?; let stepsMeasuredAt: Date?
+}
+
+try await MainActor.run {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("health-store-checks-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("history-v1.json")
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone.current
+    let date = calendar.date(from: DateComponents(year: 2026, month: 10, day: 14, hour: 12))!
+    let key = WatchHealthStore.key(date)
+    let pulse = WatchHealthReading(id: "31/07:\(Int64(date.timeIntervalSince1970))", timestamp: date, value: 86)
+    let legacy = LegacyDay(watchID: "watch-a", dayKey: key, steps: 1885, sleepMinutes: nil,
+        heartRate: [pulse], stress: [], workouts: [], workoutsComplete: false, syncedAt: date,
+        stepsExperimental: true, heartRateExperimental: true, stepsMeasuredAt: date)
+    try JSONEncoder().encode([legacy]).write(to: file)
+    let store = WatchHealthStore(fileURL: file)
+    expect(store.day(date, watchID: "watch-a")?.steps == 1885, "Legacy steps lost")
+    try store.mergeCounter(watchID: "watch-a", metric: .steps, value: 1885, at: date)
+    expect(store.day(date, watchID: "watch-a")?.stepsHistory?.count == 1, "Legacy snapshot duplicated")
+    try store.mergeCounter(watchID: "watch-a", metric: .steps, value: 2190, at: date.addingTimeInterval(3600))
+    try store.mergeCounter(watchID: "watch-a", metric: .steps, value: 1500, at: date.addingTimeInterval(-3600))
+    expect(store.day(date, watchID: "watch-a")?.steps == 2190, "Out-of-order steps rolled back daily counter")
+    try store.mergeReadings(watchID: "watch-a", metric: .heartRate, readings: [pulse, pulse])
+    expect(store.day(date, watchID: "watch-a")?.heartRate.count == 1, "Pulse resync duplicated")
+    try store.mergeReadings(watchID: "watch-a", metric: .oxygen, readings: [WatchHealthReading(id: "oxygen-a", timestamp: date, value: 96)])
+    try store.mergeReadings(watchID: "watch-a", metric: .stress, readings: [WatchHealthReading(id: "stress-a", timestamp: date, value: 59)])
+    try store.mergeCounter(watchID: "watch-a", metric: .activeCalories, value: 967, at: date)
+    try store.mergeCounter(watchID: "watch-a", metric: .activeCalories, value: 967, at: date)
+    expect(store.day(date, watchID: "watch-a")?.activeCaloriesHistory?.count == 1, "Calories resync duplicated")
+    let first = WatchSleepProtocol.Session(startedAt: date.addingTimeInterval(-20000), endedAt: date.addingTimeInterval(-10000), minutes: 180)
+    let second = WatchSleepProtocol.Session(startedAt: date.addingTimeInterval(-6000), endedAt: date.addingTimeInterval(-1000), minutes: 77)
+    try store.mergeSleep(watchID: "watch-a", sessions: [first, second])
+    try store.mergeSleep(watchID: "watch-a", sessions: [first])
+    expect(store.day(date, watchID: "watch-a")?.sleepMinutes == 257, "Sleep total must be 4h17 across two sessions without duplication")
+    expect(store.day(date, watchID: "watch-a")?.sleepSessions?.count == 2, "Separate sleep sessions lost")
+    try store.mergeCounter(watchID: "watch-b", metric: .steps, value: 50, at: date)
+    expect(store.day(date, watchID: "watch-a")?.steps == 2190, "Histories from different watches mixed")
+    let reopened = WatchHealthStore(fileURL: file)
+    expect(reopened.latest(.heartRate, watchID: "watch-a")?.value == 86, "Latest pulse lost after reload")
+    expect(reopened.latest(.oxygen, watchID: "watch-a")?.value == 96, "Oxygen lost after reload")
+    expect(reopened.latest(.stress, watchID: "watch-a")?.value == 59, "Stress lost after reload")
+    expect(reopened.latest(.activeCalories, watchID: "watch-a")?.value == 967, "Calories lost after reload")
+    expect(reopened.day(date, watchID: "watch-a")?.sleepMinutes == 257, "Sleep lost after reload")
+    expect(reopened.latest(.heartRate, watchID: "watch-a")?.measuredAt == date, "Synchronization changed measurement timestamp")
+    do {
+        try store.mergeReadings(watchID: "watch-a", metric: .oxygen, readings: [WatchHealthReading(id: "invalid", timestamp: date, value: .nan)])
+        fatalError("Nonfinite oxygen accepted")
+    } catch WatchHealthStore.StoreError.invalidReading { }
+    let overlap = WatchSleepProtocol.Session(startedAt: first.startedAt.addingTimeInterval(60), endedAt: first.endedAt, minutes: 30)
+    do { try store.mergeSleep(watchID: "watch-a", sessions: [overlap]); fatalError("Overlapping sleep accepted") }
+    catch WatchHealthStore.StoreError.overlappingSleep { }
+    expect(store.day(date, watchID: "watch-a")?.sleepMinutes == 257, "Rejected sleep changed persisted data")
+    let corrupt = directory.appendingPathComponent("corrupt.json")
+    let original = Data("broken-history".utf8); try original.write(to: corrupt)
+    let broken = WatchHealthStore(fileURL: corrupt)
+    do { try broken.mergeCounter(watchID: "a", metric: .steps, value: 1, at: date); fatalError("Unreadable history overwritten") }
+    catch WatchHealthStore.StoreError.unreadableHistory { }
+    let preserved = try Data(contentsOf: corrupt)
+    expect(preserved == original, "Unreadable history not preserved")
+
+    let leap = calendar.date(from: DateComponents(year: 2024, month: 2, day: 15))!
+    let common = calendar.date(from: DateComponents(year: 2026, month: 2, day: 15))!
+    expect(HealthHistoryPeriod.month.dates(containing: leap, calendar: calendar).count == 29, "Leap month length incorrect")
+    expect(HealthHistoryPeriod.month.dates(containing: common, calendar: calendar).count == 28, "February length incorrect")
+    expect(HealthHistoryPeriod.month.dates(containing: date, calendar: calendar).count == 31, "October length incorrect")
+    let week = HealthHistoryPeriod.week.dates(containing: date, calendar: calendar)
+    expect(week.count == 7 && calendar.component(.weekday, from: week[0]) == 2, "Week must begin on Monday")
+}
+print("History checks passed: legacy migration, persistence, deduplication, daily counters, two sleeps, watch isolation, invalid data and calendar periods")

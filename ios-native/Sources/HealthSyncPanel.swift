@@ -36,9 +36,9 @@ struct HealthSyncPanel: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if sync.canSave || sync.saved {
-                    Text("Guardar incorpora estas lecturas al histórico con una etiqueta experimental. Compará los pasos con el reloj y las mediciones de ritmo cardíaco por su hora; no son necesariamente valores en vivo.")
+                    Text("Guardar incorpora estas lecturas al histórico. Compará los pasos con el reloj y las mediciones de ritmo cardíaco por su hora; no son necesariamente valores en vivo.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button(sync.saved ? "Guardado" : "Guardar histórico experimental") {
+                    Button(sync.saved ? "Guardado" : "Guardar estas lecturas") {
                         sync.saveExperimentalHistory()
                     }.buttonStyle(.bordered).disabled(!sync.canSave)
                 }

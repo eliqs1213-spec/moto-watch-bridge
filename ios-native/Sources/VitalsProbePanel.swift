@@ -10,7 +10,7 @@ struct VitalsProbePanel: View {
     var body: some View {
         GroupBox("Oxígeno y calorías · validar lecturas") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Oxígeno sigue en validación. El contador de calorías activas ya fue comparado con el reloj. Estas lecturas no se guardan en el histórico.")
+                Text("Oxígeno A y calorías activas fueron comparados con el reloj. Para guardarlos usá Actualizar en Salud.")
                     .font(.subheadline).foregroundStyle(.secondary)
                 Button("Consultar candidatos de oxígeno") { watch.refreshVitalsProbe(.oxygen) }
                     .buttonStyle(.borderedProminent).disabled(busy)
@@ -32,7 +32,7 @@ struct VitalsProbePanel: View {
                     ForEach(probe.counters) { counter in
                         Text("\(counter.label): \(counter.value.formatted())\(counter.unitSuffix)").font(.subheadline.bold())
                     }
-                    Text("Calorías activas corresponde al contador validado con el reloj. El contador B sigue sin identificar. Estas lecturas todavía no se guardan en el histórico.")
+                    Text("Calorías activas corresponde al contador validado con el reloj. El contador B sigue sin identificar. Este panel consulta sin guardar; Actualizar en Salud guarda la serie validada.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Button("Copiar diagnóstico de candidatos") { UIPasteboard.general.string = probe.report }
