@@ -50,9 +50,9 @@ final class MusicSyncEngine: ObservableObject {
         }
         let now = Date()
         // Los ID del SDK (spotify:track:...) y Web API (...) pueden diferir
-        // aunque representen la misma canción. El nombre/artista/estado
-        // determinan si debemos reanunciar; progreso no es un nuevo tema.
-        let signature = "\(snapshot.title)|\(snapshot.artist)|\(snapshot.isPlaying)"
+        // aunque representen la misma canción. Título, artista, álbum y
+        // reproducción determinan si reanunciar; progreso no es nuevo tema.
+        let signature = "\(snapshot.title)|\(snapshot.artist)|\(snapshot.album)|\(snapshot.isPlaying)"
         let recoveryIsCurrent = pendingRecovery != nil && now <= pendingUntil
         let isReconnect = recoveryIsCurrent && pendingRecovery == .reconnect
         let elapsed = now.timeIntervalSince(lastAnnouncedAt)
