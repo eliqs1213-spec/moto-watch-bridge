@@ -161,6 +161,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         if !enabled {
             pendingWatchCommands.removeAll()
             manualResyncUntil = nil
+            MusicSyncEngine.shared.reset()
             sendIdle(reason: "Controles Spotify desactivados")
             playbackAvailability = "Controles desactivados"
             metadataSource = "Desactivado"
@@ -222,6 +223,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     func disconnectSpotify() {
+        MusicSyncEngine.shared.reset()
         pendingWatchCommands.removeAll()
         SecureTokenStorage.clear()
         lastDeviceID = nil
@@ -277,9 +279,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         status = playback.is_playing ? "Spotify reproduciendo" : "Spotify pausado"
         if let snapshot = lastMusicSnapshot, playback.item != nil {
             let manualResync = consumeManualResyncRequest()
-            WatchBLEManager.shared.sendMusic(snapshot,
-                                             force: wasIdle || force || manualResync,
-                                             reannounce: wasIdle || manualResync)
+            MusicSyncEngine.shared.acceptFresh(snapshot,
+                                               manual: manualResync || force,
+                                               recoveredFromIdle: wasIdle)
         }
     }
 
@@ -361,6 +363,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
 
     func recoverAfterWatchReady() async {
         guard controlEnabled, !recoveryInProgress else { return }
+        MusicSyncEngine.shared.requestReconnectRecovery()
         recoveryInProgress = true
         defer { recoveryInProgress = false }
         // NO transmitir la canción antigua desde lastMusicSnapshot a ciegas:
@@ -401,9 +404,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         status = isPlaying ? "Spotify App Remote · reproduciendo" : "Spotify App Remote · pausado"
         playbackAvailability = isPlaying ? "Reproduciendo (SDK)" : "Pausado (SDK)"
         let manualResync = consumeManualResyncRequest()
-        WatchBLEManager.shared.sendMusic(snapshot,
-                                         force: wasIdle || manualResync,
-                                         reannounce: wasIdle || manualResync)
+        MusicSyncEngine.shared.acceptFresh(snapshot,
+                                           manual: manualResync,
+                                           recoveredFromIdle: wasIdle)
     }
 
     func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
