@@ -25,7 +25,7 @@ jobs:
 
       - name: Validar continuidad musical ante pausas y 204
         run: |
-          cat ios-native/Sources/SpotifyPlaybackContinuityPolicy.swift ios-native/Tests/SpotifyContinuityChecks.swift > "$RUNNER_TEMP/spotify-continuity-checks.swift"
+          cat ios-native/Sources/SpotifyPlaybackContinuityPolicy.swift ios-native/Sources/SpotifyCommandQueuePolicy.swift ios-native/Tests/SpotifyContinuityChecks.swift > "$RUNNER_TEMP/spotify-continuity-checks.swift"
           swift "$RUNNER_TEMP/spotify-continuity-checks.swift"
 
       - name: Configurar Xcode y generar proyecto
