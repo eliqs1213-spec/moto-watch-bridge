@@ -95,3 +95,33 @@ expect(WatchHealthProtocol.pulse(selectorTwoFrame, start: now.addingTimeInterval
 expect(WatchHealthProtocol.pulse(selectorTwoFrame, start: now.addingTimeInterval(-20000), end: now, expectedSelector: 2)?.count == 80, "Selector 2 decoder failed")
 expect(WatchHealthProtocol.pulse(longFrame, start: now.addingTimeInterval(-20000), end: now, expectedSelector: 2) == nil, "Late selector 1 accepted as selector 2")
 print("Selector checks passed: expected series is enforced for selectors 1 and 2")
+
+var stressPayload: [UInt8] = [0x08, 0x01, 0x10] + WatchHealthProtocol.varint(1799990000)
+for index in 0..<80 {
+    let sample: [UInt8] = [0x08] + WatchHealthProtocol.varint(UInt64(index * 60)) + [0x10, 0x05]
+    stressPayload += [0x1a] + WatchHealthProtocol.varint(UInt64(sample.count)) + sample
+}
+let stressData = WatchHealthProtocol.encode(group: 0x31, command: 0x0E, payload: stressPayload)
+let stressFrame = WatchHealthProtocol.decode(stressData)!
+let stressRows = WatchStressProtocol.decode(stressFrame, selector: 1, start: now.addingTimeInterval(-20000), end: now)!
+expect(stressRows.count == 80 && stressRows[0].value == 5, "Stress candidate uses 0...100, not pulse limits")
+expect(stressRows[1].timestamp.timeIntervalSince(stressRows[0].timestamp) == 60, "Stress candidate offsets")
+expect(WatchStressProtocol.decode(stressFrame, selector: 2, start: now.addingTimeInterval(-20000), end: now) == nil, "Wrong stress selector accepted")
+expect(WatchStressProtocol.decode(longFrame, selector: 1, start: now.addingTimeInterval(-20000), end: now) == nil, "Pulse frame accepted as stress")
+expect(WatchStressProtocol.decode(stressFrame, selector: 1, start: now, end: now) == nil, "Out-of-window stress accepted")
+var invalidStressPayload: [UInt8] = [0x08, 0x01, 0x10] + WatchHealthProtocol.varint(1799990000)
+invalidStressPayload += [0x1a, 0x02, 0x10, 0x65]
+let invalidStress = WatchHealthProtocol.decode(WatchHealthProtocol.encode(group: 0x31, command: 0x0E, payload: invalidStressPayload))!
+expect(WatchStressProtocol.decode(invalidStress, selector: 1, start: now.addingTimeInterval(-20000), end: now) == nil, "Stress value >100 accepted")
+var stressAssembler = WatchHealthFrameAssembler(commands: [0x0E])
+_ = stressAssembler.consume(Data(stressData.prefix(509)), now: now)
+switch stressAssembler.consume(Data(stressData.dropFirst(509)), now: now) {
+case .complete(let data): expect(data == stressData && WatchHealthProtocol.decode(data) != nil, "Stress fragmented CRC failed")
+default: fatalError("Stress fragments not assembled")
+}
+var pulseOnlyAssembler = WatchHealthFrameAssembler()
+switch pulseOnlyAssembler.consume(stressData, now: now) {
+case .unrelated: break
+default: fatalError("Stress intercepted by pulse-only assembler")
+}
+print("Stress candidate checks passed: bounds, selector, timestamps, frame routing and fragmentation")
