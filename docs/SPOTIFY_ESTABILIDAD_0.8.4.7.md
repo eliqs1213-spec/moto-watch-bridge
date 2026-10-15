@@ -53,6 +53,50 @@ además de la compilación iOS y los checks de Salud existentes.
 7. Desactivar controles Spotify voluntariamente y volver a habilitarlos:
    esto **sí** borra/reanuncia el panel según diseño anterior.
 
+## Hallazgo adicional: errores 502 y botones descartados
+
+El registro del 15/10/2026, alrededor de las 15:55 hora argentina,
+demostró una segunda causa independiente:
+
+- El reloj envió `SIGUIENTE` correctamente por `24/07`.
+- Spotify Web API devolvió `502 Bad Gateway` a esa solicitud.
+- Ante nuevas pulsaciones, iWatch registró `Spotify ocupado: comando
+  SIGUIENTE no enviado` porque una consulta anterior seguía en progreso.
+- La orden que sí se procesó llegó a cambiar de canción después.
+
+### Mejora experimental
+
+- Ante una orden válida recibida cuando Spotify todavía está ocupado,
+  mantener hasta **2 pulsaciones pendientes**, ordenadas, con vencimiento
+  de **6 s**. Si se supera el límite o vencen, registrar explícitamente
+  el descarte (no ejecutar tarde).
+- Las pulsaciones conservan el filtro de rebotes actual.
+- Clasificar HTTP 429 y 5xx como errores temporales, manteniendo los
+  metadatos conocidos.
+- **No reintentar automáticamente** Next/Previous/Play-Pause tras
+  un 502 ni un timeout: la API podría haber aplicado la orden pese a
+  devolver un error y se generarían saltos/pausas duplicados.
+- Vaciar la cola al deshabilitar controles o desvincular Spotify;
+  no enviar órdenes si ya no existe enlace Bluetooth.
+
+### Validación manual adicional
+
+1. Con Spotify reproduciendo, pulsar Siguiente varias veces con
+   separación suficiente para superar el antirrebote.
+2. Confirmar en registro `Encolado` y luego `Ejecutando pulsación
+   pendiente`, o `Pendiente vencido`, sin cambios tardíos.
+3. Observar si falla Web API con 429/502/503: la música del iPhone
+   puede seguir, no borrar metadatos ni lanzar saltos automáticos.
+4. Confirmar notificaciones y consultas de salud intactas.
+5. Repetir con iPhone bloqueado: el límite de ejecución impuesto
+   por iOS podría impedir consumir una cola y no se garantiza
+   ejecución universal en segundo plano.
+
+**Pendiente:** determinar por qué el firmware no reflejó en pantalla
+algunas escrituras musicales F8F1 aunque el envío BLE fue aceptado.
+Esta PR se centra en conservar metadatos y en órdenes Web API: no da
+por resuelto ese defecto de visualización.
+
 ## Alcance y limitaciones
 
 - Esta build se basa en `codex/repo-docs-cleanup` (PR #8), **no** en el
