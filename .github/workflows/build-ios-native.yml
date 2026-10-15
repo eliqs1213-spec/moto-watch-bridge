@@ -23,6 +23,11 @@ jobs:
           cat ios-native/Sources/WatchHealthProtocol.swift ios-native/Sources/WatchHealthStore.swift ios-native/Sources/HealthHistoryPeriod.swift ios-native/Sources/WatchTrafficPolicy.swift ios-native/Tests/ProtocolChecks.swift ios-native/Tests/HealthStoreChecks.swift ios-native/Tests/PowerChecks.swift > "$RUNNER_TEMP/health-checks.swift"
           swift "$RUNNER_TEMP/health-checks.swift"
 
+      - name: Validar continuidad musical ante pausas y 204
+        run: |
+          cat ios-native/Sources/SpotifyPlaybackContinuityPolicy.swift ios-native/Sources/SpotifyCommandQueuePolicy.swift ios-native/Tests/SpotifyContinuityChecks.swift > "$RUNNER_TEMP/spotify-continuity-checks.swift"
+          swift "$RUNNER_TEMP/spotify-continuity-checks.swift"
+
       - name: Configurar Xcode y generar proyecto
         run: |
           xcodebuild -version
