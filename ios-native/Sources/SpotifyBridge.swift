@@ -140,6 +140,11 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var retainedTrackWarningLogged = false
     private var manualIdlePreviewUntil: Date?
     private var requestBusy = false
+    private struct PendingWatchCommand {
+        let command: WatchCommand
+        let receivedAt: Date
+    }
+    private var pendingWatchCommands: [PendingWatchCommand] = []
     private var lastCommandTimes: [String: Date] = [:]
     private let scopes = "user-read-playback-state user-modify-playback-state"
 
@@ -153,6 +158,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         controlEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "motowatch.spotify.enabled")
         if !enabled {
+            pendingWatchCommands.removeAll()
             sendIdle(reason: "Controles Spotify desactivados")
             playbackAvailability = "Controles desactivados"
             metadataSource = "Desactivado"
@@ -214,6 +220,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     func disconnectSpotify() {
+        pendingWatchCommands.removeAll()
         SecureTokenStorage.clear()
         lastDeviceID = nil
         lastIsPlaying = nil
@@ -450,10 +457,50 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         if let prior = lastCommandTimes[key], now.timeIntervalSince(prior) < limit { return }
         lastCommandTimes[key] = now
         if requestBusy {
-            record("Spotify ocupado: comando \(key) no enviado")
+            enqueuePendingWatchCommand(command, receivedAt: now)
             return
         }
+        performWatchCommand(command)
+    }
+
+    private func enqueuePendingWatchCommand(_ command: WatchCommand, receivedAt: Date) {
+        pendingWatchCommands.removeAll {
+            !SpotifyCommandQueuePolicy.isFresh(receivedAt: $0.receivedAt, now: receivedAt)
+        }
+        guard pendingWatchCommands.count < SpotifyCommandQueuePolicy.maxPending else {
+            lastAction = "Cola Spotify llena: \(command.rawValue) descartado"
+            record("[SPOTIFY] Cola llena: \(command.rawValue) descartado explícitamente")
+            return
+        }
+        pendingWatchCommands.append(PendingWatchCommand(command: command, receivedAt: receivedAt))
+        lastAction = "Spotify ocupado · \(command.rawValue) en espera"
+        record("[SPOTIFY] Encolado: \(command.rawValue), vence a los 6 s")
+    }
+
+    private func dispatchPendingWatchCommand() {
+        guard controlEnabled, WatchBLEManager.shared.isConnected else {
+            if !pendingWatchCommands.isEmpty {
+                record("[SPOTIFY] Pendientes cancelados: controles o Bluetooth no disponibles")
+                pendingWatchCommands.removeAll()
+            }
+            return
+        }
+        let now = Date()
+        while !pendingWatchCommands.isEmpty {
+            let pending = pendingWatchCommands.removeFirst()
+            guard SpotifyCommandQueuePolicy.isFresh(receivedAt: pending.receivedAt, now: now) else {
+                record("[SPOTIFY] Pendiente vencido: \(pending.command.rawValue); no se ejecuta tarde")
+                continue
+            }
+            record("[SPOTIFY] Ejecutando pulsación pendiente: \(pending.command.rawValue)")
+            performWatchCommand(pending.command)
+            return
+        }
+    }
+
+    private func performWatchCommand(_ command: WatchCommand) {
         requestBusy = true
+        let key = command.rawValue
         lastAction = "Procesando \(key)"
         Task { @MainActor in
             // El evento BLE puede despertar la app con iOS bloqueado. Solicitamos
@@ -464,6 +511,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             defer {
                 self.requestBusy = false
                 if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask) }
+                self.dispatchPendingWatchCommand()
             }
             do {
                 // App Remote (iOS) es prioritario si tenemos sesión real activa.
@@ -496,6 +544,17 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                     self.lastAction = "Control Spotify no disponible; consultando estado"
                     self.record("Spotify: HTTP 404 en comando; música no descartada")
                     await self.refreshPlaybackInfo(force: true)
+                    return
+                }
+                if let spotifyError = error as? SpotifyBridgeError,
+                   case let .response(code, _) = spotifyError,
+                   SpotifyCommandQueuePolicy.isTransientHTTP(code) {
+                    // Una orden Next/Prev/Toggle podría haberse aplicado pese a
+                    // recibir 5xx o 429. Nunca reenviar a ciegas: doble salto.
+                    self.status = "Spotify temporalmente no disponible"
+                    self.playbackAvailability = "Error temporal de Spotify · metadatos conservados"
+                    self.lastAction = "HTTP \(code) en \(key) · sin reintento automático"
+                    self.record("[SPOTIFY] HTTP \(code) en \(key); sin reintento automático")
                     return
                 }
                 self.failure(error)
