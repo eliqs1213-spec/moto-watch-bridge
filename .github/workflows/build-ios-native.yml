@@ -38,6 +38,11 @@ jobs:
           cat ios-native/Sources/MusicAutoSyncPolicy.swift ios-native/Tests/MusicAutoSyncChecks.swift > "$RUNNER_TEMP/music-auto-checks.swift"
           swift "$RUNNER_TEMP/music-auto-checks.swift"
 
+      - name: Validar secuencias musicales y cierre de ESTADO
+        run: |
+          cat ios-native/Sources/WatchMusicSequencePolicy.swift ios-native/Tests/MusicSequenceChecks.swift > "$RUNNER_TEMP/music-sequence-checks.swift"
+          swift "$RUNNER_TEMP/music-sequence-checks.swift"
+
       - name: Configurar Xcode y generar proyecto
         run: |
           xcodebuild -version

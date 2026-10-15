@@ -819,11 +819,24 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         if !force && !reannounce && !changed && Date().timeIntervalSince(lastMusicSentAt) < 25 { return }
         let trackChanged = lastMusicSignature == nil || lastMusicSignature?.components(separatedBy: "|").first != snapshot.id
         let steady = WatchMusicProtocol.encode(snapshot, code: snapshot.isPlaying ? .empty : .one)
-        // Reemplazar SOLO metadatos antiguos; no descartar WhatsApp ni batería.
+        // Si el ANUNCIO ya salió (o está en vuelo), no descartar el ESTADO
+        // que lo cierra cuando llega un evento nuevo de Spotify. Una secuencia
+        // a medias puede dejar al firmware en «Poné música».
+        // Si la pareja ANUNCIO+ESTADO todavía estaba toda en cola,
+        // sustituirla por completo: prevalece la canción más reciente.
+        let pendingMusicStages = musicQueue.filter { $0.kind == .music }
+            .compactMap { $0.musicStage }
+        let preserveClosingState = WatchMusicSequencePolicy.preserveClosingState(
+            stages: pendingMusicStages)
+        let completingOldState: PendingMusicWrite? = preserveClosingState ?
+            musicQueue.first { $0.kind == .music && $0.musicStage == "ESTADO" } : nil
         let removed = musicQueue.filter { $0.kind == .music }.count
         musicQueue.removeAll { $0.kind == .music }
-        if removed > 0 {
-            record("MUSICA", "Secuencia musical pendiente sustituida: \(removed) paquetes anteriores; prevalece la canción más reciente")
+        if let completingOldState = completingOldState {
+            musicQueue.append(completingOldState)
+            record("MUSICA-SEQ", "Preservando ESTADO pendiente tras ANUNCIO previo; siguiente canción encolada detrás")
+        } else if removed > 0 {
+            record("MUSICA", "Secuencia musical todavía no iniciada sustituida: \(removed) paquetes")
         }
         if (trackChanged || force || reannounce) && snapshot.isPlaying {
             musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encode(snapshot, code: .two), delayAfter: 0.8, kind: .music, musicStage: "ANUNCIO"))
@@ -958,7 +971,13 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 }
                 musicQueue.removeAll { $0.kind == .health }
             }
-            else { musicSyncStatus = "Error al escribir metadatos"; lastMusicSignature = nil }
+            else {
+                musicSyncStatus = "Error al escribir metadatos"
+                lastMusicSignature = nil
+                // No continuar el ESTADO de un ANUNCIO rechazado. Se recupera
+                // cuando Spotify entregue nuevamente un estado válido.
+                musicQueue.removeAll { $0.kind == .music }
+            }
             if let completedMusicStage = completedMusicStage {
                 record("MUSICA-DIAG", "BLE rechazó \(completedMusicStage): \(error.localizedDescription)")
             }
@@ -974,7 +993,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             if let completedMusicStage = completedMusicStage {
                 record("MUSICA-DIAG", "BLE confirmó escritura \(completedMusicStage); firmware/pantalla NO verificados")
             }
-            if musicQueue.isEmpty { musicSyncStatus = "Escrituras BLE confirmadas; pantalla no verificada" }
+            if completedMusicStage == "ESTADO" {
+                record("MUSICA-SEQ", "Etapa ESTADO confirmada por BLE; secuencia cerrada (pantalla no verificada)")
+            }
+            if musicQueue.isEmpty && completedMusicStage == "ESTADO" {
+                musicSyncStatus = "Secuencia musical completa en BLE; pantalla no verificada"
+            }
         }
         flushMusicQueue()
     }
