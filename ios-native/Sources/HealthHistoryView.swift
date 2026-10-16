@@ -322,7 +322,21 @@ private struct HealthMetricHistoryView: View {
         if metric == .sleep {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Tus descansos").font(.headline)
-                ForEach((records.first?.sleepSessions ?? []).sorted { $0.endedAt > $1.endedAt }) { session in
+                let sessions = (records.first?.sleepSessions ?? []).sorted { $0.startedAt < $1.startedAt }
+                if sessions.count >= 2 {
+                    Label("Descanso dividido en \(sessions.count) sesiones", systemImage: "moon.zzz")
+                        .font(.subheadline.bold()).foregroundStyle(.indigo)
+                    Text("El reloj registró varios bloques de descanso. La app suma solamente los minutos dormidos informados por cada sesión.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(zip(sessions, sessions.dropFirst()).enumerated()), id: \.offset) { index, pair in
+                        let gap = max(0, Int(pair.1.startedAt.timeIntervalSince(pair.0.endedAt) / 60))
+                        if gap > 0 {
+                            Label("Entre la sesión \(index + 1) y la \(index + 2): \(gap) min sin sueño registrado", systemImage: "sun.max")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                ForEach(sessions.reversed()) { session in
                     HStack(alignment: .top) {
                         Image(systemName: "moon.fill").foregroundStyle(metric.color)
                         VStack(alignment: .leading, spacing: 5) {
@@ -332,7 +346,7 @@ private struct HealthMetricHistoryView: View {
                         }
                     }
                 }
-                Text("Se suman los descansos que terminan en este día, incluso si dormiste más de una vez. La duración es la informada por el reloj.")
+                Text("Se suman los descansos que terminan en este día, incluso si dormiste más de una vez. El tiempo entre sesiones no se suma. La duración es la informada por el reloj.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else {
