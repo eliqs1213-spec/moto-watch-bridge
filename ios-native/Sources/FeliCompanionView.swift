@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Feli es un compañero discreto exclusivamente en Salud.
-/// Sus partes se mueven independientemente: respirar, pestañear, orejas,
-/// cola y pequeños gestos; nunca se desplaza toda la tarjeta ni rebota.
+/// Ciclo de gestos suaves: olfatear, estirarse, ofrecer la pata, bostezar,
+/// mirar alrededor, respirar y mover orejas/cola. No rebota ni tapa gráficos.
 enum FeliMood: String {
     case curious, calm, worried, sleepy, active, mate, grill, celebrate
 }
@@ -72,6 +72,19 @@ private struct FeliIllustration: View {
     private var glance: Double {
         reduceMotion || mood == .sleepy ? 0 : sin(seconds * 0.76) * 1.6
     }
+    // Ciclo continuo con aparición/desaparición suave de cada gesto.
+    private var loop: Double {
+        (seconds.truncatingRemainder(dividingBy: 27) + 27).truncatingRemainder(dividingBy: 27)
+    }
+    private func gesture(_ start: Double, _ end: Double) -> Double {
+        guard !reduceMotion, mood != .sleepy, loop >= start, loop < end else { return 0 }
+        return sin(.pi * (loop - start) / (end - start))
+    }
+    private var sniff: Double { gesture(2, 6) }
+    private var stretch: Double { gesture(8, 12) }
+    private var raisedPaw: Double { gesture(14, 19) }
+    private var yawn: Double { gesture(21, 25) }
+    private var sleepyBreath: Double { mood == .sleepy ? sin(seconds * 1.35) : breath }
 
     var body: some View {
         ZStack {
@@ -83,8 +96,9 @@ private struct FeliIllustration: View {
             torso
             paws
             face
-                .rotationEffect(.degrees(petted ? -5.0 : glance), anchor: .bottom)
-                .offset(y: petted ? -1 : 0)
+                .rotationEffect(.degrees((petted ? -8 : glance) + sniff * 5 - stretch * 5),
+                                anchor: .bottom)
+                .offset(y: CGFloat((petted ? -3.0 : 0) + sniff * 4 - stretch * 3))
             moodAccessory
         }
         .frame(width: 160, height: 160)
@@ -96,7 +110,7 @@ private struct FeliIllustration: View {
             .overlay(alignment: .top) {
                 Capsule().fill(.white).frame(width: 16, height: 13)
             }
-            .rotationEffect(.degrees(-42 + wag), anchor: .bottom)
+            .rotationEffect(.degrees(-42 + wag + raisedPaw * 8), anchor: .bottom)
             .offset(x: 46, y: 7)
     }
 
@@ -104,8 +118,9 @@ private struct FeliIllustration: View {
         ZStack {
             Ellipse().fill(fur)
                 .frame(width: 88, height: 77)
-                .scaleEffect(x: CGFloat(1 + breath * 0.014), y: CGFloat(1 + breath * 0.018))
-                .offset(y: 30)
+                 .scaleEffect(x: CGFloat(1 + sleepyBreath * 0.019 + stretch * 0.04),
+                             y: CGFloat(1 + sleepyBreath * 0.025 - stretch * 0.015))
+                .offset(y: CGFloat(30 + stretch * 3))
             Ellipse().fill(.white.opacity(0.97))
                 .frame(width: 44, height: 55)
                 .offset(y: 36)
@@ -125,10 +140,14 @@ private struct FeliIllustration: View {
     private var paws: some View {
         ZStack {
             Ellipse().fill(.white)
-                .frame(width: 27, height: 18).offset(x: -28, y: 61)
+                .frame(width: 27, height: 18)
+                .offset(x: CGFloat(-28 - stretch * 6), y: CGFloat(61 + stretch * 3))
             Ellipse().fill(.white)
                 .frame(width: 27, height: 18)
-                .offset(x: 28, y: CGFloat(61 - (mood == .active ? max(0, sin(seconds * 3)) * 1.6 : 0)))
+                .rotationEffect(.degrees(-18 * raisedPaw), anchor: .leading)
+                .offset(x: CGFloat(28 + stretch * 6 + raisedPaw * 3),
+                        y: CGFloat(61 - raisedPaw * 16 -
+                                   (mood == .active ? max(0, sin(seconds * 3)) * 1.6 : 0)))
         }
     }
 
@@ -137,11 +156,11 @@ private struct FeliIllustration: View {
             // Las orejas se mueven desde su unión a la cabeza.
             Ellipse().fill(darkFur)
                 .frame(width: 33, height: 62)
-                .rotationEffect(.degrees(-20 + sin(seconds * 1.1) * 2), anchor: .top)
+                .rotationEffect(.degrees(-20 + sin(seconds * 1.1) * 2 + sniff * 5 + (petted ? -7 : 0)), anchor: .top)
                 .offset(x: -38, y: -13)
             Ellipse().fill(darkFur)
                 .frame(width: 33, height: 62)
-                .rotationEffect(.degrees(20 - sin(seconds * 1.2) * 2), anchor: .top)
+                .rotationEffect(.degrees(20 - sin(seconds * 1.2) * 2 - sniff * 5 + (petted ? 7 : 0)), anchor: .top)
                 .offset(x: 38, y: -13)
             Ellipse().fill(fur)
                 .frame(width: 91, height: 92).offset(y: -24)
@@ -156,7 +175,13 @@ private struct FeliIllustration: View {
             }
             .offset(y: -32)
             Ellipse().fill(ink)
-                .frame(width: 22, height: 14).offset(y: -8)
+                .frame(width: CGFloat(22 - sniff * 2), height: CGFloat(14 + sniff * 2))
+                .offset(y: CGFloat(-8 + sniff * 2))
+            if yawn > 0.05 && mood != .sleepy {
+                Ellipse().fill(ink.opacity(0.9))
+                    .frame(width: 16, height: CGFloat(3 + yawn * 15))
+                    .offset(y: 8)
+            }
             if mood == .sleepy {
                 Text("ᶻ").font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.indigo).offset(x: 39, y: -66)
@@ -189,7 +214,13 @@ private struct FeliIllustration: View {
             Text("✨").font(.system(size: 29))
                 .opacity(0.55 + 0.35 * (1 + sin(seconds * 2.2)) / 2)
                 .offset(x: 54, y: -56)
-        case .active, .curious, .sleepy:
+        case .curious:
+            Image(systemName: "sparkle")
+                .font(.system(size: 17))
+                .foregroundStyle(.orange)
+                .opacity(raisedPaw * 0.65)
+                .offset(x: 55, y: -53)
+        case .active, .sleepy:
             EmptyView()
         }
     }
