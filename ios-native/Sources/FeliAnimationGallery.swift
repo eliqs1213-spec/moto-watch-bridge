@@ -26,7 +26,7 @@ struct FeliAnimationGallery: View {
         Scene(.curious, "Curioso", "Olisquea, inclina la cabeza, pestañea y mira alrededor."),
         Scene(.calm, "Tranquilo", "Respira suave, mueve orejas y observa una mariposa."),
         Scene(.sleepy, "Dormido", "Descansa, respira más lento y mantiene los ojos cerrados."),
-        Scene(.worried, "Atento", "Observa un reloj y presta atención."),
+        Scene(.worried, "Estrés elevado", "Mira el reloj, mueve orejas, cambia el apoyo y respira lentamente; si hay una lectura elevada, Salud muestra una recomendación breve."),
         Scene(.mate, "Mate feliz", "Al iniciar Ayuno, toma un mate y mueve la cola."),
         Scene(.grill, "Vacío a la parrilla", "Vacío, brasas y humo en movimiento."),
         Scene(.celebrate, "Festejo", "Mueve la cola más rápido y aparecen destellos.")
@@ -40,10 +40,12 @@ struct FeliAnimationGallery: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     VStack(spacing: 9) {
-                        FeliCompanionView(mood: selected, diameter: 210)
+                        FeliThoughtBubble(thought: FeliThoughtBubble.thought(for: selected))
+                            .padding(.bottom, -12)
+                        FeliCompanionView(mood: selected, diameter: 235)
                             .id(selected)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 224)
+                            .frame(height: 245)
                         if let row = scenes.first(where: { $0.mood == selected }) {
                             Text(row.label).font(.title3.bold())
                             Text(row.detail).font(.subheadline)
@@ -73,7 +75,7 @@ struct FeliAnimationGallery: View {
                             .tint(selected == row.mood ? .orange : .secondary)
                         }
                     }
-                    Text("Estas son las animaciones SwiftUI que se usan dentro de Salud y Ayuno. En producción, las escenas se activan según lecturas válidas o el avance del cronómetro; esta galería no altera esos registros.")
+                    Text("Estas son las animaciones 3D SceneKit que se usan dentro de Salud y Ayuno. En producción, las escenas se activan según lecturas válidas o el avance del cronómetro; esta galería no altera esos registros.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
