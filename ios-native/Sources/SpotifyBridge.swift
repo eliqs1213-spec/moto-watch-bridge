@@ -130,6 +130,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     // Cada evento nativo invalida consultas Web todavía pendientes.
     // Evita que un GET /me/player lento reemplace una pista más nueva del SDK.
     private var sdkMetadataRevision: UInt64 = 0
+    private var controlEpoch: UInt64 = 0
     private var recoveryInProgress = false
     private var unavailableChecks = 0
     private var idleModeRequested = false
@@ -158,6 +159,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     func setEnabled(_ enabled: Bool) {
+        controlEpoch &+= 1
         controlEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "motowatch.spotify.enabled")
         if !enabled {
@@ -168,8 +170,35 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             sendIdle(reason: "Controles Spotify desactivados")
             playbackAvailability = "Controles desactivados"
             metadataSource = "Desactivado"
+            status = "Controles Spotify desactivados"
         } else {
-            Task { await refreshPlaybackInfo(force: true) }
+            // Al reactivar hay que pedir un estado NUEVO: el SDK puede seguir
+            // marcando hasNativeMetadata de antes de apagar los controles.
+            playbackAvailability = "Reactivando controles · verificando Spotify"
+            metadataSource = "Verificando estado actual"
+            status = "Spotify reactivado · esperando datos nuevos"
+            MusicSyncEngine.shared.requestControlReactivation()
+            record("Spotify: controles reactivados; solicitando estado actual SDK/Web API")
+            let enabledAt = Date()
+            let epoch = controlEpoch
+            if SpotifyAppRemoteBridge.shared.isConnected {
+                SpotifyAppRemoteBridge.shared.requestCurrentPlayerState(fallbackToWeb: true)
+                // Algunos SDK quedan «Suscripto» sin nuevos callbacks.
+                // Si la reactivación no recibió dato fresco después de 4 s,
+                // intentar Web API una vez, no reabrir OAuth ni Spotify.
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 4_000_000_000)
+                    guard controlEnabled && controlEpoch == epoch else { return }
+                    let nativeUpdated = SpotifyAppRemoteBridge.shared.lastNativeReceivedAt
+                        .map { $0 >= enabledAt } ?? false
+                    if !nativeUpdated {
+                        record("Spotify: SDK sin respuesta nueva al reactivar; intentando Web API")
+                        await refreshPlaybackInfo(force: true, allowSDKFallback: true)
+                    }
+                }
+            } else {
+                Task { await refreshPlaybackInfo(force: true) }
+            }
         }
     }
 
@@ -424,15 +453,14 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
+        guard controlEnabled else { return }
+        let epochAtStart = controlEpoch
         if !force, let until = manualIdlePreviewUntil, Date() < until { return }
         if force { manualIdlePreviewUntil = nil }
-        // Incluso las consultas forzadas deben respetar la prioridad nativa.
-        // La única excepción: un getPlayerState del SDK falló explícitamente.
-        // Nunca pisar un estado nativo válido con una consulta Web tardía.
-        if SpotifyAppRemoteBridge.shared.isConnected &&
-           SpotifyAppRemoteBridge.shared.hasNativeMetadata { return }
-        if SpotifyAppRemoteBridge.shared.isConnected &&
-           SpotifyAppRemoteBridge.shared.metadataEventsActive && !allowSDKFallback { return }
+        // «SDK conectado + suscripto» no prueba que esté entregando estados:
+        // permitir la lectura Web si el último evento nativo está vencido.
+        // No reemplazar nunca una respuesta SDK más reciente que HTTP.
+        if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
         let nativeRevisionAtStart = sdkMetadataRevision
         guard SecureTokenStorage.load() != nil else {
             if !SpotifyAppRemoteBridge.shared.isConnected {
@@ -442,13 +470,11 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
         do {
             let playback = try await fetchPlayback()
+            guard controlEnabled && controlEpoch == epochAtStart else { return }
             // Un callback App Remote llegó mientras esperaba HTTP: sus metadatos
             // son más recientes que la respuesta Web y tienen prioridad.
             if sdkMetadataRevision != nativeRevisionAtStart { return }
-            if SpotifyAppRemoteBridge.shared.isConnected &&
-               SpotifyAppRemoteBridge.shared.hasNativeMetadata { return }
-            if SpotifyAppRemoteBridge.shared.isConnected &&
-               SpotifyAppRemoteBridge.shared.metadataEventsActive && !allowSDKFallback { return }
+            if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
             if let playback = playback {
                 // Una pista pausada sin dispositivo Connect sigue siendo válida.
                 if playback.device != nil || playback.item != nil {
@@ -460,11 +486,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                 markNoActivePlayer()
             }
         } catch {
+            guard controlEnabled && controlEpoch == epochAtStart else { return }
             if sdkMetadataRevision != nativeRevisionAtStart { return }
-            if SpotifyAppRemoteBridge.shared.isConnected &&
-               SpotifyAppRemoteBridge.shared.hasNativeMetadata { return }
-            if SpotifyAppRemoteBridge.shared.isConnected &&
-               SpotifyAppRemoteBridge.shared.metadataEventsActive && !allowSDKFallback { return }
+            if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
             // No ocultar la música por fallos temporales de red o HTTP 429.
             playbackAvailability = "Consulta fallida; estado conservado"
             if let spotifyError = error as? SpotifyBridgeError,

@@ -17,6 +17,12 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     // Permite recurrir a Web API si falla la suscripción de eventos del SDK.
     @Published private(set) var metadataEventsActive = false
     @Published private(set) var hasNativeMetadata = false
+    private(set) var lastNativeReceivedAt: Date?
+    var nativeMetadataIsFresh: Bool {
+        SpotifyNativeFreshnessPolicy.isFresh(
+            connected: isConnected, hasMetadata: hasNativeMetadata,
+            lastReceivedAt: lastNativeReceivedAt, now: Date())
+    }
     @Published private(set) var lastNativeEvent = "Sin evento nativo todavía"
     @Published private(set) var enabled = false
 
@@ -144,6 +150,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         isConnected = false
         metadataEventsActive = false
         hasNativeMetadata = false
+        lastNativeReceivedAt = nil
         lastNativeEvent = "SDK desactivado"
         UserDefaults.standard.set(false, forKey: Self.enabledKey)
         Self.clearSession()
@@ -157,6 +164,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         isConnected = false
         metadataEventsActive = false
         hasNativeMetadata = false
+        lastNativeReceivedAt = nil
         if enabled { status = "SDK en reposo · Web API activa en segundo plano" }
     }
 
@@ -209,6 +217,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         isConnected = true
         metadataEventsActive = false
         hasNativeMetadata = false
+        lastNativeReceivedAt = nil
         status = "SDK conectado · activando eventos de Spotify"
         appRemote.playerAPI?.delegate = self
         // Lectura inicial sin esperar a que Spotify cambie de canción.
@@ -234,6 +243,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         isConnected = false
         metadataEventsActive = false
         hasNativeMetadata = false
+        lastNativeReceivedAt = nil
         status = "SDK sin conexión: \(error?.localizedDescription ?? "Spotify no disponible")"
     }
 
@@ -241,6 +251,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         isConnected = false
         metadataEventsActive = false
         hasNativeMetadata = false
+        lastNativeReceivedAt = nil
         status = "SDK desconectado · controles Web API disponibles"
     }
 
@@ -332,6 +343,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
         guard enabled, isConnected else { return }
         hasNativeMetadata = true
+        lastNativeReceivedAt = Date()
         lastNativeEvent = "Estado recibido: \(Date().formatted(date: .omitted, time: .standard))"
         status = "SDK conectado · metadatos nativos recibidos"
         let track = playerState.track

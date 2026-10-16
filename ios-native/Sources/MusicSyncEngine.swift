@@ -48,6 +48,17 @@ final class MusicSyncEngine: ObservableObject {
         status = "Auto Sync · esperando metadatos actuales tras reconexión"
     }
 
+    // Reproducir en Music Sync el recupero que se observó al apagar/encender
+    // los controles. Se espera a un snapshot NUEVO, no se reutiliza el título
+    // anterior ni se escribe un comando BLE sin Spotify confirmado.
+    func requestControlReactivation() {
+        pendingRecovery = .foreground
+        pendingUntil = Date().addingTimeInterval(MusicAutoSyncPolicy.recoveryRequestLifetime)
+        status = "Auto Sync · esperando canción actual tras reactivar controles"
+        WatchBLEManager.shared.record("MUSICA-AUTO",
+            "Controles Spotify reactivados: esperando canción confirmada por SDK/Web API")
+    }
+
     func acceptFresh(_ snapshot: WatchMusicSnapshot,
                      manual: Bool = false, recoveredFromIdle: Bool = false) {
         let watch = WatchBLEManager.shared

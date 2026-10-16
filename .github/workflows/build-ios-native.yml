@@ -43,6 +43,11 @@ jobs:
           cat ios-native/Sources/WatchMusicSequencePolicy.swift ios-native/Tests/MusicSequenceChecks.swift > "$RUNNER_TEMP/music-sequence-checks.swift"
           swift "$RUNNER_TEMP/music-sequence-checks.swift"
 
+      - name: Validar vigencia de metadatos Spotify SDK
+        run: |
+          cat ios-native/Sources/SpotifyNativeFreshnessPolicy.swift ios-native/Tests/SpotifyNativeFreshnessChecks.swift > "$RUNNER_TEMP/spotify-freshness-checks.swift"
+          swift "$RUNNER_TEMP/spotify-freshness-checks.swift"
+
       - name: Configurar Xcode y generar proyecto
         run: |
           xcodebuild -version
