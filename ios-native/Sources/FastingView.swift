@@ -44,6 +44,9 @@ struct FastingView: View {
                 }.padding(18)
             }
             .background(Color(uiColor: .systemGroupedBackground))
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                FeliFastingDock(fasting: fasting)
+            }
             .navigationTitle("Ayuno").navigationBarTitleDisplayMode(.inline)
         }
         .onChange(of: remindersEnabled) { _ in configureReminders() }
