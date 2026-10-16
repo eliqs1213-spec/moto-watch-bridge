@@ -375,6 +375,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             return
         }
         manualResyncUntil = Date().addingTimeInterval(20)
+        MusicSyncEngine.shared.cancelAutomaticVerificationForManualResync()
         WatchBLEManager.shared.captureNextMusicFrames()
         lastAction = "Resincronización: consultando canción actual"
         record("MUSICA-DIAG: solicitando estado fresco; reanuncio forzado si Spotify responde")
