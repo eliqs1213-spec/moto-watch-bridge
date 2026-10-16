@@ -27,7 +27,7 @@ enum SleepScheduleAdvisor {
                         now: Date = Date(), calendar: Calendar = .current) -> SleepScheduleSuggestion? {
         let cutoff = now.addingTimeInterval(-14 * 86400)
         // La siesta y los fragmentos cortos NO determinan el horario habitual.
-        let candidates = days.filter { $0.watchID == watchID }
+        let candidates = days.filter { $0.watchID == watchID && $0.sleepRetrievalComplete == true }
             .flatMap { $0.sleepSessions ?? [] }
             .filter { $0.endedAt <= now && $0.endedAt >= cutoff &&
                       $0.minutes >= 180 && $0.minutes <= 720 }
