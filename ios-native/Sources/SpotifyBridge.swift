@@ -482,15 +482,19 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             // ni autorización para borrar la pantalla del reloj.
             let playback = try await fetchPlayback()
             let elapsed = Int(Date().timeIntervalSince(started) * 1000)
-            guard !Task.isCancelled,
-                  UIApplication.shared.applicationState == .background,
-                  controlEnabled, controlEpoch == epochAtStart else {
-                return "HTTP respondió en \(elapsed) ms, descartado por salida/cancelación/cambio de sesión"
-            }
-            // Si el SDK nativo entregó un callback después de iniciar el GET,
-            // NO dejar que esa respuesta web lo reemplace.
-            guard sdkMetadataRevision == nativeRevisionAtStart else {
-                return "HTTP respondió en \(elapsed) ms, descartado: llegó estado SDK más nuevo"
+            let sdkChanged = sdkMetadataRevision != nativeRevisionAtStart
+            guard SpotifyBackgroundProbePolicy.shouldApplyHTTPResult(
+                inBackground: UIApplication.shared.applicationState == .background,
+                enabled: controlEnabled,
+                cancelled: Task.isCancelled,
+                startedEpoch: epochAtStart,
+                currentEpoch: controlEpoch,
+                startedNativeRevision: nativeRevisionAtStart,
+                currentNativeRevision: sdkMetadataRevision
+            ) else {
+                return sdkChanged
+                    ? "HTTP respondió en \(elapsed) ms, descartado: llegó estado SDK más nuevo"
+                    : "HTTP respondió en \(elapsed) ms, descartado por salida/cancelación/cambio de sesión"
             }
             guard let playback else {
                 return "GET /me/player HTTP 204 confirmado en \(elapsed) ms; última canción conservada"
