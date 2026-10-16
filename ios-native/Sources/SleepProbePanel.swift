@@ -7,6 +7,8 @@ struct SleepProbePanel: View {
     @StateObject private var health = WatchHealthSync.shared
     @StateObject private var stress = WatchStressProbe.shared
     @StateObject private var vitals = WatchVitalsProbe.shared
+    @StateObject private var store = WatchHealthStore.shared
+    @State private var saveStatus = ""
     @State private var date = Date()
     @AppStorage("motowatch.sleep.goal.hours") private var goalHours = 8.0
     var body: some View {
@@ -18,6 +20,12 @@ struct SleepProbePanel: View {
                     watch.refreshSleepProbe(day: date)
                 }.buttonStyle(.borderedProminent).disabled(busy)
                 Text(sleep.status).font(.caption).foregroundStyle(.secondary)
+                if !saveStatus.isEmpty {
+                    Label(saveStatus, systemImage: saveStatus.hasPrefix("Guardado")
+                          ? "checkmark.circle.fill" : "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(saveStatus.hasPrefix("Guardado") ? Color.green : Color.orange)
+                }
                 if !sleep.isRunning, !sleep.daySessions.isEmpty, !sleep.scanCompleted {
                     Label("Total parcial: la consulta todavía no recuperó todas las sesiones verificables.",
                           systemImage: "exclamationmark.triangle")
@@ -42,14 +50,51 @@ struct SleepProbePanel: View {
                 }
                 Text("Se suman las sesiones que terminaron en el día consultado. La duración informada por el reloj puede ser menor que el tiempo entre inicio y fin. Las etapas todavía están pendientes de identificar.")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Este panel consulta sin guardar. Actualizar en Salud consulta y guarda las sesiones. Si la suma no coincide con el reloj, copiá el diagnóstico 31/08 y 31/09.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text("Al finalizar correctamente, la consulta guarda las sesiones en Salud y actualiza el gráfico. Si la suma no coincide con el reloj, copiá el diagnóstico 31/08 y 31/09.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Copiar diagnóstico de sueño") { UIPasteboard.general.string = sleep.report }
                     .buttonStyle(.bordered)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
+        .onChange(of: sleep.isRunning) { isRunning in
+            if isRunning {
+                saveStatus = ""
+            } else {
+                persistCompletedProbe()
+            }
+        }
     }
+
+    private func persistCompletedProbe() {
+        guard sleep.scanCompleted, !sleep.daySessions.isEmpty else {
+            if !sleep.sessions.isEmpty {
+                saveStatus = "Consulta parcial: no se guardó como total completo."
+            }
+            return
+        }
+        guard let id = watch.healthWatchID, watch.isConnected else {
+            saveStatus = "No se pudo guardar: el reloj se desconectó."
+            return
+        }
+        do {
+            // 31/09 puede pasar de 179 a 248 min para la misma noche;
+            // mergeSleep reconcilia el total sin duplicar la sesión vieja.
+            try store.mergeSleep(watchID: id, sessions: sleep.daySessions,
+                                 retrievalComplete: true)
+            if let stored = store.day(sleep.requestedDay, watchID: id),
+               let minutes = stored.sleepMinutes {
+                let rounded = Int(minutes.rounded())
+                saveStatus = "Guardado en Salud: \(rounded / 60) h \(rounded % 60) min. El histórico ya puede actualizarse."
+            } else {
+                saveStatus = "Consulta finalizada, pero no se pudo verificar el histórico guardado."
+            }
+        } catch WatchHealthStore.StoreError.overlappingSleep {
+            saveStatus = "No se guardó: hay sesiones superpuestas que necesitan revisión."
+        } catch {
+            saveStatus = "No se pudo guardar el sueño. Revisá el diagnóstico."
+        }
+    }
+
     private var busy: Bool { !watch.isConnected || sleep.isRunning || health.isRunning || stress.isRunning || vitals.isRunning }
     private func duration(_ minutes: Double) -> String {
         let rounded = Int(minutes.rounded())
