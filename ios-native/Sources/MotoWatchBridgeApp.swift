@@ -35,6 +35,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
 struct MotoWatchBridgeApp: App {
     @UIApplicationDelegateAdaptor(MotoAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var appScenePhase
+    @AppStorage("motowatch.appearance") private var appearanceRawValue = AppAppearance.automatic.rawValue
 
     var body: some Scene {
         WindowGroup {
@@ -46,6 +47,7 @@ struct MotoWatchBridgeApp: App {
                 NotificationsView()
                     .tabItem { Label("Notificaciones", systemImage: "bell.badge") }
             }
+                .preferredColorScheme(AppAppearance(rawValue: appearanceRawValue)?.colorScheme)
                 // App con ciclo SwiftUI: algunos estados de escena NO pasan por
                 // UIApplicationDelegate. Observar acá, en la raíz, incluso si
                 // el usuario navega a Salud o Notificaciones.
@@ -94,6 +96,7 @@ struct ContentView: View {
     }
 
     @State private var showSettings = false
+    @AppStorage("motowatch.appearance") private var appearanceRawValue = AppAppearance.automatic.rawValue
 
     var body: some View {
         NavigationStack {
@@ -276,7 +279,10 @@ struct ContentView: View {
     private var settingsSheet: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 18) {
+                    settingsHeader
+                    appearanceSettings
+                    settingsSection("Conexión y dispositivos", subtitle: "Reloj, avisos y energía", symbol: "applewatch")
                     GroupBox("Conexión") {
                         VStack(alignment: .leading, spacing: 10) {
                             statusRow("Bluetooth", watch.bluetoothStatus)
@@ -329,6 +335,7 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
+                    settingsSection("Pantalla de bloqueo", subtitle: "Widgets y Actividades en vivo", symbol: "rectangle.on.rectangle")
                     GroupBox("Diagnóstico de extensión WidgetKit instalada") {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Si el widget iWatch no aparece en la galería o la Dynamic Island queda negra, inspeccioná la extensión efectivamente instalada en el iPhone.")
@@ -374,6 +381,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
+                    settingsSection("Música", subtitle: "Conexión y sincronización con Spotify", symbol: "music.note")
                     GroupBox("Spotify Premium") {
                         VStack(alignment: .leading, spacing: 9) {
                             Text("Configurá en Spotify Developer Dashboard la Redirect URI EXACTA:")
@@ -458,6 +466,7 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
+                    settingsSection("Utilidades y diagnóstico", subtitle: "Herramientas avanzadas de iWatch", symbol: "wrench.adjustable")
                     GroupBox("Encuentra mi teléfono") {
                         VStack(alignment: .leading, spacing: 9) {
                             Text(finder.status).foregroundStyle(.secondary)
@@ -544,9 +553,75 @@ struct ContentView: View {
                     }
                 }.padding(20).groupBoxStyle(WatchSettingsGroupStyle())
             }.background(Color(uiColor: .systemGroupedBackground))
-                .navigationTitle("Ajustes y diagnóstico").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("Configuración").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Listo") { showSettings = false } } }
         }
+    }
+
+    private var settingsHeader: some View {
+        HStack(alignment: .center, spacing: 16) {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 60, height: 60)
+                .background(
+                    LinearGradient(colors: [.indigo, .blue],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 18)
+                )
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("A tu manera").font(.title2.bold())
+                Text("Personalizá iWatch sin perder tus conexiones ni registros.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }.padding(.vertical, 6)
+    }
+
+    private var appearanceSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "paintbrush.pointed.fill")
+                    .font(.title3).foregroundStyle(.indigo)
+                    .frame(width: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Apariencia").font(.headline)
+                    Text("Se aplica a Salud, iWatch y Notificaciones.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            Picker("Apariencia de la aplicación", selection: $appearanceRawValue) {
+                ForEach(AppAppearance.allCases) { appearance in
+                    Label(appearance.title, systemImage: appearance.symbol).tag(appearance.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Apariencia de toda iWatch")
+            HStack(spacing: 8) {
+                Image(systemName: AppAppearance(rawValue: appearanceRawValue)?.symbol ?? "circle.lefthalf.filled")
+                    .foregroundStyle(.indigo)
+                Text(AppAppearance(rawValue: appearanceRawValue)?.explanation ??
+                     AppAppearance.automatic.explanation)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(18).watchCard()
+    }
+
+    private func settingsSection(_ title: String, subtitle: String, symbol: String) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(.indigo)
+                .font(.headline)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.title3.bold())
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }.padding(.top, 12).padding(.horizontal, 2)
     }
 
     private func statusRow(_ title: String, _ value: String) -> some View {
@@ -575,9 +650,13 @@ private extension View {
 }
 private struct WatchSettingsGroupStyle: GroupBoxStyle {
     func makeBody(configuration: Configuration) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            configuration.label.font(.headline).foregroundStyle(.indigo)
+        VStack(alignment: .leading, spacing: 14) {
+            configuration.label
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Rectangle().fill(Color.primary.opacity(0.06)).frame(height: 1)
             configuration.content
-        }.padding(18).watchCard()
+        }
+        .padding(18).watchCard()
     }
 }
