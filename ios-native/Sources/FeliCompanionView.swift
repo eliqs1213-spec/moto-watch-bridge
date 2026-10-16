@@ -295,11 +295,16 @@ private struct FeliCharacter: View {
                 .frame(width: 78, height: 72)
                 .offset(x: 44, y: 35)
         case .celebrate:
-            Image(systemName: "sparkles")
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(.orange)
-                .rotationEffect(.degrees(sin(seconds * 2.1) * 6))
-                .offset(x: 59, y: -51)
+            ZStack {
+                FeliAsadoAccessory(seconds: seconds)
+                    .frame(width: 78, height: 72)
+                    .offset(x: 44, y: 35)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.orange)
+                    .rotationEffect(.degrees(sin(seconds * 2.1) * 6))
+                    .offset(x: 58, y: -53)
+            }
         case .calm:
             Text("🦋")
                 .font(.system(size: 24))
