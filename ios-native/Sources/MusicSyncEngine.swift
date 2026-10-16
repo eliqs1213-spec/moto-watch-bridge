@@ -59,9 +59,19 @@ final class MusicSyncEngine: ObservableObject {
             "Controles Spotify reactivados: esperando canción confirmada por SDK/Web API")
     }
 
+    func cancelAutomaticVerificationForManualResync() {
+        transitionVerification?.cancel()
+        transitionVerification = nil
+        pendingTransitionSignature = nil
+        pendingTransitionUntil = .distantPast
+        WatchBLEManager.shared.record("MUSICA-AUTO",
+            "Verificación automática pendiente cancelada por resincronización manual")
+    }
+
     func acceptFresh(_ snapshot: WatchMusicSnapshot,
                      manual: Bool = false, recoveredFromIdle: Bool = false) {
         let watch = WatchBLEManager.shared
+        if manual { cancelAutomaticVerificationForManualResync() }
         guard watch.isConnected else {
             status = "Auto Sync esperando Bluetooth"
             return
@@ -102,7 +112,7 @@ final class MusicSyncEngine: ObservableObject {
         case .changed:
             // Forzar envío completo incluso si la firma BLE basada en URI no
             // refleja un cambio de título/artista/álbum en menos de 25 s.
-            watch.sendMusic(snapshot, force: true, reannounce: true)
+            watch.sendMusic(snapshot, force: true, reannounce: true, origin: "cambio automático")
             status = "Auto Sync · cambio de canción/estado enviado (pantalla no verificada)"
             if MusicAutoSyncPolicy.shouldVerifyTransition(
                 isPlaying: snapshot.isPlaying,
@@ -112,10 +122,11 @@ final class MusicSyncEngine: ObservableObject {
                 scheduleOneShotVerification(of: signature)
             }
         case .manual:
-            watch.sendMusic(snapshot, force: true, reannounce: true)
+            watch.sendMusic(snapshot, force: true, reannounce: true, origin: manual ? "manual" : "recuperación")
             status = "Auto Sync · resincronización manual enviada (pantalla no verificada)"
         case .recovery:
-            watch.sendMusic(snapshot, force: true, reannounce: true)
+            watch.sendMusic(snapshot, force: true, reannounce: true,
+                            origin: recoveredTransition ? "verificación automática" : "recuperación")
             status = recoveredTransition ? "Auto Sync · segunda verificación de cambio natural" :
                 (isReconnect ? "Auto Sync · recuperando tras reconexión (pantalla no verificada)"
                              : "Auto Sync · recuperando al abrir iWatch (pantalla no verificada)")
@@ -124,7 +135,7 @@ final class MusicSyncEngine: ObservableObject {
                 : isReconnect ? "Reanuncio controlado tras reconexión con pista validada"
                               : "Reanuncio controlado al volver a primer plano con pista validada")
         case .heartbeat:
-            watch.sendMusic(snapshot, force: true, reannounce: true)
+            watch.sendMusic(snapshot, force: true, reannounce: true, origin: "heartbeat")
             status = "Auto Sync · reanuncio preventivo espaciado (pantalla no verificada)"
             watch.record("MUSICA-AUTO", "Reanuncio preventivo a partir de 180 s; solo con iWatch visible")
         }

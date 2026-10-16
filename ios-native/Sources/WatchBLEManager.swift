@@ -57,6 +57,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWriteIsBattery = false
     private var currentWriteIsNotification = false
     private var currentMusicStage: String? = nil
+    // Coalescer sólo mientras el par ANUNCIO/ESTADO todavía está activo.
+    private var latestMusicContents: String?
+    private var deferredManualMusic: WatchMusicSnapshot?
     private var musicDiagnosticUntil = Date.distantPast
     private var musicDiagnosticPacketsLeft = 0
     private var writeTimeout: DispatchWorkItem?
@@ -102,6 +105,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         musicNotBefore = .distantPast
         currentWriteIsNotification = false
         currentMusicStage = nil
+        latestMusicContents = nil
+        deferredManualMusic = nil
         musicDiagnosticPacketsLeft = 0
         musicInProgress = false
         currentWriteIsBattery = false
@@ -809,12 +814,27 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     // Usar la codificación probada en Windows: anuncio 08 02 de canción
     // nueva y estado estable vacío al reproducir / 08 01 al pausar.
     func sendMusic(_ snapshot: WatchMusicSnapshot, force: Bool = false,
-                   reannounce: Bool = false) {
+                   reannounce: Bool = false, origin: String = "indirecto") {
         guard isConnected, writeCharacteristic != nil, peripheral != nil else {
             musicSyncStatus = "Requiere Bluetooth conectado y F8F1"
             return
         }
         let signature = "\(snapshot.id)|\(snapshot.isPlaying)"
+        let contents = "\(snapshot.title)|\(snapshot.artist)|\(snapshot.album)|\(snapshot.isPlaying)"
+        let pendingStages = musicQueue.filter { $0.kind == .music }
+            .compactMap { $0.musicStage }
+        if WatchMusicSequencePolicy.shouldCoalesce(
+            requestedContent: contents, latestContent: latestMusicContents,
+            inFlightStage: currentMusicStage, pendingStages: pendingStages
+        ) {
+            if origin == "manual" {
+                deferredManualMusic = snapshot
+                record("MUSICA-SEQ", "Resincronización manual diferida hasta terminar secuencia activa")
+            } else {
+                record("MUSICA-SEQ", "Duplicado \(origin) omitido: canción ya en secuencia BLE activa")
+            }
+            return
+        }
         let changed = signature != lastMusicSignature
         if !force && !reannounce && !changed && Date().timeIntervalSince(lastMusicSentAt) < 25 { return }
         let trackChanged = lastMusicSignature == nil || lastMusicSignature?.components(separatedBy: "|").first != snapshot.id
@@ -843,9 +863,10 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         musicQueue.append(PendingMusicWrite(packet: steady, delayAfter: 0, kind: .music, musicStage: "ESTADO"))
         lastMusicSignature = signature
+        latestMusicContents = contents
         lastMusicSentAt = Date()
         musicSyncStatus = "Enviando: \(snapshot.title) · \(snapshot.isPlaying ? "PLAY" : "PAUSA")"
-        record("MUSICA", "Metadatos: \(snapshot.title) - \(snapshot.artist) | \(snapshot.isPlaying ? "PLAY" : "PAUSA")")
+        record("MUSICA", "Origen \(origin) · metadatos: \(snapshot.title) - \(snapshot.artist) | \(snapshot.isPlaying ? "PLAY" : "PAUSA")")
         flushMusicQueue()
     }
 
@@ -860,6 +881,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         if !force && lastMusicSignature == "NO_MUSIC" { return }
         musicQueue.removeAll { $0.kind == .music }
+        latestMusicContents = nil
+        deferredManualMusic = nil
         musicQueue.append(PendingMusicWrite(packet: WatchMusicProtocol.encodeNoMusic(), delayAfter: 0, kind: .music, musicStage: "SIN_MUSICA"))
         lastMusicSignature = "NO_MUSIC"
         lastMusicSentAt = Date()
@@ -974,6 +997,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             else {
                 musicSyncStatus = "Error al escribir metadatos"
                 lastMusicSignature = nil
+                latestMusicContents = nil
+                deferredManualMusic = nil
                 // No continuar el ESTADO de un ANUNCIO rechazado. Se recupera
                 // cuando Spotify entregue nuevamente un estado válido.
                 musicQueue.removeAll { $0.kind == .music }
@@ -995,6 +1020,17 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             }
             if completedMusicStage == "ESTADO" {
                 record("MUSICA-SEQ", "Etapa ESTADO confirmada por BLE; secuencia cerrada (pantalla no verificada)")
+                if let manualSnapshot = deferredManualMusic {
+                    let pendingContents = "\(manualSnapshot.title)|\(manualSnapshot.artist)|\(manualSnapshot.album)|\(manualSnapshot.isPlaying)"
+                    if pendingContents != latestMusicContents {
+                        deferredManualMusic = nil
+                        record("MUSICA-SEQ", "Resincronización manual diferida cancelada: estado musical cambiado")
+                    } else if !musicQueue.contains(where: { $0.kind == .music }) {
+                        deferredManualMusic = nil
+                        record("MUSICA-SEQ", "Ejecutando resincronización manual tras cerrar ANUNCIO/ESTADO")
+                        sendMusic(manualSnapshot, force: true, reannounce: true, origin: "manual")
+                    }
+                }
             }
             if musicQueue.isEmpty && completedMusicStage == "ESTADO" {
                 musicSyncStatus = "Secuencia musical completa en BLE; pantalla no verificada"
