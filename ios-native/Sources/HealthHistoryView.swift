@@ -296,6 +296,24 @@ private struct HealthMetricHistoryView: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 22))
                 HealthMetricCard(metric: metric, snapshot: latest)
+                if metric == .oxygen {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Oxígeno: lecturas recuperadas del Moto Watch")
+                            .font(.subheadline.bold())
+                        Text("iWatch consulta muestras ya guardadas en el reloj; no puede iniciar una medición física por Bluetooth. Si no hay valores, medí primero desde el Moto Watch y volvé a actualizar Salud.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        NavigationLink {
+                            HealthDiagnosticsView()
+                        } label: {
+                            Label("Abrir diagnóstico de oxígeno", systemImage: "waveform.path.ecg.rectangle")
+                                .font(.subheadline.bold())
+                        }
+                    }
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 18))
+                }
                 if metric == .sleep, records.contains(where: { $0.sleepMinutes != nil && $0.sleepRetrievalComplete != true }) {
                     Label("Algunos descansos no tienen una recuperación completa verificada. Su duración es provisional y no se usa para recomendaciones.",
                           systemImage: "exclamationmark.triangle.fill")
