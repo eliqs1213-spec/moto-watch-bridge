@@ -62,25 +62,18 @@ struct FeliHealthDock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 7) {
+            HStack(alignment: .center, spacing: 6) {
                 // Feli no es una imagen estática. El toque activa una reacción
                 // local y no dispara ninguna lectura inventada del reloj.
-                VStack(spacing: -3) {
-                    if !compact {
-                        FeliThoughtBubble(
-                            thought: FeliThoughtBubble.thought(for: insight.mood),
-                            color: insight.mood == .worried ? .orange : .indigo
-                        )
-                        .frame(height: 51)
-                    }
-                    FeliCompanionView(mood: insight.mood, diameter: compact ? 68 : 143)
-                        // La animación se reinicia al ingresar a una métrica o
-                        // cambiar a Histórico/período; nunca inventa lecturas.
-                        .id(insight.title + "|" + insight.message + "|" + (history?.periodLabel ?? "último"))
-                        .accessibilityHint("Tocá para saludar a Feli")
-                }
-                .frame(width: compact ? 72 : 149)
-                .accessibilityElement(children: .contain)
+                FeliCharacterStage(
+                    mood: insight.mood,
+                    diameter: compact ? 107 : 178,
+                    thought: FeliThoughtBubble.thought(for: insight.mood),
+                    showsThought: !compact
+                )
+                .id(insight.title + "|" + insight.message + "|" + (history?.periodLabel ?? "último"))
+                .accessibilityHint("Tocá a Feli para acariciarlo")
+                .frame(width: compact ? 110 : 180)
                 VStack(alignment: .leading, spacing: compact ? 0 : 4) {
                     Text(compact ? compactLabel : insight.title)
                         .font(.subheadline.bold())
