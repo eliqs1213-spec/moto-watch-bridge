@@ -80,6 +80,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var readyConnectionID = 0
     private var pendingConnectionAlertID: Int? = nil
     private var reconnectScheduled = false
+    // Restaurar una suscripción BLE ya conectada tras relanzamiento de iWatch
+    // NO es un nuevo enlace físico; no repetir aviso de batería/conexión.
+    private var restoredExistingConnection = false
 
     // Una sesión nueva no puede heredar características, cola ni un writeWithResponse
     // que pertenecían a la conexión anterior. Un callback antiguo tampoco debe
@@ -185,6 +188,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         // características para esta instancia de la app. Reconectar no alcanza.
         guard !isConnected else { return }
         resetConnectionTransport()
+        restoredExistingConnection = true
         peripheral = device
         device.delegate = self
         connectionStatus = "Enlace restaurado; redescubriendo F8F0/F8F1"
@@ -321,6 +325,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             watchName = p.name ?? "Moto Watch Fit"
             if p.state == .connected {
                 resetConnectionTransport()
+                restoredExistingConnection = true
                 connectionStatus = "Restaurado; descubriendo servicios"
                 p.discoverServices(nil)
             } else if autoReconnectEnabled && !manuallyDisconnected {
@@ -350,6 +355,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         watchName = device.name ?? "Moto Watch Fit"
         UserDefaults.standard.set(device.identifier.uuidString, forKey: storedPeripheralKey)
         resetConnectionTransport()
+        restoredExistingConnection = false
         connectionStatus = "Conectado; descubriendo características F8F0/F8F1"
         // La primera respuesta 10/01 de esta conexión será la del aviso.
         record("BLE", "Conexión BLE establecida: \(watchName)")
@@ -445,7 +451,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         flushMusicQueue()
         scheduleBatteryRefresh()
         let connectionID = readyConnectionID
-        pendingConnectionAlertID = connectionID
+        if restoredExistingConnection {
+            pendingConnectionAlertID = nil
+            record("AVISO", "Conexión restaurada; aviso de batería omitido porque no hubo un enlace físico nuevo")
+        } else {
+            pendingConnectionAlertID = connectionID
+        }
         refreshBattery()
         // Si la lectura no llega, intentar UNA consulta adicional. Sin timers
         // de vigilancia permanentes: iOS puede suspenderlos en segundo plano.
