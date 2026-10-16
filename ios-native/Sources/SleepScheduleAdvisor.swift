@@ -26,28 +26,36 @@ enum SleepScheduleAdvisor {
     static func suggest(days: [WatchHealthDay], watchID: String,
                         now: Date = Date(), calendar: Calendar = .current) -> SleepScheduleSuggestion? {
         let cutoff = now.addingTimeInterval(-14 * 86400)
-        // La siesta y los fragmentos cortos NO determinan el horario habitual.
-        let candidates = days.filter { $0.watchID == watchID && $0.sleepRetrievalComplete == true }
-            .flatMap { $0.sleepSessions ?? [] }
-            .filter { $0.endedAt <= now && $0.endedAt >= cutoff &&
-                      $0.minutes >= 180 && $0.minutes <= 720 }
-            .compactMap { session -> (day: Date, bed: Int, wake: Int, duration: Double)? in
-                let bed = calendar.dateComponents([.hour, .minute], from: session.startedAt)
-                let wake = calendar.dateComponents([.hour, .minute], from: session.endedAt)
-                guard let bh = bed.hour, let bm = bed.minute,
-                      let wh = wake.hour, let wm = wake.minute,
-                      (bh >= 18 || bh <= 5), (4...12).contains(wh) else { return nil }
-                let bedtime = bh * 60 + bm + (bh < 12 ? 1440 : 0)
-                return (calendar.startOfDay(for: session.endedAt), bedtime,
-                        wh * 60 + wm, session.minutes / 60)
+        // Varias sesiones breves separadas por despertares pueden constituir
+        // la misma noche; el reloj agrupa el descanso por DÍA DE DESPERTAR.
+        // Considerar el conjunto, no solo su bloque más largo.
+        var byDay: [String: (bed: Int, wake: Int, duration: Double)] = [:]
+        for day in days where day.watchID == watchID && day.sleepRetrievalComplete == true {
+            let segments = (day.sleepSessions ?? [])
+                .filter {
+                    $0.endedAt <= now && $0.endedAt >= cutoff &&
+                    $0.minutes >= 10 && $0.minutes <= 720 &&
+                    $0.endedAt > $0.startedAt &&
+                    (4...12).contains(calendar.component(.hour, from: $0.endedAt))
+                }
+                .sorted { $0.startedAt < $1.startedAt }
+            guard let first = segments.first, let last = segments.last else { continue }
+            let totalMinutes = segments.reduce(0) { $0 + $1.minutes }
+            guard totalMinutes >= 180 && totalMinutes <= 720 &&
+                  last.endedAt.timeIntervalSince(first.startedAt) <= 18 * 3600 else { continue }
+            // Si hay una pausa muy prolongada entre bloques, podría tratarse de
+            // dos descansos independientes. No inferir una rutina de acostarse.
+            let longGap = zip(segments, segments.dropFirst()).contains {
+                $1.startedAt.timeIntervalSince($0.endedAt) > 4 * 3600
             }
-        // Una sola noche puede tener varios segmentos: conservar la sesión
-        // nocturna de mayor duración, sin contarla varias veces.
-        var byDay: [Date: (bed: Int, wake: Int, duration: Double)] = [:]
-        for item in candidates {
-            if item.duration > (byDay[item.day]?.duration ?? 0) {
-                byDay[item.day] = (item.bed, item.wake, item.duration)
-            }
+            guard !longGap else { continue }
+            let bed = calendar.dateComponents([.hour, .minute], from: first.startedAt)
+            let wake = calendar.dateComponents([.hour, .minute], from: last.endedAt)
+            guard let bh = bed.hour, let bm = bed.minute,
+                  let wh = wake.hour, let wm = wake.minute,
+                  (bh >= 18 || bh <= 5), (4...12).contains(wh) else { continue }
+            byDay[day.dayKey] = (bh * 60 + bm + (bh < 12 ? 1440 : 0),
+                                 wh * 60 + wm, totalMinutes / 60)
         }
         let rows = Array(byDay.values)
         guard rows.count >= 3 else { return nil }
