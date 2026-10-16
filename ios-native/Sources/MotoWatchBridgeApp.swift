@@ -81,6 +81,7 @@ struct ContentView: View {
     @StateObject private var musicAutoSync = MusicSyncEngine.shared
     @EnvironmentObject private var finder: PhoneFinder
     @StateObject private var batteryLive = BatteryLiveActivityManager.shared
+    @State private var widgetInstallReport = WidgetExtensionDiagnostics.report()
     @StateObject private var backgroundExperiment = MusicBackgroundExperiment.shared
     @StateObject private var connectionAlerts = WatchConnectionAlerts.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -324,6 +325,28 @@ struct ContentView: View {
                             Text("Batería: exclusivamente protocolo Motorola 10/01. Solo se muestran respuestas con trama y checksum válidos.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    GroupBox("Diagnóstico de extensión WidgetKit instalada") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Si el widget iWatch no aparece en la galería o la Dynamic Island queda negra, inspeccioná la extensión efectivamente instalada en el iPhone.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Comprobar extensión") {
+                                    widgetInstallReport = WidgetExtensionDiagnostics.report()
+                                    watch.record("WIDGET-DIAG", "Inspección local del bundle instalada; revisar informe copiado para los detalles")
+                                }.buttonStyle(.borderedProminent)
+                                Button("Copiar diagnóstico") {
+                                    UIPasteboard.general.string = widgetInstallReport
+                                }.buttonStyle(.bordered)
+                            }
+                            Text(widgetInstallReport)
+                                .font(.caption2.monospaced())
+                                .textSelection(.enabled)
+                            Text("La presencia de MotoBatteryWidgets.appex y un ID coherente NO certifica que iOS haya registrado la extensión ni que Sideloadly la haya firmado correctamente. La app no puede consultar el catálogo interno de WidgetKit.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     GroupBox("Pantalla de bloqueo · Widget experimental") {

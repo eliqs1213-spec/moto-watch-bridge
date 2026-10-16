@@ -83,6 +83,15 @@ jobs:
           /usr/bin/zip -qry "$GITHUB_WORKSPACE/MotoWatchNativeProbe-unsigned.ipa" Payload
           ls -lh "$GITHUB_WORKSPACE/MotoWatchNativeProbe-unsigned.ipa"
 
+      - name: Verificar extensión WidgetKit empaquetada dentro del IPA
+        run: |
+          set -euo pipefail
+          IPA="$GITHUB_WORKSPACE/MotoWatchNativeProbe-unsigned.ipa"
+          unzip -Z1 "$IPA" | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/MotoBatteryWidgets'
+          unzip -Z1 "$IPA" | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/Info.plist'
+          unzip -p "$IPA" 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/Info.plist' | plutil -p - | grep -F 'com.apple.widgetkit-extension'
+          echo 'EXTENSION PRESENTE EN IPA SIN FIRMAR: registro en iOS depende del proceso Sideloadly'
+
       - name: Publicar IPA para descargar
         uses: actions/upload-artifact@v4
         with:
