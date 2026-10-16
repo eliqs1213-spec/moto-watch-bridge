@@ -17,10 +17,12 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         WatchBLEManager.shared.record("SISTEMA", "iPhone: aplicación en segundo plano")
         WatchBLEManager.shared.pauseAuxiliaryWork()
         SpotifyAppRemoteBridge.shared.applicationDidEnterBackground()
+        MusicBackgroundExperiment.shared.didEnterBackground(source: "UIApplicationDelegate")
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
         WatchBLEManager.shared.record("SISTEMA", "iPhone: aplicación vuelve al primer plano")
+        MusicBackgroundExperiment.shared.willEnterForeground(source: "UIApplicationDelegate")
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
@@ -32,6 +34,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct MotoWatchBridgeApp: App {
     @UIApplicationDelegateAdaptor(MotoAppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var appScenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -43,6 +46,24 @@ struct MotoWatchBridgeApp: App {
                 NotificationsView()
                     .tabItem { Label("Notificaciones", systemImage: "bell.badge") }
             }
+                // App con ciclo SwiftUI: algunos estados de escena NO pasan por
+                // UIApplicationDelegate. Observar acá, en la raíz, incluso si
+                // el usuario navega a Salud o Notificaciones.
+                .onChange(of: appScenePhase) { phase in
+                    switch phase {
+                    case .background:
+                        WatchBLEManager.shared.record("BG-LIFECYCLE", "ScenePhase raíz: background")
+                        MusicBackgroundExperiment.shared.didEnterBackground(source: "SwiftUI scenePhase")
+                        WatchBLEManager.shared.flushLog()
+                    case .inactive:
+                        WatchBLEManager.shared.record("BG-LIFECYCLE", "ScenePhase raíz: inactive")
+                    case .active:
+                        WatchBLEManager.shared.record("BG-LIFECYCLE", "ScenePhase raíz: active")
+                        MusicBackgroundExperiment.shared.willEnterForeground(source: "SwiftUI scenePhase")
+                    @unknown default:
+                        break
+                    }
+                }
                 .onOpenURL { url in
                     SpotifyAppRemoteBridge.shared.handleOpenURL(url)
                 }
@@ -60,6 +81,7 @@ struct ContentView: View {
     @StateObject private var musicAutoSync = MusicSyncEngine.shared
     @EnvironmentObject private var finder: PhoneFinder
     @StateObject private var batteryLive = BatteryLiveActivityManager.shared
+    @StateObject private var backgroundExperiment = MusicBackgroundExperiment.shared
     @StateObject private var connectionAlerts = WatchConnectionAlerts.shared
     @Environment(\.scenePhase) private var scenePhase
 
@@ -434,6 +456,32 @@ struct ContentView: View {
                                 counter("Play/Pausa", watch.toggleCount, "playpause.fill")
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    GroupBox("Music Auto Sync · experimento de segundo plano") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Optativo · iOS 26 o posterior")
+                                .font(.subheadline.bold())
+                            Text("Prueba una Actividad en vivo ANTES de bloquear y registra si iOS concede tiempo al bloquear o despierta la app ante eventos F8F0 reales. NO garantiza sincronización continua: si iOS suspende iWatch y no hay eventos BLE, Spotify no enviará cambios naturales a esta app.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Iniciar prueba") {
+                                    backgroundExperiment.start()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(backgroundExperiment.enabled)
+                                Button("Detener prueba") {
+                                    backgroundExperiment.stop()
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!backgroundExperiment.enabled)
+                            }
+                            Text(backgroundExperiment.status)
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text("Para probar: iniciá con el reloj listo y Spotify reproduciendo; esperá a ver la Actividad en vivo, bloqueá sin cerrar iWatch y dejá terminar una canción. Desbloqueá, copiá el registro y buscá BG-EXPERIMENTO. Detener la prueba también detiene la Actividad en vivo de batería. No se reproducirá audio falso ni se consultará la batería periódicamente.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     GroupBox("Prueba con pantalla bloqueada") {

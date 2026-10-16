@@ -48,6 +48,11 @@ jobs:
           cat ios-native/Sources/SpotifyNativeFreshnessPolicy.swift ios-native/Tests/SpotifyNativeFreshnessChecks.swift > "$RUNNER_TEMP/spotify-freshness-checks.swift"
           swift "$RUNNER_TEMP/spotify-freshness-checks.swift"
 
+      - name: Verificar límites de experimento musical en segundo plano
+        run: |
+          cat ios-native/Sources/MusicBackgroundExperimentPolicy.swift ios-native/Tests/MusicBackgroundExperimentChecks.swift > "$RUNNER_TEMP/music-bg-experiment-checks.swift"
+          swift "$RUNNER_TEMP/music-bg-experiment-checks.swift"
+
       - name: Configurar Xcode y generar proyecto
         run: |
           xcodebuild -version
