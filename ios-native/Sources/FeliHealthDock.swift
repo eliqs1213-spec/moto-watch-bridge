@@ -65,7 +65,7 @@ struct FeliHealthDock: View {
             HStack(alignment: .center, spacing: 11) {
                 // Feli no es una imagen estática. El toque activa una reacción
                 // local y no dispara ninguna lectura inventada del reloj.
-                FeliCompanionView(mood: insight.mood, diameter: compact ? 51 : 86)
+                FeliCompanionView(mood: insight.mood, diameter: compact ? 63 : 107)
                     // Reproduce el saludo al abrir una métrica, entrar en
                     // Histórico, cambiar el período o recibir una nueva lectura.
                     .id(insight.title + "|" + insight.message + "|" + (history?.periodLabel ?? "último"))

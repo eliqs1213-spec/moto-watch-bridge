@@ -2,6 +2,17 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.32 · build 872 (candidata, pruebas visuales pendientes)
+
+- Sustituye el avatar 2D que solo movía una pata por un verdadero personaje **3D articulado con SceneKit**, modelado en código con volumen, materiales, iluminación, cámara, perspectiva y controles táctiles sobre geometría tridimensional.
+- Beagle limón/blanco basado en referencia: cráneo, hocico, nariz, ojos, franja blanca, orejas largas caídas y arnés naranja; cuerpo, patas anteriores y posteriores, cola, mandíbula y orejas tienen nodos y transformaciones propias.
+- Animaciones 3D **distintas**: olfateo baja hocico y cabeza; bostezo abre mandíbula/tongue; estiramiento adelanta ambas patas y baja el pecho; buena actividad alterna las cuatro patas; dormir baja el cuerpo y cierra ojos; relax respira; saludo levanta pata y mueve cola; orejas se mueven independientemente; pancita se recuesta con movimientos propios.
+- Animación en Salud al abrir una métrica según última lectura y en Histórico según promedio; en Ayuno escenas de mate 3D, parrilla 3D con vacío, brasas y humo animado, cuenta regresiva y festejo real.
+- La galería en Ayuno permite seleccionar 14 actuaciones 3D, no solo cambiar accesorios. Tocar cabeza, orejas o cuerpo intenta seleccionar la zona real mediante SceneKit hit-testing.
+- Respeta Reduce Motion y pausa la reproducción en segundo plano. Mantiene el oxígeno validado y la recuperación/guardado de sueño 248 min de 870.
+- **Limitación:** es un modelo 3D estilizado generado proceduralmente; no es todavía un modelo 3D artist-authored/rigged fotorealista que iguale exactamente el concept art. Requiere evaluación visual y de rendimiento en iPhone.
+- Compilación y IPA de 872 pendientes al crear la candidata.
+
 ## 0.8.4.31 · build 871 (candidata)
 
 - El nuevo Feli es un personaje vectorial animado en SwiftUI, NO una imagen estática ni un GIF: pelaje limón y blanco, franja blanca, arnés naranja, orejas largas caídas y piezas animadas independientes (respiración, parpadeos, nariz/olfateo, inclinación, orejas, cola, pata, estiramiento y bostezo). El toque en cabeza, orejas o pancita desencadena gestos y corazones.
