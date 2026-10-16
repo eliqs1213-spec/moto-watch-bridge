@@ -111,7 +111,7 @@ final class Feli3DRig {
         camera.usesOrthographicProjection = true
         // User video: dog occupied too little of SCNView.
         // Frame dog tightly; widen only for mate, grill and fireworks.
-        camera.orthographicScale = 2.05
+        camera.orthographicScale = 1.74
         camera.zNear = 0.05
         camera.zFar = 60
         cameraNode.camera = camera
@@ -422,8 +422,8 @@ final class Feli3DRig {
     func configureCamera(for mood: FeliMood) {
         let includeProp = mood == .mate || mood == .grill || mood == .celebrate
         // Scene is larger in portrait while its props stay inside the frame.
-        cameraNode.camera?.orthographicScale = includeProp ? 2.68 : 2.05
-        cameraFocus.position = SCNVector3(includeProp ? 0.18 : -0.12, 1.23, 0)
+        cameraNode.camera?.orthographicScale = includeProp ? 2.32 : 1.74
+        cameraFocus.position = SCNVector3(includeProp ? 0.16 : -0.12, 1.23, 0)
     }
 
     func setAccessories(for mood: FeliMood) {
