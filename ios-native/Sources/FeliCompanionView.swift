@@ -104,7 +104,7 @@ private struct FeliIllustration: View {
         ZStack {
             Ellipse().fill(fur)
                 .frame(width: 88, height: 77)
-                .scaleEffect(x: 1 + breath * 0.014, y: 1 + breath * 0.018)
+                .scaleEffect(x: CGFloat(1 + breath * 0.014), y: CGFloat(1 + breath * 0.018))
                 .offset(y: 30)
             Ellipse().fill(.white.opacity(0.97))
                 .frame(width: 44, height: 55)
@@ -128,7 +128,7 @@ private struct FeliIllustration: View {
                 .frame(width: 27, height: 18).offset(x: -28, y: 61)
             Ellipse().fill(.white)
                 .frame(width: 27, height: 18)
-                .offset(x: 28, y: 61 - (mood == .active ? max(0, sin(seconds * 3)) * 1.6 : 0))
+                .offset(x: 28, y: CGFloat(61 - (mood == .active ? max(0, sin(seconds * 3)) * 1.6 : 0)))
         }
     }
 
@@ -173,8 +173,8 @@ private struct FeliIllustration: View {
         switch mood {
         case .calm:
             Text("🦋").font(.system(size: 27))
-                .offset(x: 53 + sin(seconds * 1.3) * 4,
-                        y: -53 + cos(seconds * 1.7) * 6)
+                .offset(x: CGFloat(53 + sin(seconds * 1.3) * 4),
+                        y: CGFloat(-53 + cos(seconds * 1.7) * 6))
         case .worried:
             Image(systemName: "watch.analog")
                 .font(.system(size: 25))
