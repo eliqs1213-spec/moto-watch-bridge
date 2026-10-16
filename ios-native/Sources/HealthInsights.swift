@@ -48,6 +48,7 @@ enum HealthInsights {
         let previousStart = calendar.date(byAdding: .day, value: -14, to: calendar.startOfDay(for: now)) ?? now
         let previousEnd = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: now)) ?? now
         let previous = days.filter { $0.watchID == watchID &&
+            (metric != .sleep || $0.sleepRetrievalComplete == true) &&
             ((DateFormatterDay.day($0.dayKey, calendar: calendar)).map { $0 >= previousStart && $0 < previousEnd } ?? false) }
             .compactMap { $0.value(for: metric) }
         let trend: String
@@ -110,7 +111,8 @@ enum HealthInsights {
                              now: Date, calendar: Calendar) -> [(date: Date, value: Double)] {
         let first = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)) ?? now
         let limit = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
-        return days.filter { $0.watchID == watchID }
+        return days.filter { $0.watchID == watchID &&
+                             (metric != .sleep || $0.sleepRetrievalComplete == true) }
             .compactMap { day -> (date: Date, value: Double)? in
                 guard let date = DateFormatterDay.day(day.dayKey, calendar: calendar),
                       date >= first && date < limit,
