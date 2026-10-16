@@ -36,4 +36,24 @@ enum MusicBackgroundExperimentPolicy {
         }
         return "\(Int(seconds)) s"
     }
+
+    // Diagnóstico: solo se registra el tipo de trama observado por F8F0.
+    // Nunca se persiste el payload completo (puede contener datos de salud).
+    static func bleFrameType(_ data: Data) -> String {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 6, bytes[0] == 0xAA else { return "fragmento/no-AA" }
+        let declaredSize = Int(bytes[1]) | (Int(bytes[2]) << 8)
+        let kind = String(format: "%02X/%02X", bytes[4], bytes[5])
+        return declaredSize + 4 == bytes.count ? kind : kind + " (fragmento)"
+    }
+
+    // No inundar el registro persistente con ráfagas BLE o paquetes de salud.
+    // Primer evento por tipo y consultas realmente elegibles siempre se anotan;
+    // los demás se agregan al resumen y sólo dejan una muestra cada 45 s.
+    static let frameLogInterval: TimeInterval = 45
+    static func shouldLogBLEFrame(firstOfType: Bool, queryEligible: Bool,
+                                  secondsSinceLastLog: TimeInterval) -> Bool {
+        firstOfType || queryEligible || secondsSinceLastLog >= frameLogInterval
+    }
+
 }
