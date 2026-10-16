@@ -2,6 +2,14 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.35 · build 875 (candidata)
+
+- Corrección a partir del segundo video enviado después de instalar 874: Feli todavía pequeño dentro del espacio de la escena; cámara más cercana (1,74 sin accesorios, 2,32 con mate o parrilla).
+- Mandíbula, cavidad bucal y lengua ya no se animan con comportamientos desconectados. Cavidad fija en la cabeza, mandíbula inferior articulada, y lengua anclada físicamente a la mandíbula.
+- Una sola variable de apertura controla la cavidad, el descenso/giro de la mandíbula y la aparición gradual de la lengua; el cierre la oculta. Evita que parezca flotar, sobre todo en bostezo y festejo.
+- Preserva el resto de animaciones 3D, burbujas cercanas y mediciones reales de Salud/Ayuno.
+- Pendiente de verificar visualmente el cambio en iPhone tras comprobar CI; compilar no demuestra que la sincronización sea estética ni geométricamente perfecta.
+
 ## 0.8.4.34 · build 874 (candidata — evaluación visual pendiente)
 
 - Ajustes directamente basados en el video real de iWatch 873 (46 segundos): Feli aparece minúsculo dentro de una galería con mucho espacio vacío, y el globo de pensamiento queda lejos de su cabeza; en Salud Feli también se ve diminuto en modo compacto.
