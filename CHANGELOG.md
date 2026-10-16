@@ -2,6 +2,14 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.29 · build 869 (candidata)
+
+- Feli se saluda suavemente al entrar a una categoría de Salud o cambiar entre «Última lectura» e «Histórico». No rebota: mueve patita, cabeza y cola y sigue sus gestos habituales; conserva las orejas largas corregidas en 868.
+- «Última lectura»: Feli muestra valor, fecha y hora de la última muestra recibida de esa métrica. Una lectura antigua se describe por su fecha, nunca como tiempo real.
+- «Histórico»: muestra promedio del día/semana/mes seleccionado, con el mismo algoritmo por día registrado de los gráficos inteligentes (cada día tiene el mismo peso, los días sin registros no valen cero). Feli cambia su reacción al promedio y al mover el período o la fecha.
+- Sueño incompleto no se promedia ni desencadena animaciones por duración hasta recibir sesiones válidas; el fallo comunicado de sueño multisesión todavía requiere diagnóstico real.
+- Usuario confirmó que el oxígeno ya sincroniza correctamente en su iPhone: preservar la recuperación BLE validada. Falta probar los cambios de Feli de esta candidata.
+
 ## 0.8.4.28 · build 868 (candidata)
 
 - Orejas de Feli corregidas: ahora se dibujan delante de la cabeza y a los lados, con forma caída larga de beagle, detalle interno y articulación independiente; no deberían quedar ocultas tras el hocico.

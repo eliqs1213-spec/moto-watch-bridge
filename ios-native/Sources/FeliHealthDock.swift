@@ -3,10 +3,17 @@ import SwiftUI
 /// El compañero vive en el pie de Salud (respetando Safe Area y el scroll),
 /// de modo que sigue visible sin superponerse a gráficos, botones ni tarjetas.
 /// Solo se crea desde pantallas de Salud, nunca desde Inicio o Ayuno.
+struct FeliHistoricalSelection {
+    let periodLabel: String
+    let average: Double?
+    let recordedDays: Int
+}
+
 struct FeliHealthDock: View {
     let watchID: String
     @ObservedObject var store: WatchHealthStore
     var metric: HealthMetric? = nil
+    var history: FeliHistoricalSelection? = nil
 
     @AppStorage("motowatch.feli.dock.compact") private var compact = false
     @State private var explanationVisible = false
@@ -14,28 +21,42 @@ struct FeliHealthDock: View {
 
     private var insight: WatchHealthInsight {
         if let metric {
-            return HealthInsights.metric(metric, days: store.days, watchID: watchID)
-        }
-        if let last = store.latest(.stress, watchID: watchID) {
-            let age = Date().timeIntervalSince(last.measuredAt)
-            if age >= 0 && age <= 48 * 3600 {
-                if last.value >= 70 {
-                    return WatchHealthInsight(
-                        title: "Feli está atento",
-                        message: "La última lectura de estrés del reloj fue elevada. Mirá si vuelve a aparecer, sin sacar conclusiones por un solo dato.",
-                        coverage: "Lectura del \(last.measuredAt.formatted(date: .abbreviated, time: .shortened)); escala orientativa de Motorola.",
-                        mood: .worried)
-                }
-                if last.value <= 30 {
-                    return WatchHealthInsight(
-                        title: "Feli se relajó",
-                        message: "La última lectura de estrés fue baja. Feli observa una mariposa y descansa un ratito.",
-                        coverage: "Lectura del \(last.measuredAt.formatted(date: .abbreviated, time: .shortened)); no es un diagnóstico.",
-                        mood: .calm)
-                }
+            if let history {
+                return HealthInsights.historical(metric: metric, average: history.average,
+                                                 recordedDays: history.recordedDays,
+                                                 periodLabel: history.periodLabel)
             }
+            let last = store.latest(metric, watchID: watchID)
+            return HealthInsights.latest(metric: metric, snapshot: last,
+                                         sleepComplete: metric != .sleep || sleepIsComplete(last))
         }
-        return HealthInsights.weekly(days: store.days, watchID: watchID)
+        // En el resumen de Salud, Feli reacciona a la última medición entre
+        // las categorías disponibles, no al promedio semanal de sueño.
+        let metrics: [HealthMetric] = [.stress, .heartRate, .oxygen, .sleep, .steps, .activeCalories]
+        let candidate = metrics.compactMap { metric -> (HealthMetric, HealthSnapshot)? in
+            guard let latest = store.latest(metric, watchID: watchID) else { return nil }
+            return (metric, latest)
+        }.max { $0.1.measuredAt < $1.1.measuredAt }
+        guard let candidate else {
+            return HealthInsights.latest(metric: .stress, snapshot: nil)
+        }
+        return HealthInsights.latest(metric: candidate.0, snapshot: candidate.1,
+                                     sleepComplete: candidate.0 != .sleep || sleepIsComplete(candidate.1))
+    }
+
+    private func sleepIsComplete(_ snapshot: HealthSnapshot?) -> Bool {
+        guard let snapshot, let day = store.day(snapshot.measuredAt, watchID: watchID) else {
+            return false
+        }
+        return day.sleepRetrievalComplete == true
+    }
+
+    private var compactLabel: String {
+        guard let metric, let history else { return "Feli te acompaña" }
+        if let average = history.average {
+            return "Promedio: " + metric.formatted(average)
+        }
+        return "Sin promedio disponible"
     }
 
     var body: some View {
@@ -44,9 +65,12 @@ struct FeliHealthDock: View {
                 // Feli no es una imagen estática. El toque activa una reacción
                 // local y no dispara ninguna lectura inventada del reloj.
                 FeliCompanionView(mood: insight.mood, diameter: compact ? 51 : 86)
+                    // Reproduce el saludo al abrir una métrica, entrar en
+                    // Histórico, cambiar el período o recibir una nueva lectura.
+                    .id(insight.title + "|" + insight.message + "|" + (history?.periodLabel ?? "último"))
                     .accessibilityHint("Tocá para saludar a Feli")
                 VStack(alignment: .leading, spacing: compact ? 0 : 4) {
-                    Text(compact ? "Feli te acompaña" : insight.title)
+                    Text(compact ? compactLabel : insight.title)
                         .font(.subheadline.bold())
                         .lineLimit(1)
                     if !compact {
