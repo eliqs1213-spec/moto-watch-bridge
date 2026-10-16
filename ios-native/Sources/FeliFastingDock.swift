@@ -24,8 +24,15 @@ struct FeliFastingDock: View {
             let mood = mood(for: stage)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .center, spacing: 10) {
-                    FeliCompanionView(mood: mood, diameter: compact ? 65 : 114)
-                        .id(stage.rawValue)
+                    VStack(spacing: -3) {
+                        if !compact {
+                            FeliThoughtBubble(thought: thought(for: stage))
+                                .frame(height: 51)
+                        }
+                        FeliCompanionView(mood: mood, diameter: compact ? 70 : 142)
+                            .id(stage.rawValue)
+                    }
+                    .frame(width: compact ? 75 : 146)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(compact ? "Feli te acompaña en Ayuno" : stage.headline)
                             .font(.subheadline.bold())
@@ -70,6 +77,19 @@ struct FeliFastingDock: View {
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity)
             .background(Color(uiColor: .systemGroupedBackground).opacity(0.94))
+        }
+    }
+
+    private func thought(for stage: FeliFastingStage) -> String {
+        switch stage {
+        case .ready: return "💭 ¿Empezamos?"
+        case .mate: return "🧉 ¡Un matecito!"
+        case .resting: return "🦋 Acompaño tranquilo"
+        case .imaginingFood: return "💭 Una pausa tranquila"
+        case .asado: return "🥩 ¡Vacío a la parrilla!"
+        case .countdown: return "⏰ Falta poquito"
+        case .goalReached: return "✨ ¡Meta alcanzada!"
+        case .completed: return "🎉 ¡Lo lograste!"
         }
     }
 
