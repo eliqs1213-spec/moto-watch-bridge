@@ -5,7 +5,11 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 let goal: TimeInterval = 12 * 3600
-let stage = FeliFastingAnimationPolicy.stage
+func stage(_ elapsed: TimeInterval?, targetSeconds: TimeInterval,
+           recentlyCompleted: Bool = false) -> FeliFastingStage {
+    FeliFastingAnimationPolicy.stage(activeElapsed: elapsed, targetSeconds: targetSeconds,
+                                    recentlyCompleted: recentlyCompleted)
+}
 check(stage(nil, targetSeconds: goal) == .ready, "No ayuno: listo")
 check(stage(0, targetSeconds: goal) == .mate, "Inicio: mate")
 check(stage(599, targetSeconds: goal) == .mate, "Mate durante los primeros 10 minutos")
