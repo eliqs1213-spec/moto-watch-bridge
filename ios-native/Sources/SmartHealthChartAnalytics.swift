@@ -103,21 +103,31 @@ enum SmartHealthChartAnalytics {
         return days.filter { $0.watchID == watchID && keys.contains($0.dayKey) &&
                              dayIsVerifiedForSleepTiming($0) }
             .compactMap { day -> SmartSleepTiming? in
-                // Evitar confundir siestas con el horario nocturno. Tomar
-                // solamente la sesión principal de cada día de despertar.
-                let overnight = (day.sleepSessions ?? []).filter { session in
-                    guard session.minutes >= 180 && session.minutes <= 720,
-                          session.endedAt > session.startedAt else { return false }
-                    let bedtimeHour = calendar.component(.hour, from: session.startedAt)
-                    let wakeHour = calendar.component(.hour, from: session.endedAt)
-                    return (bedtimeHour >= 18 || bedtimeHour <= 5) && (4...12).contains(wakeHour)
-                }
-                guard let session = overnight.max(by: { $0.minutes < $1.minutes }),
+                // Una noche fragmentada puede tener varios bloques menores
+                // a tres horas. Usar la primera hora de inicio y última de
+                // despertar de una serie de sesiones verificadas.
+                let overnight = (day.sleepSessions ?? [])
+                    .filter { session in
+                        guard session.minutes >= 10 && session.minutes <= 720,
+                              session.endedAt > session.startedAt else { return false }
+                        let h = calendar.component(.hour, from: session.endedAt)
+                        return (0...12).contains(h)
+                    }
+                    .sorted { $0.startedAt < $1.startedAt }
+                guard let first = overnight.first, let last = overnight.last,
+                      overnight.reduce(0, { $0 + $1.minutes }) >= 180,
+                      last.endedAt.timeIntervalSince(first.startedAt) <= 18 * 3600,
+                      (4...12).contains(calendar.component(.hour, from: last.endedAt)),
                       let date = dateFromKey(day.dayKey, calendar: calendar) else { return nil }
-                let bedtime = calendar.dateComponents([.hour, .minute], from: session.startedAt)
-                let wake = calendar.dateComponents([.hour, .minute], from: session.endedAt)
+                let longGap = zip(overnight, overnight.dropFirst()).contains { pair in
+                    pair.1.startedAt.timeIntervalSince(pair.0.endedAt) > 4 * 3600
+                }
+                guard !longGap else { return nil }
+                let bedtime = calendar.dateComponents([.hour, .minute], from: first.startedAt)
+                let wake = calendar.dateComponents([.hour, .minute], from: last.endedAt)
                 guard let bHour = bedtime.hour, let bMinute = bedtime.minute,
-                      let wHour = wake.hour, let wMinute = wake.minute else { return nil }
+                      let wHour = wake.hour, let wMinute = wake.minute,
+                      (bHour >= 18 || bHour <= 5) else { return nil }
                 let bedtimeContinuous = Double(bHour + (bHour < 12 ? 24 : 0)) + Double(bMinute) / 60
                 let wakeClock = Double(wHour) + Double(wMinute) / 60
                 return SmartSleepTiming(date: date, bedtimeHour: bedtimeContinuous, wakeHour: wakeClock)
