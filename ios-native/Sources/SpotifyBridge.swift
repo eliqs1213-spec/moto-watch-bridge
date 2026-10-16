@@ -170,11 +170,14 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             sendIdle(reason: "Controles Spotify desactivados")
             playbackAvailability = "Controles desactivados"
             metadataSource = "Desactivado"
+            status = "Controles Spotify desactivados"
         } else {
             // Al reactivar hay que pedir un estado NUEVO: el SDK puede seguir
             // marcando hasNativeMetadata de antes de apagar los controles.
             playbackAvailability = "Reactivando controles · verificando Spotify"
             metadataSource = "Verificando estado actual"
+            status = "Spotify reactivado · esperando datos nuevos"
+            MusicSyncEngine.shared.requestControlReactivation()
             record("Spotify: controles reactivados; solicitando estado actual SDK/Web API")
             let enabledAt = Date()
             let epoch = controlEpoch
