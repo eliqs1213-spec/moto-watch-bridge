@@ -2,6 +2,15 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.30 · build 870 (candidata)
+
+- Corrección basada en datos reales del Moto Watch, **16/10/2026**: el diagnóstico 31/09 entrega una sesión de **248 min (4 h 08)**; Salud conserva un registro antiguo de **179 min (2 h 59)**.
+- Diagnóstico de Sueño: cuando termina correctamente con sesiones, las guarda en el historial de Salud automáticamente y muestra el total persistido (antes era exclusivamente una consulta de prueba).
+- Persistencia: si el firmware devuelve un total envolvente nuevo de 248 min que reemplaza al registro previo de 179 min del mismo descanso, se conserva el más completo, sin sumar 427 min ni rechazarlo por una superposición que significa actualización. Se rechazan superposiciones ambiguas.
+- La actualización automática no marca el sueño como sincronizado si la lectura quedó parcial. El gráfico y la reacción de Feli se recalculan desde la lectura guardada, sin inventar duración.
+- Prueba de regresión 179 → 248 → 179 (reintento viejo), confirmando total estable en 248 y marca de recorrido completo. Pendiente de compilar y verificar en el iPhone; esto no identifica las fases internas del firmware.
+- Hereda el oxígeno confirmado en dispositivo y los cambios de Feli de 869.
+
 ## 0.8.4.29 · build 869 (candidata)
 
 - Feli se saluda suavemente al entrar a una categoría de Salud o cambiar entre «Última lectura» e «Histórico». No rebota: mueve patita, cabeza y cola y sigue sus gestos habituales; conserva las orejas largas corregidas en 868.
