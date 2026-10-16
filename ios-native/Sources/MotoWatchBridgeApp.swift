@@ -36,16 +36,28 @@ struct MotoWatchBridgeApp: App {
     @UIApplicationDelegateAdaptor(MotoAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var appScenePhase
     @AppStorage("motowatch.appearance") private var appearanceRawValue = AppAppearance.automatic.rawValue
+    @State private var selectedTab = 0
 
     var body: some Scene {
         WindowGroup {
-            TabView {
+            TabView(selection: $selectedTab) {
+                WatchHomeView(isSelected: selectedTab == 0,
+                              openWatch: { selectedTab = 3 },
+                              openHealth: { selectedTab = 1 })
+                    .tabItem { Label("Inicio", systemImage: "house.fill") }
+                    .tag(0)
                 HealthHistoryView()
                     .tabItem { Label("Salud", systemImage: "heart.text.square") }
-                ContentView()
-                    .tabItem { Label("iWatch", systemImage: "watch.analog") }
+                    .tag(1)
+                FastingView()
+                    .tabItem { Label("Ayuno", systemImage: "timer") }
+                    .tag(2)
+                ContentView(isSelected: selectedTab == 3)
+                    .tabItem { Label("Reloj", systemImage: "watch.analog") }
+                    .tag(3)
                 NotificationsView()
-                    .tabItem { Label("Notificaciones", systemImage: "bell.badge") }
+                    .tabItem { Label("Avisos", systemImage: "bell.badge") }
+                    .tag(4)
             }
                 .preferredColorScheme(AppAppearance(rawValue: appearanceRawValue)?.colorScheme)
                 // App con ciclo SwiftUI: algunos estados de escena NO pasan por
@@ -79,6 +91,7 @@ struct MotoWatchBridgeApp: App {
 }
 
 struct ContentView: View {
+    var isSelected = true
     @EnvironmentObject private var watch: WatchBLEManager
     @EnvironmentObject private var spotify: SpotifyBridge
     @StateObject private var spotifyRemote = SpotifyAppRemoteBridge.shared
@@ -158,7 +171,7 @@ struct ContentView: View {
         .task {
             // No afirmar que hay encuesta continua con el iPhone bloqueado.
             while !Task.isCancelled {
-                if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
+                if isSelected && UIApplication.shared.applicationState == .active && spotify.controlEnabled {
                     if spotifyRemote.isConnected {
                         // Una suscripción puede figurar activa pero no entregar
                         // nuevos datos. Comprobar Web SOLO cuando el SDK lleva

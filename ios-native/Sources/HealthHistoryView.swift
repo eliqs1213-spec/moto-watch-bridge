@@ -55,6 +55,7 @@ struct HealthHistoryView: View {
                         }.pickerStyle(.menu)
                     }
                     updatePanel
+                    FeliHealthAssistantView(watchID: watchID, store: store)
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Últimos registros").font(.title2.bold())
@@ -295,6 +296,7 @@ private struct HealthMetricHistoryView: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 22))
                 HealthMetricCard(metric: metric, snapshot: latest)
+                FeliHealthMetricNote(metric: metric, days: store.days, watchID: watchID)
                 if let summary = summary {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(metric.isSample ? "Promedio de las mediciones" : "Total de los días registrados")

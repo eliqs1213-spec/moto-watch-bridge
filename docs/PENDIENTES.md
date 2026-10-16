@@ -1,5 +1,21 @@
 # Próxima sesión
 
+**Candidata actual:** 0.8.4.25 (865), rama `feature/home-dashboard-stable-0865`, [PR #25](https://github.com/eliqs1213-spec/moto-watch-bridge/pull/25).
+
+## Validaciones prioritarias de 865
+
+- [ ] Conseguir ejecución verde de Actions con IPA unsigned descargable. Confirmar versión 865 antes de instalar.
+- [ ] Abrir Inicio: hora de iPhone, vista ilustrativa, batería real BLE, estados SDK/Web sin falsos «Conectado» y botón de recuperación.
+- [ ] Verificar que la guía no presenta una recuperación de lecturas como medición manual instantánea.
+- [ ] Ver Salud con Feli chibi **solo aquí**, estados calma/estrés/sueño, tamaño compacto, reducir movimiento y estadísticas que muestran cobertura real.
+- [ ] Ver Ayuno separado sin mascota, cambiar horarios y duración, probar cierre/reapertura con tiempo real persistido, registrar corte temprano y al concluir.
+- [ ] Dar o denegar permiso de notificaciones locales y comprobar recordatorios de inicio/fin sin duplicados.
+- [ ] Verificar los controles musicales desde el Moto Watch con pantalla visible y bloqueada, incluidos fallback Web 404 y posterior reconexión.
+- [ ] Investigar firma WidgetKit con instalador auténtico; [evidencia y pasos](PROBLEMAS_CONOCIDOS.md).
+- [ ] Mantener pendientes el watchface instalado y datos meteorológicos Motorola hasta identificar su protocolo.
+
+## Historial de pendientes anteriores
+
 Punto de partida: app **0.8.4.5 (845)**, código en `codex/iwatch-design`; documentación y limpieza en `codex/repo-docs-cleanup`. [Estado y ramas](ESTADO_ACTUAL.md).
 
 ## Prioridades acordadas
