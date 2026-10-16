@@ -296,6 +296,15 @@ private struct HealthMetricHistoryView: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 22))
                 HealthMetricCard(metric: metric, snapshot: latest)
+                if metric == .sleep, records.contains(where: { $0.sleepMinutes != nil && $0.sleepRetrievalComplete != true }) {
+                    Label("Algunos descansos no tienen una recuperación completa verificada. Su duración es provisional y no se usa para recomendaciones.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                }
                 FeliHealthMetricNote(metric: metric, days: store.days, watchID: watchID)
                 SmartHealthChartsView(metric: metric, watchID: watchID, days: store.days,
                                       dates: dates, period: period)
