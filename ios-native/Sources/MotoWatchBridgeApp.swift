@@ -41,7 +41,8 @@ struct MotoWatchBridgeApp: App {
     var body: some Scene {
         WindowGroup {
             TabView(selection: $selectedTab) {
-                WatchHomeView(openWatch: { selectedTab = 3 },
+                WatchHomeView(isSelected: selectedTab == 0,
+                              openWatch: { selectedTab = 3 },
                               openHealth: { selectedTab = 1 })
                     .tabItem { Label("Inicio", systemImage: "house.fill") }
                     .tag(0)
@@ -51,7 +52,7 @@ struct MotoWatchBridgeApp: App {
                 FastingView()
                     .tabItem { Label("Ayuno", systemImage: "timer") }
                     .tag(2)
-                ContentView()
+                ContentView(isSelected: selectedTab == 3)
                     .tabItem { Label("Reloj", systemImage: "watch.analog") }
                     .tag(3)
                 NotificationsView()
@@ -90,6 +91,7 @@ struct MotoWatchBridgeApp: App {
 }
 
 struct ContentView: View {
+    var isSelected = true
     @EnvironmentObject private var watch: WatchBLEManager
     @EnvironmentObject private var spotify: SpotifyBridge
     @StateObject private var spotifyRemote = SpotifyAppRemoteBridge.shared
@@ -169,7 +171,7 @@ struct ContentView: View {
         .task {
             // No afirmar que hay encuesta continua con el iPhone bloqueado.
             while !Task.isCancelled {
-                if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
+                if isSelected && UIApplication.shared.applicationState == .active && spotify.controlEnabled {
                     if spotifyRemote.isConnected {
                         // Una suscripción puede figurar activa pero no entregar
                         // nuevos datos. Comprobar Web SOLO cuando el SDK lleva
