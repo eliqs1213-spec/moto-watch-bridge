@@ -2,7 +2,8 @@ import SwiftUI
 
 /// El compañero vive en el pie de Salud (respetando Safe Area y el scroll),
 /// de modo que sigue visible sin superponerse a gráficos, botones ni tarjetas.
-/// Solo se crea desde pantallas de Salud, nunca desde Inicio o Ayuno.
+/// Esta barra solo se crea desde Salud; Ayuno tiene su propio FeliFastingDock
+/// con escenas dependientes del temporizador. Inicio sigue sin mascota.
 struct FeliHistoricalSelection {
     let periodLabel: String
     let average: Double?
