@@ -118,8 +118,12 @@ final class MusicBackgroundExperiment: ObservableObject {
                         "Ventana limitada agotada antes del intento \(index+1)")
                     break
                 }
+                let safeTime = MusicBackgroundExperimentPolicy.remainingTimeLabel(remaining)
                 WatchBLEManager.shared.record("BG-EXPERIMENTO",
-                    "Ventana al bloquear: consulta \(index+1)/3; tiempo iOS restante ~\(Int(remaining)) s")
+                    "Ventana al bloquear: consulta \(index+1)/3; tiempo iOS restante: \(safeTime)")
+                // Si iOS termina el proceso al pasar a background,
+                // persistir evidencia ANTES de iniciar la consulta Web.
+                WatchBLEManager.shared.flushLog()
                 await self.fetchNow(trigger: "bloqueo \(index+1)/3")
             }
             self.finishBackgroundTask()
