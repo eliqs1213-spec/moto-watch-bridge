@@ -173,6 +173,60 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
             rightEarTilt = -smell * 0.10
             tailSpeed = 6.2
             tailSwing = 0.23
+        case .sniff:
+            // Deliberate nose-to-ground gesture, no paw wave.
+            let dip = 0.67 + 0.33 * wave(t, 1.65)
+            headY = 1.53 - 0.36 * dip
+            headPitch = -0.42 * dip
+            bodyY = -0.08 * dip
+            leftEarTilt = 0.18 * dip
+            rightEarTilt = -0.18 * dip
+            mouth = 0
+            tailSpeed = 2.4
+        case .stretch:
+            // Two forelegs reaching forward and lowered chest.
+            let stretch = 0.73 + 0.27 * wave(t, 1.1)
+            bodyY = -0.23 * stretch
+            bodyPitch = -0.24 * stretch
+            headY -= 0.28 * stretch
+            headPitch = -0.18
+            leftStep = -0.68 * stretch
+            rightStep = -0.68 * stretch
+            hindLeftStep = 0.22
+            hindRightStep = 0.22
+            tailSpeed = 2.2
+        case .yawn:
+            // Big hinged jaw opening with tongue visible.
+            mouth = 0.85 + 0.14 * wave(t, 1.8)
+            headPitch = 0.17
+            headY += 0.05
+            eyeClosing = 0.86
+            tailSpeed = 0.5
+            tailSwing = 0.04
+        case .greet:
+            rightStep = -0.57 - max(0, wave(t, 5.3)) * 0.20
+            headRoll = wave(t, 1.2) * 0.11
+            mouth = 0.28
+            tailSpeed = 9.1
+            tailSwing = 0.34
+        case .earWiggle:
+            leftEarTilt = wave(t, 5.1) * 0.39
+            rightEarTilt = -wave(t + 0.9, 4.7) * 0.43
+            headRoll = wave(t, 1.4) * 0.035
+            tailSpeed = 1.7
+        case .bellyRub:
+            // Puppy lies sideways presenting its belly, kicks alternate paws.
+            bodyY = -0.38
+            headY = 1.08
+            bodyPitch = -0.32
+            headRoll = -0.45
+            leftStep = -0.66 + wave(t, 4.5) * 0.15
+            rightStep = -0.71 - wave(t, 4.5) * 0.15
+            hindLeftStep = 0.33
+            hindRightStep = -0.22
+            mouth = 0.30
+            tailSpeed = 5.2
+            tailSwing = 0.27
         case .celebrate:
             // Excited greeting with both forelegs raised and moving independently.
             let lift = 0.54 + 0.16 * wave(t, 5.3)
@@ -187,7 +241,7 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
         }
 
         // Background actions remain distinct even when simply idle.
-        if mood != .sleepy && mood != .active {
+        if [.curious, .calm, .worried].contains(mood) {
             leftStep -= stretchCycle * 0.06
             rightStep -= greet * 0.65 + pawCycle * 0.20
             mouth = max(mouth, yawnCycle * 0.92)
@@ -200,6 +254,7 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
         rightEarTilt += earReaction * 0.23
 
         // Actual articulated joints; all rotations have physical meaning.
+        rig.dog.eulerAngles.z = Float((mood == .bellyRub ? 0.79 : 0) + bellyReaction * 0.41)
         rig.body.position.y = Float(bodyY)
         rig.body.eulerAngles.x = Float(bodyPitch)
         rig.body.scale = SCNVector3(Float(1 + breath * 0.013),
@@ -244,6 +299,7 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
             flame.opacity = CGFloat(0.64 + flicker * 0.34)
         }
         rig.sparkle.eulerAngles.z = Float(wave(t, 1.9) * 0.16)
-        rig.sparkle.scale = SCNVector3(repeating: Float(0.85 + 0.15 * abs(wave(t, 2.5))))
+        let sparkleSize = Float(0.85 + 0.15 * abs(wave(t, 2.5)))
+        rig.sparkle.scale = SCNVector3(sparkleSize, sparkleSize, sparkleSize)
     }
 }
