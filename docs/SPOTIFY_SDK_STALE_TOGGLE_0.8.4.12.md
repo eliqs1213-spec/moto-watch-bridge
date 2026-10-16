@@ -41,6 +41,11 @@ independientemente el respaldo Web API.
 6. Registro/diagnóstico muestra «Metadatos SDK vigentes: Sí/No», y se
    agregaron checks de 11 min sin evento, reloj en primer plano, sin
    SDK conectado y sin ningún callback.
+7. `MusicSyncEngine` recibe un aviso de reactivación de controles y
+   espera un snapshot ACTUAL de Spotify. Al llegar, fuerza una secuencia
+   musical completa en vez de usar la canción vieja del caché. Los
+   indicadores de reproducción/SDK se actualizan con el mismo estado
+   del interruptor; no se muestra «reproduciendo» después de apagarlo.
 
 Conserva las mejoras de `0.8.4.11` (transición natural, cierre
 ANUNCIO/ESTADO, recuperación con fuente musical fresca) y la protección
