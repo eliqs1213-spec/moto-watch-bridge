@@ -24,7 +24,7 @@ struct FeliFastingDock: View {
             let mood = mood(for: stage)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .center, spacing: 10) {
-                    FeliCompanionView(mood: mood, diameter: compact ? 55 : 103)
+                    FeliCompanionView(mood: mood, diameter: compact ? 65 : 114)
                         .id(stage.rawValue)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(compact ? "Feli te acompaña en Ayuno" : stage.headline)
