@@ -10,6 +10,7 @@ struct FastingView: View {
     @AppStorage("iwatch.fasting.duration.hours") private var duration = 12
     @AppStorage("iwatch.fasting.start.minutes") private var startMinutes = 20 * 60
     @AppStorage("iwatch.fasting.reminders.enabled") private var remindersEnabled = false
+    @State private var showFeliGallery = false
 
     private var sleepSuggestion: SleepScheduleSuggestion? {
         let id = watch.healthWatchID ?? health.watchIDs.last ?? ""
@@ -35,6 +36,14 @@ struct FastingView: View {
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                     timerCard
+                    Button {
+                        showFeliGallery = true
+                    } label: {
+                        Label("Ver todas las animaciones de Feli", systemImage: "pawprint.fill")
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered).tint(.orange)
                     scheduleCard
                     recommendationCard
                     notificationsCard
@@ -48,6 +57,9 @@ struct FastingView: View {
                 FeliFastingDock(fasting: fasting)
             }
             .navigationTitle("Ayuno").navigationBarTitleDisplayMode(.inline)
+        }
+        .sheet(isPresented: $showFeliGallery) {
+            FeliAnimationGallery()
         }
         .onChange(of: remindersEnabled) { _ in configureReminders() }
         .onChange(of: duration) { _ in configureReminders() }
