@@ -2,6 +2,14 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.26 · build 866 (candidata)
+
+- Gráficos específicos por métrica en Salud: tendencias con cobertura, dispersión de pulso/oxígeno, distribución de estrés, pasos/calorías por día y horario de sueño con al menos tres noches verificadas.
+- Se corrigió la interpretación de sueño fragmentado: bloques separados, intervalos sin sueño y suma real; las consultas parciales no alimentan las recomendaciones de Feli ni Ayuno.
+- Consulta experimental retrospectiva 31/08 para localizar descansos anteriores cuando el firmware devuelve primero el más reciente. **No validado contra reloj físico; no se agregan minutos faltantes artificialmente**.
+- Caso a reproducir: Moto Watch **4 h 08**, iWatch **2 h 59** tras una noche interrumpida, diferencia de **1 h 09**.
+- PR [#26](https://github.com/eliqs1213-spec/moto-watch-bridge/pull/26). Requiere compilación y prueba real antes de considerarlo resuelto.
+
 ## 0.8.4.25 · build 865 (candidata)
 
 - Inicio como primera pestaña: reloj ilustrativo con hora actual del iPhone, batería recibida por Motorola 10/01, estados BLE y Spotify, reintento de App Remote y guía de mediciones.
