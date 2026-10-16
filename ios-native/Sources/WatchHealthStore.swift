@@ -185,8 +185,7 @@ final class WatchHealthStore: ObservableObject {
     func mergeSleep(watchID: String, sessions: [WatchSleepProtocol.Session], retrievalComplete: Bool? = nil) throws {
         guard sessions.allSatisfy({
             $0.minutes.isFinite && $0.minutes > 0 && $0.minutes <= 1440 &&
-            $0.startedAt < $0.endedAt &&
-            $0.minutes <= $0.endedAt.timeIntervalSince($0.startedAt) / 60 + 5
+            $0.startedAt < $0.endedAt
         }) else { throw StoreError.invalidReading }
         try mutate(keys: Set(sessions.map { Self.key($0.endedAt) }), watchID: watchID, metric: .sleep) { day, key in
             var indexed = Dictionary(
