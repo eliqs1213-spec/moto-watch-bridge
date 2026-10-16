@@ -32,6 +32,7 @@ enum WidgetExtensionDiagnostics {
         let liveActivitiesAllowed = ActivityAuthorizationInfo().areActivitiesEnabled
         let activeLiveActivities = Activity<MotoBatteryActivityAttributes>.activities.count
         let idRelationOK = widgetURL != nil && widgetID.hasPrefix(appID + ".")
+        let extensionNames = appExtensions.map { $0.lastPathComponent }.joined(separator: ", ")
 
         let conclusion: String
         if !dirExists || widgetURL == nil {
@@ -51,7 +52,7 @@ enum WidgetExtensionDiagnostics {
             "Versión: \(bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (build \(bundle.infoDictionary?["CFBundleVersion"] as? String ?? "?"))",
             "Directorio PlugIns: \(dirExists ? "presente" : "ausente")",
             "Cantidad de extensiones .appex: \(appExtensions.count)",
-            "Extensiones: \(appExtensions.map { $0.lastPathComponent }.joined(separator: ", ").isEmpty ? "(ninguna)" : appExtensions.map { $0.lastPathComponent }.joined(separator: ", "))",
+            "Extensiones: \(extensionNames.isEmpty ? "(ninguna)" : extensionNames)",
             "MotoBatteryWidgets.appex: \(widgetURL == nil ? "NO" : "SÍ")",
             "ID de extensión: \(widgetID)",
             "Nombre de extensión: \(extensionName)",
