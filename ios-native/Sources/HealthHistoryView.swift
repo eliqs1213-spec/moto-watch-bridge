@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 
 extension HealthMetric {
     var color: Color {
@@ -56,6 +55,7 @@ struct HealthHistoryView: View {
                     }
                     updatePanel
                     FeliHealthAssistantView(watchID: watchID, store: store)
+                    SmartHealthWeeklyOverview(days: store.days, watchID: watchID)
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Últimos registros").font(.title2.bold())
@@ -297,29 +297,10 @@ private struct HealthMetricHistoryView: View {
                             in: RoundedRectangle(cornerRadius: 22))
                 HealthMetricCard(metric: metric, snapshot: latest)
                 FeliHealthMetricNote(metric: metric, days: store.days, watchID: watchID)
-                if let summary = summary {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(metric.isSample ? "Promedio de las mediciones" : "Total de los días registrados")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        Text(metric.formatted(summary)).font(.title.bold()).foregroundStyle(metric.color)
-                        historyChart
-                        if metric.isSample, let low = readings.map(\.value).min(), let high = readings.map(\.value).max() {
-                            Text("Mínimo \(metric.formatted(low)) · Máximo \(metric.formatted(high))")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        if period != .day {
-                            Text("\(dailyValues.count) de \(dates.filter { $0 <= Date() }.count) días transcurridos con datos. Los días sin registros no se cuentan como cero.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
+                SmartHealthChartsView(metric: metric, watchID: watchID, days: store.days,
+                                      dates: dates, period: period)
+                if summary != nil {
                     if period == .day { dayDetail } else { dailyList }
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: metric.symbol).font(.system(size: 38)).foregroundStyle(metric.color)
-                        Text("Sin registros en este período").font(.headline)
-                        Text("Actualizá desde Salud para guardar los datos que entregue tu Moto Watch.")
-                            .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    }.frame(maxWidth: .infinity).padding(.vertical, 28)
                 }
                 if metric == .sleep { sleepGoal }
                 Text(metric.isSample ? "Se muestran las mediciones guardadas con la hora informada por el reloj." : "Pasos y calorías son contadores del día. Cada día aporta su último valor; las consultas del mismo día no se suman.")
@@ -327,30 +308,6 @@ private struct HealthMetricHistoryView: View {
             }.padding(20)
         }.background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle(metric.title).navigationBarTitleDisplayMode(.inline)
-    }
-    private var historyChart: some View {
-        Chart {
-            if period == .day && metric != .sleep {
-                ForEach(readings) { row in
-                    if !metric.isSample {
-                        LineMark(x: .value("Hora", row.timestamp), y: .value(metric.title, row.value))
-                            .foregroundStyle(metric.color.opacity(0.5))
-                    }
-                    PointMark(x: .value("Hora", row.timestamp), y: .value(metric.title, row.value))
-                        .foregroundStyle(metric.color)
-                }
-            } else {
-                ForEach(dates, id: \.self) { day in
-                    if let value = store.day(day, watchID: watchID)?.value(for: metric) {
-                        BarMark(x: .value("Día", day, unit: .day), y: .value(metric.title, value))
-                            .foregroundStyle(metric.color.gradient).cornerRadius(4)
-                    }
-                }
-            }
-        }.chartXScale(domain: dates.first!...Calendar.current.date(byAdding: .day, value: 1, to: dates.last!)!)
-            .chartYAxis { AxisMarks(position: .leading) }
-            .frame(height: 210)
-            .accessibilityLabel(period == .day ? "\(metric.title) durante el día" : "\(metric.title) por día; promedio diario para mediciones")
     }
     @ViewBuilder private var dayDetail: some View {
         if metric == .sleep {
