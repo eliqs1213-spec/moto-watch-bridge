@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Mascota ilustrada en SwiftUI. La apariencia definitiva se podrá ajustar
-/// a partir de una foto de Feli; no requiere descargas, SDK ni recursos externos.
+/// Chibi ligero de Feli: pelaje canela/blanco, orejas caídas y arnés naranja
+/// según las fotografías compartidas. Sin PNGs gigantes ni animación intrusiva.
 enum FeliMood: String {
     case curious, calm, worried, sleepy, active, mate, grill, celebrate
 }
@@ -20,6 +20,22 @@ struct FeliCompanionView: View {
             Ellipse().fill(Color.black.opacity(0.08))
                 .frame(width: diameter * 0.61, height: diameter * 0.08)
                 .offset(y: diameter * 0.38)
+
+            // Cuerpo compacto con su arnés naranja, inspirado en Feli real.
+            Ellipse().fill(Color(red: 0.78, green: 0.49, blue: 0.27))
+                .frame(width: diameter * 0.45, height: diameter * 0.42)
+                .offset(y: diameter * 0.23)
+            Ellipse().fill(Color.white.opacity(0.93))
+                .frame(width: diameter * 0.27, height: diameter * 0.35)
+                .offset(y: diameter * 0.25)
+            RoundedRectangle(cornerRadius: diameter * 0.02)
+                .fill(Color.orange)
+                .frame(width: diameter * 0.35, height: diameter * 0.075)
+                .offset(y: diameter * 0.26)
+            RoundedRectangle(cornerRadius: diameter * 0.018)
+                .fill(Color.orange)
+                .frame(width: diameter * 0.075, height: diameter * 0.28)
+                .offset(y: diameter * 0.24)
 
             // Orejas caídas, hocico claro y manchas característicos de un beagle.
             Ellipse().fill(Color(red: 0.40, green: 0.23, blue: 0.16))
