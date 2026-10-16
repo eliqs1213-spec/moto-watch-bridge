@@ -8,9 +8,23 @@ struct FeliHealthAssistantView: View {
     @State private var expanded = false
 
     private var insight: WatchHealthInsight {
-        let stress = HealthInsights.metric(.stress, days: store.days, watchID: watchID)
-        if stress.mood == .worried || stress.mood == .calm {
-            return stress
+        if let last = store.latest(.stress, watchID: watchID),
+           Date().timeIntervalSince(last.measuredAt) >= 0,
+           Date().timeIntervalSince(last.measuredAt) <= 48 * 3600 {
+            if last.value >= 70 {
+                return WatchHealthInsight(
+                    title: "Una lectura de estrés elevada",
+                    message: "La última lectura del reloj fue \(Int(last.value.rounded()))/100. Feli está inquieto; observá si se repite antes de sacar conclusiones.",
+                    coverage: "Medida el \(last.measuredAt.formatted(date: .abbreviated, time: .shortened)). Escala orientativa, no clínica.",
+                    mood: .worried)
+            }
+            if last.value <= 30 {
+                return WatchHealthInsight(
+                    title: "Un momento tranquilo",
+                    message: "La última lectura del reloj fue \(Int(last.value.rounded()))/100. Feli se sienta y espera una mariposa.",
+                    coverage: "Medida el \(last.measuredAt.formatted(date: .abbreviated, time: .shortened)). Escala orientativa, no clínica.",
+                    mood: .calm)
+            }
         }
         return HealthInsights.weekly(days: store.days, watchID: watchID)
     }
