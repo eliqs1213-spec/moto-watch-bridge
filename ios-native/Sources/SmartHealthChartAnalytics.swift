@@ -44,7 +44,11 @@ enum SmartHealthChartAnalytics {
             uniquingKeysWith: { _, new in new })
         return dates.compactMap { date in
             let key = dayKey(date, calendar: calendar)
-            guard let value = rows[key]?.value(for: metric), value.isFinite else { return nil }
+            guard let day = rows[key] else { return nil }
+            // Las sesiones incompletas permanecen en el histórico, pero no
+            // entran en gráficos de promedio/regularidad como noches completas.
+            if metric == .sleep && day.sleepRetrievalComplete == false { return nil }
+            guard let value = day.value(for: metric), value.isFinite else { return nil }
             return SmartDailyPoint(date: calendar.startOfDay(for: date), value: value)
         }
     }
@@ -96,7 +100,8 @@ enum SmartHealthChartAnalytics {
     static func sleepTimings(days: [WatchHealthDay], watchID: String,
                              dates: [Date], calendar: Calendar = .current) -> [SmartSleepTiming] {
         let keys = Set(dates.map { dayKey($0, calendar: calendar) })
-        return days.filter { $0.watchID == watchID && keys.contains($0.dayKey) }
+        return days.filter { $0.watchID == watchID && keys.contains($0.dayKey) &&
+                             dayIsVerifiedForSleepTiming($0) }
             .compactMap { day -> SmartSleepTiming? in
                 // Evitar confundir siestas con el horario nocturno. Tomar
                 // solamente la sesión principal de cada día de despertar.
@@ -118,6 +123,12 @@ enum SmartHealthChartAnalytics {
                 return SmartSleepTiming(date: date, bedtimeHour: bedtimeContinuous, wakeHour: wakeClock)
             }
             .sorted { $0.date < $1.date }
+    }
+
+    private static func dayIsVerifiedForSleepTiming(_ day: WatchHealthDay) -> Bool {
+        // Consultas anteriores no incluían una bandera de completitud; no
+        // conviene deducir horarios de ayuno de una noche posiblemente parcial.
+        day.sleepRetrievalComplete == true
     }
 
     static func bedtimeVariationMinutes(_ timings: [SmartSleepTiming]) -> Int? {
