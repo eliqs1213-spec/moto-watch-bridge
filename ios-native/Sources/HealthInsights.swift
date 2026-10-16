@@ -9,6 +9,77 @@ struct WatchHealthInsight {
 }
 
 enum HealthInsights {
+    /// La pestaña de una métrica interpreta únicamente su última lectura real.
+    /// Nunca confunde la media de varias muestras con el valor más reciente.
+    static func latest(metric: HealthMetric, snapshot: HealthSnapshot?,
+                       sleepComplete: Bool = true) -> WatchHealthInsight {
+        guard let snapshot, snapshot.value.isFinite else {
+            return WatchHealthInsight(title: "Feli espera una lectura",
+                                      message: "Todavía no hay una medición guardada de \(metric.title.lowercased()).",
+                                      coverage: "Sin registro recuperado del Moto Watch.", mood: .curious)
+        }
+        let value = snapshot.value
+        let time = snapshot.measuredAt.formatted(date: .abbreviated, time: .shortened)
+        let coverage = "Último registro real: \(time). No es una lectura continua."
+        if metric == .sleep && !sleepComplete {
+            return WatchHealthInsight(
+                title: "Sueño aún incompleto",
+                message: "Por ahora se recuperaron \(metric.formatted(value)). Feli espera más sesiones antes de sacar conclusiones.",
+                coverage: "Último registro: \(time). Todavía no está comprobado contra el total que muestra el reloj.",
+                mood: .curious)
+        }
+        let result = reaction(metric: metric, value: value)
+        return WatchHealthInsight(
+            title: "Última lectura · \(metric.title)",
+            message: "\(metric.formatted(value)). \(result.message)",
+            coverage: coverage,
+            mood: result.mood)
+    }
+
+    /// Histórico: se usa el promedio de UN valor por día registrado. No se
+    /// ponderan los días con más muestras, no se suman pasos entre consultas y
+    /// las noches de sueño marcadas como parciales quedan fuera.
+    static func historical(metric: HealthMetric, average: Double?,
+                           recordedDays: Int, periodLabel: String) -> WatchHealthInsight {
+        guard let average, average.isFinite, recordedDays > 0 else {
+            return WatchHealthInsight(
+                title: "Sin promedio para \(periodLabel)",
+                message: "Feli necesita mediciones reales del período seleccionado para reaccionar.",
+                coverage: "0 días con datos válidos. Días sin datos no equivalen a cero.",
+                mood: .curious)
+        }
+        let result = reaction(metric: metric, value: average)
+        return WatchHealthInsight(
+            title: "Promedio · \(metric.title)",
+            message: "\(metric.formatted(average)) · \(periodLabel). \(result.message)",
+            coverage: "\(recordedDays) día(s) con registros válidos. Se promedia cada día registrado una sola vez.",
+            mood: result.mood)
+    }
+
+    private static func reaction(metric: HealthMetric, value: Double) -> (mood: FeliMood, message: String) {
+        switch metric {
+        case .stress:
+            if value >= 70 { return (.worried, "Feli está atento a la escala de estrés de Motorola; no es una evaluación clínica.") }
+            if value <= 30 { return (.calm, "Feli se relaja y mira una mariposa.") }
+            return (.curious, "Feli observa cómo cambia esta lectura del reloj.")
+        case .sleep:
+            if value < 7 { return (.sleepy, "Feli bosteza y descansa. Conviene revisar las sesiones antes de interpretar tu noche.") }
+            return (.calm, "Feli descansa tranquilo. El dato describe duración, no calidad del sueño.")
+        case .steps:
+            if value >= 6000 { return (.active, "Feli mueve la cola y ofrece una patita.") }
+            return (.curious, "Feli está atento a la actividad registrada.")
+        case .activeCalories:
+            if value >= 250 { return (.active, "Feli se anima y mueve la cola.") }
+            return (.curious, "Feli observa la actividad que registró el reloj.")
+        case .heartRate:
+            return (.curious, "Feli mira la medición sin interpretar si es normal o anormal.")
+        case .oxygen:
+            return (.curious, "Feli observa la medición. No se interpreta como diagnóstico ni controla el sensor.")
+        case .workouts:
+            return (.curious, "Las sesiones de entrenamiento todavía necesitan sincronización validada.")
+        }
+    }
+
     static func weekly(days: [WatchHealthDay], watchID: String, now: Date = Date(),
                        calendar: Calendar = .current) -> WatchHealthInsight {
         guard !watchID.isEmpty else { return missing }
