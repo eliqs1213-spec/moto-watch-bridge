@@ -24,6 +24,9 @@ final class Feli3DRig {
     let mate = SCNNode()
     let grill = SCNNode()
     let sparkle = SCNNode()
+    let butterfly = SCNNode()
+    let littleClock = SCNNode()
+    let clockHand = SCNNode()
     var steam: [SCNNode] = []
     var flames: [SCNNode] = []
 
@@ -41,6 +44,7 @@ final class Feli3DRig {
         buildMate()
         buildGrill()
         buildSparkle()
+        buildButterflyAndClock()
     }
 
     private func mat(_ color: UIColor, roughness: CGFloat = 0.86) -> SCNMaterial {
@@ -359,9 +363,47 @@ final class Feli3DRig {
         }
     }
 
+    private func buildButterflyAndClock() {
+        butterfly.name = "calm-3d-butterfly"
+        butterfly.position = SCNVector3(0.98, 1.95, 0.38)
+        scene.rootNode.addChildNode(butterfly)
+        let wingPink = UIColor(red: 1.00, green: 0.63, blue: 0.25, alpha: 1)
+        let wingOrange = UIColor(red: 0.95, green: 0.43, blue: 0.11, alpha: 1)
+        for side: Float in [-1, 1] {
+            let wing = sphere("butterfly-wing", side == -1 ? wingPink : wingOrange,
+                              scale: SCNVector3(0.15, 0.21, 0.033),
+                              at: SCNVector3(side * 0.13, 0.06, 0), parent: butterfly)
+            wing.eulerAngles.z = side * -0.40
+        }
+        capsule("butterfly-body", UIColor(red: 0.36, green: 0.22, blue: 0.17, alpha: 1),
+                radius: 0.035, height: 0.25, at: SCNVector3(0, 0, 0.07), parent: butterfly)
+
+        littleClock.name = "attentive-3d-clock"
+        littleClock.position = SCNVector3(1.00, 1.78, 0.2)
+        scene.rootNode.addChildNode(littleClock)
+        let dial = SCNNode(geometry: SCNCylinder(radius: 0.23, height: 0.060))
+        dial.geometry?.firstMaterial = mat(UIColor.white)
+        dial.eulerAngles.x = .pi / 2
+        dial.name = "clock-face"
+        littleClock.addChildNode(dial)
+        let rim = SCNNode(geometry: SCNTorus(ringRadius: 0.225, pipeRadius: 0.035))
+        rim.geometry?.firstMaterial = mat(UIColor(red: 0.96, green: 0.47, blue: 0.06, alpha: 1))
+        rim.eulerAngles.x = .pi / 2
+        rim.position.z = 0.045
+        littleClock.addChildNode(rim)
+        clockHand.name = "animated-clock-hand"
+        bar("hand", color: UIColor.darkGray,
+            width: 0.023, height: 0.16, length: 0.025,
+            at: SCNVector3(0, 0.075, 0.076), parent: clockHand)
+        clockHand.position.z = 0.02
+        littleClock.addChildNode(clockHand)
+    }
+
     func setAccessories(for mood: FeliMood) {
         mate.isHidden = mood != .mate
         grill.isHidden = mood != .grill && mood != .celebrate
         sparkle.isHidden = mood != .celebrate
+        butterfly.isHidden = mood != .calm
+        littleClock.isHidden = mood != .worried
     }
 }
