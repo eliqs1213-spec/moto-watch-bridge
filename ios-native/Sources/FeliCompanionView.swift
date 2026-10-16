@@ -7,7 +7,7 @@ enum FeliMood: String {
     case curious, calm, worried, sleepy, active, mate, grill, celebrate
 }
 
-private enum FeliTouchArea {
+private enum FeliTouchArea: Equatable {
     case head, ear, tummy
 }
 
