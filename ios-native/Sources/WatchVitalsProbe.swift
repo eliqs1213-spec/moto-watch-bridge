@@ -39,7 +39,13 @@ final class WatchVitalsProbe: ObservableObject {
               UIApplication.shared.applicationState == .active else { return }
         self.mode = mode; self.watchID = watchID; self.validatedOnly = validatedOnly; self.cleanup = cleanup; self.send = send
         readings = []; counters = []; counterTime = nil; messages = []
-        end = Date(); start = end.addingTimeInterval(-86400)
+        end = Date()
+        // La lectura manual de SpO2 puede ser anterior a 24 h. Ampliamos el
+        // histórico elegible, sin confundir esto con iniciar el sensor BLE.
+        start = end.addingTimeInterval(mode == .oxygen ? -(7 * 86400) : -86400)
+        if mode == .oxygen {
+            note("Rango de muestras verificables: últimos 7 días. El reloj debe tener lecturas previas; esta consulta no inicia el sensor.")
+        }
         channel = 0; selector = 1; trySecond = false; isRunning = true
         if mode == .calories {
             waitingForIndex = false
@@ -80,7 +86,14 @@ final class WatchVitalsProbe: ObservableObject {
     }
     private func nextChannel() {
         if channel == 0 && !validatedOnly { channel = 1; requestIndex() }
-        else { finish(readings.isEmpty ? "Sin muestras candidatas. Revisá el diagnóstico." : "Lecturas candidatas recibidas; compará valor y hora con el reloj.") }
+        else {
+            if readings.isEmpty {
+                finish("Oxígeno: sin muestras compatibles. Revisá el diagnóstico 31/0B/0C y comprobá que exista una medición en el reloj.")
+            } else {
+                let countA = readings.filter { $0.channel == "A" }.count
+                finish("Consulta finalizada: \(readings.count) candidatas, \(countA) de la serie A. Solo la serie A previamente validada se guarda como oxígeno.")
+            }
+        }
     }
     func progress(received: Int, expected: Int) {
         guard isRunning, mode == .oxygen, !waitingForIndex else { return }
@@ -112,10 +125,11 @@ final class WatchVitalsProbe: ObservableObject {
             guard frame.command == indexCommand else { return }
             guard let fields = WatchHealthProtocol.fields(frame.payload) else { note("Índice Protobuf inválido"); nextChannel(); return }
             let indicator = WatchHealthProtocol.integer(1, in: fields)
-            note("Indicador candidato: " + (indicator.map { String($0) } ?? "ausente"))
+            note("Índice \(String(format: "31/%02X", indexCommand)), indicador: " + (indicator.map { String($0) } ?? "ausente"))
+            note("Estructura índice: " + VitalsCandidateProtocol.schema(frame))
             guard WatchHealthProtocol.canProbeFirstPulseBlock(indicator),
                   let cursor = VitalsCandidateProtocol.oxygenCursor(fields, indexCommand: indexCommand, start: start, end: end) else {
-                note("Índice sin registros/cursor compatibles; se prueba siguiente candidato")
+                note("Índice 31/\(String(format: "%02X", indexCommand)) sin registros/cursor admitido; no se inventan muestras")
                 nextChannel(); return
             }
             note(cursor < 1577836800 ? "Cursor pequeño/ordinal admitido para 31/0B; no es fecha de medición" : "Cursor temporal dentro de la ventana")
@@ -131,7 +145,7 @@ final class WatchVitalsProbe: ObservableObject {
         var indexed = Dictionary(readings.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for row in result where indexed[row.id] == nil { indexed[row.id] = row }
         readings = indexed.values.sorted { $0.timestamp < $1.timestamp }
-        note("Candidato \(channel + 1), selector \(selector): \(result.count) muestras")
+        note("Candidato \(channel + 1), selector \(selector): \(result.count) muestras (total: \(readings.count))")
         if selector == 1 && trySecond { selector = 2; requestSamples() } else { nextChannel() }
     }
     func cancel() {
