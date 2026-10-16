@@ -132,8 +132,13 @@ struct ContentView: View {
             while !Task.isCancelled {
                 if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
                     if spotifyRemote.isConnected {
-                        // Recupera cambios aun cuando la suscripción del SDK no emita el evento.
+                        // Una suscripción puede figurar activa pero no entregar
+                        // nuevos datos. Comprobar Web SOLO cuando el SDK lleva
+                        // más de 20 s sin un estado válido (o nunca entregó uno).
                         spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
+                        if !spotifyRemote.nativeMetadataIsFresh && watch.isConnected {
+                            await spotify.refreshPlaybackInfo(allowSDKFallback: true)
+                        }
                     } else if watch.isConnected {
                         await spotify.refreshPlaybackInfo()
                     }
@@ -366,6 +371,7 @@ struct ContentView: View {
                             statusRow("SDK conectado", spotifyRemote.isConnected ? "Sí" : "No")
                             statusRow("Eventos del SDK", spotifyRemote.metadataEventsActive ? "Suscripto" : "Sin suscripción")
                             statusRow("Último dato nativo", spotifyRemote.lastNativeEvent)
+                            statusRow("Metadatos SDK vigentes", spotifyRemote.nativeMetadataIsFresh ? "Sí" : "No · respaldo Web API")
                             Text("Si aparece Web API con iWatch abierta, mirá estas tres líneas. SDK conectado: No indica un problema de sesión, no del reloj. Para autorizar, tocá Activar SDK Spotify una vez con Spotify instalado.")
                                 .font(.caption).foregroundStyle(.secondary)
                             HStack {
