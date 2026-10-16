@@ -495,6 +495,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
+        // Diagnóstico pasivo: SOLO aprovecha callbacks F8F0 reales de iOS;
+        // no inventa notificaciones ni consultas periódicas al reloj.
+        MusicBackgroundExperiment.shared.didReceiveRealBLEFrame(data)
         switch sleepAssembler.consume(data) {
         case .pending(let received, let expected):
             Task { @MainActor in WatchSleepProbe.shared.progress(received: received, expected: expected) }
