@@ -10,6 +10,27 @@ enum SpotifyCommandQueuePolicy {
     // Reabrir Spotify o recibir un estado Web/SDK con dispositivo activo
     // libera el bloqueo inmediatamente.
     static let noActiveDeviceCooldownSeconds: TimeInterval = 20
+    // Un toque NUEVO en el reloj puede solicitar una comprobación de estado
+    // de Spotify incluso mientras NEXT/PREV está protegido por un 404.
+    // Nunca reejecutar automáticamente el comando que produjo el 404.
+    static let blockedSkipProbeCooldownSeconds: TimeInterval = 4
+
+    static func shouldProbeBlockedSkip(until: Date?, lastProbeAt: Date?,
+                                       now: Date, requestBusy: Bool,
+                                       probeBusy: Bool) -> Bool {
+        guard shouldHoldSkip(until: until, now: now),
+              !requestBusy, !probeBusy else { return false }
+        if let last = lastProbeAt,
+           now.timeIntervalSince(last) < blockedSkipProbeCooldownSeconds { return false }
+        return true
+    }
+
+    // Únicamente para órdenes Web API de reproducción conocidas (no OAuth).
+    // Spotify devuelve tanto NO_ACTIVE_DEVICE como un 404 genérico ("Not found")
+    // si el dispositivo Connect desaparece al pausar el iPhone.
+    static func isMissingPlayerCommandResponse(status: Int) -> Bool {
+        status == 404
+    }
 
     static func shouldHoldSkip(until: Date?, now: Date) -> Bool {
         guard let until = until else { return false }
