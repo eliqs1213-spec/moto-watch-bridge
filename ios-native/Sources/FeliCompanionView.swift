@@ -2,6 +2,12 @@ import SwiftUI
 import SceneKit
 import UIKit
 
+enum FeliMood: String {
+    case curious, calm, worried, sleepy, active, mate, grill, celebrate
+    // Explicit previewable performances, not hidden variations of paw-waving.
+    case sniff, stretch, yawn, greet, earWiggle, bellyRub
+}
+
 /// Real, interactive 3D model. Every animation is articulated by SceneKit,
 /// not a flat illustration, still photograph, animated emoji or GIF.
 struct FeliCompanionView: View {
@@ -30,6 +36,12 @@ struct FeliCompanionView: View {
         case .mate: return "inclina la cabeza para tomar mate feliz"
         case .grill: return "olfatea un vacío en la parrilla con humo"
         case .celebrate: return "festeja moviendo la cola y ambas patas"
+        case .sniff: return "baja el hocico, olfatea y mueve las orejas"
+        case .stretch: return "se estira y adelanta las dos patas"
+        case .yawn: return "abre la boca de verdad, baja la mandíbula y bosteza"
+        case .greet: return "saluda levantando y moviendo una pata"
+        case .earWiggle: return "mueve ambas orejas largas por separado"
+        case .bellyRub: return "se tumba panza arriba y mueve las patitas"
         }
     }
 }
