@@ -40,4 +40,30 @@ requireTrial(MusicBackgroundExperimentPolicy.remainingTimeLabel(.nan) == "no dis
              "NaN is not a valid integer")
 requireTrial(MusicBackgroundExperimentPolicy.remainingTimeLabel(-1) == "no disponible",
              "Negative values not valid")
+
+// Datos sintéticos: identificar solo cabecera Motorola; nunca registrar salud completa.
+requireTrial(MusicBackgroundExperimentPolicy.bleFrameType(
+    Data([0xAA, 0x04, 0x00, 0x00, 0x12, 0x04, 0xB9, 0xCB])) == "12/04",
+    "Clasificar F8F0 real 12/04 sin incluir payload")
+requireTrial(MusicBackgroundExperimentPolicy.bleFrameType(
+    Data([0xAA, 0x06, 0x00, 0x00, 0x10, 0x81, 0x08, 0x59, 0x08, 0xE3])) == "10/81",
+    "Clasificar F8F0 10/81")
+requireTrial(MusicBackgroundExperimentPolicy.bleFrameType(
+    Data([0xAA, 0x08, 0x00, 0x00, 0x12, 0x04])) == "12/04 (fragmento)",
+    "Fragmento BLE distinguible sin inventar trama completa")
+requireTrial(MusicBackgroundExperimentPolicy.bleFrameType(Data([0x01])) == "fragmento/no-AA",
+    "Un fragmento sin cabecera no debe leerse como protocolo válido")
+requireTrial(MusicBackgroundExperimentPolicy.shouldLogBLEFrame(
+    firstOfType: true, queryEligible: false, secondsSinceLastLog: 0),
+    "Primer evento de un tipo se registra")
+requireTrial(MusicBackgroundExperimentPolicy.shouldLogBLEFrame(
+    firstOfType: false, queryEligible: true, secondsSinceLastLog: 1),
+    "Un disparador HTTP legítimo siempre se registra")
+requireTrial(!MusicBackgroundExperimentPolicy.shouldLogBLEFrame(
+    firstOfType: false, queryEligible: false, secondsSinceLastLog: 44),
+    "No saturar registro en ráfagas")
+requireTrial(MusicBackgroundExperimentPolicy.shouldLogBLEFrame(
+    firstOfType: false, queryEligible: false, secondsSinceLastLog: 45),
+    "Registrar muestra cada 45 segundos")
+
 print("Background music trial policy checks passed: opt-in, real BLE only, cooldown, finite window, safe time")
