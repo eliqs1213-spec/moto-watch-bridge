@@ -298,7 +298,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         record("Modo sin música solicitado: \(reason) (no confirmado por firmware)")
     }
 
-    private func markAvailable(_ playback: SpotifyPlayback, force: Bool = false) {
+    private func markAvailable(_ playback: SpotifyPlayback, force: Bool = false,
+                               diagnosticSource: String = "Web API") {
         // El SDK/Web API vuelve a informar un dispositivo actual.
         // Rehabilitar los botones inmediatamente, sin esperar el cooldown.
         if playback.device != nil, skipNoActiveDeviceUntil != nil {
@@ -310,7 +311,16 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         retainedTrackWarningLogged = false
         let wasIdle = idleModeRequested
         idleModeRequested = false
+        let previousSnapshot = lastMusicSnapshot
         updateCachedPlayback(playback)
+        if let snapshot = lastMusicSnapshot, playback.item != nil,
+           previousSnapshot?.title != snapshot.title ||
+           previousSnapshot?.artist != snapshot.artist ||
+           previousSnapshot?.isPlaying != snapshot.isPlaying {
+            WatchBLEManager.shared.record("SPOTIFY-ORIGEN",
+                "WEB [\(diagnosticSource)]: pista nueva=\(snapshot.title) — \(snapshot.artist); estadoApp=\(UIApplication.shared.applicationState.rawValue)")
+            WatchBLEManager.shared.flushLog()
+        }
         if playback.item != nil {
             metadataSource = "Spotify Web API · respaldo"
         }
@@ -440,11 +450,19 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         retainedTrackWarningLogged = false
         let wasIdle = idleModeRequested
         idleModeRequested = false
+        let previousSnapshot = lastMusicSnapshot
         let snapshot = WatchMusicSnapshot(
             id: uri, title: title, artist: artist, album: album,
             durationMs: durationMs, progressMs: progressMs, isPlaying: isPlaying
         )
         sdkMetadataRevision &+= 1
+        if previousSnapshot?.title != snapshot.title ||
+           previousSnapshot?.artist != snapshot.artist ||
+           previousSnapshot?.isPlaying != snapshot.isPlaying {
+            WatchBLEManager.shared.record("SPOTIFY-ORIGEN",
+                "SDK playerStateDidChange: pista nueva=\(snapshot.title) — \(snapshot.artist); estadoApp=\(UIApplication.shared.applicationState.rawValue); remotoConectado=\(SpotifyAppRemoteBridge.shared.isConnected)")
+            WatchBLEManager.shared.flushLog()
+        }
         lastMusicSnapshot = snapshot
         lastIsPlaying = isPlaying
         lastSong = title
@@ -505,7 +523,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             let previousTitle = lastMusicSnapshot?.title
             let previousArtist = lastMusicSnapshot?.artist
             let previousPlaying = lastIsPlaying
-            markAvailable(playback)
+            markAvailable(playback, diagnosticSource: "BG-HTTP")
             // Los metadatos sólo se reenvían si MusicSyncEngine detecta un
             // cambio confirmado. Este log no afirma que la pantalla lo muestre.
             let newTitle = lastMusicSnapshot?.title ?? "sin título"
