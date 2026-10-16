@@ -2,6 +2,19 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.25 · build 865 (candidata)
+
+- Inicio como primera pestaña: reloj ilustrativo con hora actual del iPhone, batería recibida por Motorola 10/01, estados BLE y Spotify, reintento de App Remote y guía de mediciones.
+- Feli como mascota chibi discreta **solo dentro de Salud**, con animaciones accesibles e interpretaciones conservadoras de sueño, estrés, pasos y otras mediciones con cobertura de datos.
+- Ayuno como pestaña independiente, sin mascota: cronómetro y objetivo configurable, horario sugerido tras tres o más noches disponibles, avisos locales optativos e historial de inicio y corte reales.
+- Se mantiene el panel iWatch de diagnóstico, protocolo BLE, Spotify SDK/Web API y Atajos sin cambios a sus motores.
+- Temas de watchfaces, clima BLE y WidgetKit con problemas de firma continúan pendientes. PR [#25](https://github.com/eliqs1213-spec/moto-watch-bridge/pull/25); exige compilación y validación en dispositivo.
+
+## 0.8.4.24 · build 864
+
+- Apariencia automática/clara/oscura, tarjetas recientes de Salud y diagnósticos de extensión WidgetKit.
+- Un fallo `CODESIGNING / Invalid Page` confirmado en extensión de build 862; no se considera solucionado.
+
 ## 0.8.4.5 · build 845
 
 - Rediseño de iWatch con tarjetas para conexión, batería, música y búsqueda del teléfono.
