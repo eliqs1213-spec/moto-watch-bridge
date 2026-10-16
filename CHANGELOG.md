@@ -8,6 +8,7 @@ Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [es
 - **Salud**: conserva lectura más reciente, histórico y promedio por día (868–869); solo se anima según datos efectivamente almacenados, sin conclusiones clínicas.
 - **Ayuno**: Feli acompaña en dock minimizable durante el temporizador y nunca tapa el cronómetro. Al iniciar toma mate feliz; luego descansa, curiosea, imagina un **vacío sobre la parrilla** con brasas animadas, mira el reloj y festeja al alcanzar el objetivo o después de guardar un corte real que cumplió el objetivo.
 - Las etapas de Ayuno se activan por porcentaje transcurrido, no por supuestas sensaciones físicas de hambre; muestra frases simbólicas. Completar el objetivo NO corta el ayuno automáticamente. Reduce Motion pausa las animaciones; fuera de la app también se pausan.
+- Galería interactiva en Ayuno («Ver todas las animaciones de Feli»): permite elegir las 8 escenas reales y tocar cabeza, orejas o pancita sin falsear sensores ni modificar el historial del ayuno.
 - CI valida estados de Ayuno y el pipeline iOS; la apariencia, la escala y la firma en Sideloadly requieren prueba en iPhone.
 - Mantiene oxígeno y el guardado de sueño BLE 248 minutos de build 870.
 
