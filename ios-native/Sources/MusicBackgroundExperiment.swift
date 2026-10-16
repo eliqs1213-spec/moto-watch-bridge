@@ -56,14 +56,24 @@ final class MusicBackgroundExperiment: ObservableObject {
         BatteryLiveActivityManager.shared.stop()
     }
 
-    func didEnterBackground() {
+    func didEnterBackground(source: String = "UIApplicationDelegate") {
         guard enabled else { return }
+        // UIApplicationDelegate y scenePhase pueden reportar la MISMA transición.
+        // No duplicar ventanas ni tareas de background al observar ambas vías.
+        guard backgroundEnteredAt == nil else {
+            WatchBLEManager.shared.record("BG-EXPERIMENTO",
+                "Entrada duplicada desde \(source); ventana existente preservada")
+            return
+        }
+        WatchBLEManager.shared.record("BG-EXPERIMENTO",
+            "Callback entrada por \(source); estado app=\(UIApplication.shared.applicationState.rawValue)")
         epoch &+= 1
         let currentEpoch = epoch
         backgroundEnteredAt = Date()
         let active = !Activity<MotoBatteryActivityAttributes>.activities.isEmpty
         WatchBLEManager.shared.record("BG-EXPERIMENTO",
             "Bloqueo: Live Activity \(active ? "activa" : "NO activa"); reloj=\(WatchBLEManager.shared.isConnected); esperando permisos reales iOS")
+        WatchBLEManager.shared.flushLog()
         status = active ? "Bloqueado · Live Activity activa; comprobando tiempo concedido" :
             "Bloqueado · Live Activity no iniciada; sin privilegios nuevos"
         guard active && WatchBLEManager.shared.isConnected else { return }
@@ -81,6 +91,12 @@ final class MusicBackgroundExperiment: ObservableObject {
                 self?.finishBackgroundTask()
             })
 
+        guard backgroundTask != .invalid else {
+            WatchBLEManager.shared.record("BG-EXPERIMENTO",
+                "iOS no autorizó tarea finita de segundo plano")
+            WatchBLEManager.shared.flushLog()
+            return
+        }
         probeTask?.cancel()
         probeTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -112,8 +128,10 @@ final class MusicBackgroundExperiment: ObservableObject {
         }
     }
 
-    func willEnterForeground() {
-        guard enabled else { return }
+    func willEnterForeground(source: String = "UIApplicationDelegate") {
+        guard enabled, backgroundEnteredAt != nil else { return }
+        WatchBLEManager.shared.record("BG-EXPERIMENTO",
+            "Callback retorno por \(source)")
         epoch &+= 1
         probeTask?.cancel()
         probeTask = nil
@@ -123,6 +141,7 @@ final class MusicBackgroundExperiment: ObservableObject {
         WatchBLEManager.shared.record("BG-EXPERIMENTO",
             "Desbloqueo tras ~\(elapsed) s; verificar qué consultas se ejecutaron realmente con teléfono bloqueado")
         backgroundEnteredAt = nil
+        WatchBLEManager.shared.flushLog()
     }
 
     // Un F8F0 real puede despertar la app para entregar datos de BLE. NO
