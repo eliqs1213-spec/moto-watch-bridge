@@ -81,10 +81,15 @@ private struct Feli3DScene: UIViewRepresentable {
         context.coordinator.animator?.reduceMotion = reduceMotion
         view.preferredFramesPerSecond = reduceMotion ? 2 : 30
         view.isPlaying = isActive
+        if isActive && !context.coordinator.wasActive {
+            context.coordinator.animator?.restartGreeting()
+        }
+        context.coordinator.wasActive = isActive
     }
 
     final class Coordinator: NSObject {
         var animator: Feli3DAnimator?
+        var wasActive = false
 
         @objc func didTap(_ recognizer: UITapGestureRecognizer) {
             guard let view = recognizer.view as? SCNView else { return }
