@@ -28,6 +28,11 @@ jobs:
           cat ios-native/Sources/SpotifyPlaybackContinuityPolicy.swift ios-native/Sources/SpotifyCommandQueuePolicy.swift ios-native/Tests/SpotifyContinuityChecks.swift > "$RUNNER_TEMP/spotify-continuity-checks.swift"
           swift "$RUNNER_TEMP/spotify-continuity-checks.swift"
 
+      - name: Verificar reconexión segura Spotify iOS SDK
+        run: |
+          cat ios-native/Sources/SpotifySDKReconnectPolicy.swift ios-native/Tests/SpotifySDKReconnectChecks.swift > "$RUNNER_TEMP/spotify-sdk-reconnect-checks.swift"
+          swift "$RUNNER_TEMP/spotify-sdk-reconnect-checks.swift"
+
       - name: Verificar tramas 24-01 de metadatos Motorola
         run: |
           cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchMusicProtocol.swift ios-native/Tests/MusicFrameChecks.swift > "$RUNNER_TEMP/music-frame-checks.swift"
