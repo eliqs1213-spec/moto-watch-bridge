@@ -29,4 +29,15 @@ requireTrial(!MusicBackgroundExperimentPolicy.canContinueShortWindow(
     remainingTime: 5, enabled: true, background: true), "Insufficient remaining time")
 requireTrial(!MusicBackgroundExperimentPolicy.canContinueShortWindow(
     remainingTime: 10, enabled: false, background: true), "No probe when disabled")
-print("Background music trial policy checks passed: opt-in, real BLE only, cooldown, finite window")
+requireTrial(MusicBackgroundExperimentPolicy.remainingTimeLabel(27.9) == "27 s",
+             "Finite remaining seconds should display safely")
+requireTrial(MusicBackgroundExperimentPolicy.remainingTimeLabel(.greatestFiniteMagnitude)
+                .contains("valor especial"),
+             "Never Int-convert iOS unlimited sentinel: this can terminate the iPhone process")
+requireTrial(MusicBackgroundExperimentPolicy.remainingTimeLabel(.infinity) == "no disponible",
+             "Infinity is not a valid integer")
+requireTrial(MusicBackgroundExperimentPolicy.remainingTimeLabel(.nan) == "no disponible",
+             "NaN is not a valid integer")
+requireTrial(MusicBackgroundExperimentPolicy.remainingTimeLabel(-1) == "no disponible",
+             "Negative values not valid")
+print("Background music trial policy checks passed: opt-in, real BLE only, cooldown, finite window, safe time")
