@@ -162,17 +162,13 @@ private struct FeliIllustration: View {
 
     private var face: some View {
         ZStack {
-            // Las orejas se mueven desde su unión a la cabeza.
-            Ellipse().fill(darkFur)
-                .frame(width: 33, height: 62)
-                .rotationEffect(.degrees(-20 + sin(seconds * 1.1) * 2 + sniff * 5 + (petted ? -7 : 0)), anchor: .top)
-                .offset(x: -38, y: -13)
-            Ellipse().fill(darkFur)
-                .frame(width: 33, height: 62)
-                .rotationEffect(.degrees(20 - sin(seconds * 1.2) * 2 - sniff * 5 + (petted ? 7 : 0)), anchor: .top)
-                .offset(x: 38, y: -13)
+            // La cabeza se dibuja primero; las orejas largas van por delante
+            // y FUERA de sus contornos, no ocultas detrás de las mejillas.
             Ellipse().fill(fur)
-                .frame(width: 91, height: 92).offset(y: -24)
+                .frame(width: 91, height: 92)
+                .offset(y: -24)
+            ear(left: true)
+            ear(left: false)
             // La franja blanca de la frente y el hocico del beagle.
             Ellipse().fill(.white)
                 .frame(width: 18, height: 49).offset(y: -42)
@@ -196,6 +192,27 @@ private struct FeliIllustration: View {
                     .foregroundStyle(.indigo).offset(x: 39, y: -66)
             }
         }
+    }
+
+    // Orejas beagle: largas, caídas y reconocibles incluso en el dock pequeño.
+    // Se articulan desde arriba y reaccionan sin mover la cabeza entera.
+    private func ear(left: Bool) -> some View {
+        let side: Double = left ? -1 : 1
+        let worriedDrop: Double = mood == .worried ? 6 : 0
+        let asleepMotion: Double = mood == .sleepy ? 0.25 : 1
+        let twitch: Double = sin(seconds * (left ? 1.1 : 1.2) + (left ? 0 : 0.8)) * 3 * asleepMotion
+        let petTilt: Double = petted ? 7 : 0
+        return ZStack {
+            Ellipse().fill(darkFur)
+                .frame(width: 35, height: 73)
+            Ellipse().fill(fur.opacity(0.32))
+                .frame(width: 15, height: 46)
+                .offset(y: 8)
+        }
+        .rotationEffect(.degrees(side * (12 + worriedDrop + petTilt) + twitch +
+                                 (left ? sniff * 6 : -sniff * 6)),
+                        anchor: .top)
+        .offset(x: CGFloat(side * 53), y: CGFloat(-13 + worriedDrop))
     }
 
     private var eye: some View {
