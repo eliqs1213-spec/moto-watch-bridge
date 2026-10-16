@@ -254,6 +254,7 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
         rightEarTilt += earReaction * 0.23
 
         // Actual articulated joints; all rotations have physical meaning.
+        rig.dog.eulerAngles.y = Float(wave(t, 0.47) * 0.045)
         rig.dog.eulerAngles.z = Float((mood == .bellyRub ? 0.79 : 0) + bellyReaction * 0.41)
         rig.body.position.y = Float(bodyY)
         rig.body.eulerAngles.x = Float(bodyPitch)
