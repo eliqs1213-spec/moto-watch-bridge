@@ -62,23 +62,35 @@ struct FeliHealthDock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 11) {
+            HStack(alignment: .center, spacing: 7) {
                 // Feli no es una imagen estática. El toque activa una reacción
                 // local y no dispara ninguna lectura inventada del reloj.
-                FeliCompanionView(mood: insight.mood, diameter: compact ? 63 : 107)
-                    // Reproduce el saludo al abrir una métrica, entrar en
-                    // Histórico, cambiar el período o recibir una nueva lectura.
-                    .id(insight.title + "|" + insight.message + "|" + (history?.periodLabel ?? "último"))
-                    .accessibilityHint("Tocá para saludar a Feli")
+                VStack(spacing: -3) {
+                    if !compact {
+                        FeliThoughtBubble(
+                            thought: FeliThoughtBubble.thought(for: insight.mood),
+                            color: insight.mood == .worried ? .orange : .indigo
+                        )
+                        .frame(height: 51)
+                    }
+                    FeliCompanionView(mood: insight.mood, diameter: compact ? 68 : 143)
+                        // La animación se reinicia al ingresar a una métrica o
+                        // cambiar a Histórico/período; nunca inventa lecturas.
+                        .id(insight.title + "|" + insight.message + "|" + (history?.periodLabel ?? "último"))
+                        .accessibilityHint("Tocá para saludar a Feli")
+                }
+                .frame(width: compact ? 72 : 149)
+                .accessibilityElement(children: .contain)
                 VStack(alignment: .leading, spacing: compact ? 0 : 4) {
                     Text(compact ? compactLabel : insight.title)
                         .font(.subheadline.bold())
-                        .lineLimit(1)
+                        .lineLimit(compact ? 1 : 3)
+                        .fixedSize(horizontal: false, vertical: true)
                     if !compact {
                         Text(insight.message)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                            .lineLimit(5)
                             .fixedSize(horizontal: false, vertical: true)
                         Text("Tocá a Feli para acariciarlo")
                             .font(.caption2)

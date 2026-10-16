@@ -2,6 +2,15 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.33 · build 873 (candidata)
+
+- Feli 3D más grande en Salud y Ayuno (de 107/114 a 143/142 puntos) y con cámara más cercana. Las superficies esféricas pasan a una malla con 56–88 segmentos para suavizar facetas visibles; cápsulas y cilindros tienen más segmentos y las orejas se redondean con chaflán. Nariz suavizada.
+- Nueva burbuja de pensamiento en Salud, Ayuno y galería, que explica el gesto mediante un texto breve, sin inventar lecturas.
+- Estrés: solo lecturas **>= 70/100** muestran «Nivel alto de estrés registrado», valor real y recomendación breve de hacer una pausa y respirar con tranquilidad; promedio alto se distingue de última lectura. El valor 50/100 permanece neutro. La escala es orientativa del Moto Watch y no diagnostica estrés clínico.
+- En ese estado Feli gira la cabeza, consulta el reloj, modifica orejas, respiración, mirada y apoyo de patas; conserva el resto de actuaciones 3D.
+- Galería actualizada para examinar de cerca todas las escenas y sus burbujas.
+- Preserva Ayuno, oxígeno ya validado y sueño 4 h 08 de la versión base. Requiere probar el aspecto en el dispositivo: más segmentos suavizan bordes, pero no equivalen a un rediseño completo mediante una malla 3D profesional.
+
 ## 0.8.4.32 · build 872 (candidata, pruebas visuales pendientes)
 
 - Sustituye el avatar 2D que solo movía una pata por un verdadero personaje **3D articulado con SceneKit**, modelado en código con volumen, materiales, iluminación, cámara, perspectiva y controles táctiles sobre geometría tridimensional.

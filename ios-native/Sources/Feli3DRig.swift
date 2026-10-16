@@ -53,6 +53,8 @@ final class Feli3DRig {
         m.lightingModel = .physicallyBased
         m.roughness.contents = roughness
         m.metalness.contents = 0.0
+        // Light responds gradually on rounded surfaces, avoiding a faceted look.
+        m.specular.contents = UIColor(white: 0.25, alpha: 1)
         m.isDoubleSided = true
         return m
     }
@@ -61,7 +63,11 @@ final class Feli3DRig {
     private func sphere(_ name: String, _ color: UIColor,
                         scale: SCNVector3, at pos: SCNVector3,
                         parent: SCNNode, roughness: CGFloat = 0.88) -> SCNNode {
-        let n = SCNNode(geometry: SCNSphere(radius: 1))
+        let mesh = SCNSphere(radius: 1)
+        // SceneKit's default tessellation exposed visible flat facets when
+        // the user enlarged Feli. Preserve a round silhouette in every pose.
+        mesh.segmentCount = name.contains("eye") || name.contains("nose") ? 56 : 88
+        let n = SCNNode(geometry: mesh)
         n.name = name
         n.geometry?.materials = [mat(color, roughness: roughness)]
         n.scale = scale
@@ -74,7 +80,9 @@ final class Feli3DRig {
     private func capsule(_ name: String, _ color: UIColor,
                          radius: CGFloat, height: CGFloat,
                          at pos: SCNVector3, parent: SCNNode) -> SCNNode {
-        let n = SCNNode(geometry: SCNCapsule(capRadius: radius, height: height))
+        let mesh = SCNCapsule(capRadius: radius, height: height)
+        mesh.radialSegmentCount = 64
+        let n = SCNNode(geometry: mesh)
         n.name = name
         n.geometry?.materials = [mat(color)]
         n.position = pos
@@ -85,8 +93,10 @@ final class Feli3DRig {
     @discardableResult
     private func bar(_ name: String, color: UIColor, width: CGFloat, height: CGFloat,
                      length: CGFloat, at pos: SCNVector3, parent: SCNNode) -> SCNNode {
-        let n = SCNNode(geometry: SCNBox(width: width, height: height,
-                                         length: length, chamferRadius: min(width, height, length) * 0.24))
+        let geometry = SCNBox(width: width, height: height,
+                              length: length, chamferRadius: min(width, height, length) * 0.35)
+        geometry.chamferSegmentCount = 8
+        let n = SCNNode(geometry: geometry)
         n.name = name
         n.geometry?.materials = [mat(color)]
         n.position = pos
@@ -98,7 +108,7 @@ final class Feli3DRig {
         let cameraNode = SCNNode()
         let camera = SCNCamera()
         camera.usesOrthographicProjection = true
-        camera.orthographicScale = 3.95
+        camera.orthographicScale = 3.35
         camera.zNear = 0.05
         camera.zFar = 60
         cameraNode.camera = camera
@@ -218,9 +228,11 @@ final class Feli3DRig {
         nose.name = "nose"
         head.addChildNode(nose)
         nose.position = SCNVector3(0, -0.13, 0.98)
-        let black = SCNNode(geometry: SCNPyramid(width: 0.26, height: 0.18, length: 0.14))
+        let noseMesh = SCNSphere(radius: 1)
+        noseMesh.segmentCount = 64
+        let black = SCNNode(geometry: noseMesh)
+        black.scale = SCNVector3(0.145, 0.09, 0.075)
         black.geometry?.firstMaterial = mat(noseBlack, roughness: 0.27)
-        black.eulerAngles.z = .pi
         black.name = "soft-black-nose"
         nose.addChildNode(black)
 
@@ -262,7 +274,9 @@ final class Feli3DRig {
                       controlPoint1: CGPoint(x: 0.21, y: -0.30),
                       controlPoint2: CGPoint(x: 0.13, y: -0.06))
         path.close()
-        let outer = SCNNode(geometry: SCNShape(path: path, extrusionDepth: 0.14))
+        let earGeometry = SCNShape(path: path, extrusionDepth: 0.14)
+        earGeometry.chamferRadius = 0.043
+        let outer = SCNNode(geometry: earGeometry)
         outer.name = "floppy-lemon-beagle-ear"
         outer.geometry?.firstMaterial = mat(earGold, roughness: 0.92)
         outer.scale.x = left ? 1 : -1
@@ -275,12 +289,16 @@ final class Feli3DRig {
         mate.name = "mate-cup-prop"
         mate.position = SCNVector3(0.88, 0, 0.45)
         scene.rootNode.addChildNode(mate)
-        let cup = SCNNode(geometry: SCNCylinder(radius: 0.23, height: 0.36))
+        let cupGeometry = SCNCylinder(radius: 0.23, height: 0.36)
+        cupGeometry.radialSegmentCount = 48
+        let cup = SCNNode(geometry: cupGeometry)
         cup.name = "mate-gourd"
         cup.geometry?.firstMaterial = mat(UIColor(red: 0.39, green: 0.22, blue: 0.13, alpha: 1))
         cup.position = SCNVector3(0, 0.20, 0)
         mate.addChildNode(cup)
-        let leaves = SCNNode(geometry: SCNCylinder(radius: 0.211, height: 0.02))
+        let leavesGeometry = SCNCylinder(radius: 0.211, height: 0.02)
+        leavesGeometry.radialSegmentCount = 48
+        let leaves = SCNNode(geometry: leavesGeometry)
         leaves.geometry?.firstMaterial = mat(UIColor(red: 0.28, green: 0.45, blue: 0.15, alpha: 1))
         leaves.position = SCNVector3(0, 0.385, 0)
         mate.addChildNode(leaves)

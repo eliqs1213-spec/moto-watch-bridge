@@ -29,10 +29,18 @@ enum HealthInsights {
                 mood: .curious)
         }
         let result = reaction(metric: metric, value: value)
+        let title: String
+        if metric == .stress && value >= 70 {
+            title = "Nivel alto de estrés registrado"
+        } else if metric == .stress && value <= 30 {
+            title = "Nivel bajo de estrés registrado"
+        } else {
+            title = "Última lectura · \(metric.title)"
+        }
         return WatchHealthInsight(
-            title: "Última lectura · \(metric.title)",
+            title: title,
             message: "\(metric.formatted(value)). \(result.message)",
-            coverage: coverage,
+            coverage: coverage + (metric == .stress ? " La escala del reloj no es una medición clínica." : ""),
             mood: result.mood)
     }
 
@@ -49,19 +57,25 @@ enum HealthInsights {
                 mood: .curious)
         }
         let result = reaction(metric: metric, value: average)
+        let title = metric == .stress && average >= 70
+            ? "Promedio alto de estrés registrado"
+            : "Promedio · \(metric.title)"
         return WatchHealthInsight(
-            title: "Promedio · \(metric.title)",
+            title: title,
             message: "\(metric.formatted(average)) · \(periodLabel). \(result.message)",
-            coverage: "\(recordedDays) día(s) con registros válidos. Se promedia cada día registrado una sola vez.",
+            coverage: "\(recordedDays) día(s) con registros válidos. Se promedia cada día registrado una sola vez." +
+                (metric == .stress ? " Es la escala del reloj, no un diagnóstico." : ""),
             mood: result.mood)
     }
 
     private static func reaction(metric: HealthMetric, value: Double) -> (mood: FeliMood, message: String) {
         switch metric {
         case .stress:
-            if value >= 70 { return (.worried, "Feli está atento a la escala de estrés de Motorola; no es una evaluación clínica.") }
-            if value <= 30 { return (.calm, "Feli se relaja y mira una mariposa.") }
-            return (.curious, "Feli observa cómo cambia esta lectura del reloj.")
+            if value >= 70 {
+                return (.worried, "Lectura elevada según la escala de Motorola. Sugerencia: hacé una pausa breve y respiraciones tranquilas; observá si el valor se repite.")
+            }
+            if value <= 30 { return (.calm, "Lectura baja en la escala del reloj. Feli descansa y mira una mariposa.") }
+            return (.curious, "Feli observa esta lectura de la escala de Motorola sin interpretar tu estado emocional.")
         case .sleep:
             if value < 7 { return (.sleepy, "Feli bosteza y descansa. Conviene revisar las sesiones antes de interpretar tu noche.") }
             return (.calm, "Feli descansa tranquilo. El dato describe duración, no calidad del sueño.")
