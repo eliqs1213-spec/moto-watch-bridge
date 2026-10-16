@@ -183,11 +183,15 @@ final class MusicBackgroundExperiment: ObservableObject {
         isFetching = true
         let started = Date()
         defer { isFetching = false }
-        // Esta lectura ya alimenta MusicSyncEngine, y solo manda 24/01 cuando
-        // el título/estado cambió. Mantener firma y cola de la 8.4.13.
-        await SpotifyBridge.shared.refreshPlaybackInfo()
+        // Antes refreshPlaybackInfo() podía retornar en 0 ms por considerar
+        // vigente el caché del SDK. Para este experimento se intenta un HTTP
+        // REAL y se distingue completado, error y consulta omitida.
+        // La actualización de pantalla depende del SDK/firmware del reloj;
+        // MusicSyncEngine conserva la decisión sobre enviar la trama 24/01.
+        let result = await SpotifyBridge.shared.probeWebPlaybackWhileBackgrounded()
         WatchBLEManager.shared.record("BG-EXPERIMENTO",
-            "Consulta \(trigger) completada en \(Int(Date().timeIntervalSince(started) * 1000)) ms; no prueba actualización visual")
+            "Resultado \(trigger): \(result); duración total=\(Int(Date().timeIntervalSince(started) * 1000)) ms")
+        WatchBLEManager.shared.flushLog()
     }
 
     private func finishBackgroundTask() {
