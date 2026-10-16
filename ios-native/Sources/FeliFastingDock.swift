@@ -23,16 +23,15 @@ struct FeliFastingDock: View {
                 recentlyCompleted: session == nil && recentFinish)
             let mood = mood(for: stage)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .center, spacing: 10) {
-                    VStack(spacing: -3) {
-                        if !compact {
-                            FeliThoughtBubble(thought: thought(for: stage))
-                                .frame(height: 51)
-                        }
-                        FeliCompanionView(mood: mood, diameter: compact ? 70 : 142)
-                            .id(stage.rawValue)
-                    }
-                    .frame(width: compact ? 75 : 146)
+                HStack(alignment: .center, spacing: 6) {
+                    FeliCharacterStage(
+                        mood: mood,
+                        diameter: compact ? 107 : 178,
+                        thought: thought(for: stage),
+                        showsThought: !compact
+                    )
+                    .id(stage.rawValue)
+                    .frame(width: compact ? 110 : 180)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(compact ? "Feli te acompaña en Ayuno" : stage.headline)
                             .font(.subheadline.bold())
