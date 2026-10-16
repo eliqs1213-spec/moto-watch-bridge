@@ -45,8 +45,8 @@ enum SleepScheduleAdvisor {
                   last.endedAt.timeIntervalSince(first.startedAt) <= 18 * 3600 else { continue }
             // Si hay una pausa muy prolongada entre bloques, podría tratarse de
             // dos descansos independientes. No inferir una rutina de acostarse.
-            let longGap = zip(segments, segments.dropFirst()).contains {
-                $1.startedAt.timeIntervalSince($0.endedAt) > 4 * 3600
+            let longGap = zip(segments, segments.dropFirst()).contains { pair in
+                pair.1.startedAt.timeIntervalSince(pair.0.endedAt) > 4 * 3600
             }
             guard !longGap else { continue }
             let bed = calendar.dateComponents([.hour, .minute], from: first.startedAt)
