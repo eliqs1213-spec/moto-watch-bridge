@@ -303,10 +303,21 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
         let sniffPower = mood == .sniff ? 0.5 + 0.5 * wave(t, 4.0) : sniffCycle
         rig.nose.scale = SCNVector3(Float(1 + sniffPower * 0.15),
                                     Float(1 + sniffPower * 0.10), 1)
-        rig.jaw.position.y = Float(-0.35 - max(0, mouth) * 0.29)
-        rig.jaw.position.z = Float(0.73 + mouth * 0.10)
-        rig.jaw.scale = SCNVector3(1, Float(1 + mouth * 0.83), 1)
-        rig.tongue.isHidden = mouth < 0.18
+        // Sincronización de toda la boca mediante UNA variable de apertura:
+        // el hueco se forma antes de que asome la lengua; la mandíbula
+        // desciende y gira; la lengua acompaña la mandíbula, nunca flota.
+        let opening = min(1, max(0, mouth / 1.6))
+        let tongueExposure = min(1, max(0, (opening - 0.22) / 0.40))
+        rig.mouthCavity.scale.y = Float(0.08 + opening * 2.4)
+        rig.mouthCavity.position.y = Float(-0.36 - opening * 0.07)
+        rig.jaw.position.y = Float(-0.37 - opening * 0.31)
+        rig.jaw.position.z = Float(0.76 + opening * 0.12)
+        rig.jaw.eulerAngles.x = Float(-opening * 0.29)
+        rig.jaw.scale = SCNVector3(1, 1, 1)
+        rig.tongue.isHidden = tongueExposure < 0.08
+        rig.tongue.scale = SCNVector3(1, Float(0.08 + tongueExposure * 1.05), 1)
+        rig.tongue.position.y = Float(-0.04 - tongueExposure * 0.05)
+        rig.tongue.position.z = Float(0.14 + tongueExposure * 0.035)
 
         let close = max(eyeClosing, blink ? 0.94 : 0)
         rig.leftEye.scale.y = Float(max(0.08, 1 - close))

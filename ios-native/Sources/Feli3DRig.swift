@@ -17,6 +17,7 @@ final class Feli3DRig {
     let rightBackLeg = SCNNode()
     let tail = SCNNode()
     let jaw = SCNNode()
+    let mouthCavity = SCNNode()
     let tongue = SCNNode()
     let leftEye = SCNNode()
     let rightEye = SCNNode()
@@ -111,7 +112,7 @@ final class Feli3DRig {
         camera.usesOrthographicProjection = true
         // User video: dog occupied too little of SCNView.
         // Frame dog tightly; widen only for mate, grill and fireworks.
-        camera.orthographicScale = 2.05
+        camera.orthographicScale = 1.74
         camera.zNear = 0.05
         camera.zFar = 60
         cameraNode.camera = camera
@@ -238,20 +239,31 @@ final class Feli3DRig {
         black.name = "soft-black-nose"
         nose.addChildNode(black)
 
-        jaw.name = "jaw-mouth"
-        jaw.position = SCNVector3(0, -0.35, 0.73)
+        // Boca: cavidad fija en el hocico, mandíbula como articulación
+        // independiente y lengua hija de la mandíbula. Un solo parámetro
+        // de apertura animará las tres partes en sincronía.
+        mouthCavity.name = "mouth-cavity"
+        mouthCavity.position = SCNVector3(0, -0.36, 0.80)
+        head.addChildNode(mouthCavity)
+        sphere("dark-inner-mouth", noseBlack,
+               scale: SCNVector3(0.22, 0.15, 0.085),
+               at: SCNVector3(0, 0, 0), parent: mouthCavity)
+        mouthCavity.scale = SCNVector3(1, 0.08, 1)
+
+        jaw.name = "hinged-lower-jaw"
+        jaw.position = SCNVector3(0, -0.37, 0.76)
         head.addChildNode(jaw)
-        sphere("inside-mouth", noseBlack,
-               scale: SCNVector3(0.21, 0.12, 0.08),
-               at: SCNVector3(0, -0.06, 0.05), parent: jaw)
         sphere("cream-lower-jaw", cream,
-               scale: SCNVector3(0.29, 0.10, 0.18),
-               at: SCNVector3(0, -0.14, 0), parent: jaw)
+               scale: SCNVector3(0.30, 0.115, 0.19),
+               at: SCNVector3(0, -0.10, 0), parent: jaw)
+
         tongue.name = "pink-tongue"
+        tongue.position = SCNVector3(0, -0.07, 0.14)
         jaw.addChildNode(tongue)
         sphere("tongue-shape", UIColor(red: 0.94, green: 0.39, blue: 0.43, alpha: 1),
-               scale: SCNVector3(0.105, 0.17, 0.055),
-               at: SCNVector3(0, -0.11, 0.14), parent: tongue)
+               scale: SCNVector3(0.098, 0.16, 0.047),
+               at: SCNVector3(0, -0.04, 0.03), parent: tongue)
+        tongue.isHidden = true
     }
 
     private func makeEar(_ pivot: SCNNode, left: Bool) {
@@ -422,8 +434,8 @@ final class Feli3DRig {
     func configureCamera(for mood: FeliMood) {
         let includeProp = mood == .mate || mood == .grill || mood == .celebrate
         // Scene is larger in portrait while its props stay inside the frame.
-        cameraNode.camera?.orthographicScale = includeProp ? 2.68 : 2.05
-        cameraFocus.position = SCNVector3(includeProp ? 0.18 : -0.12, 1.23, 0)
+        cameraNode.camera?.orthographicScale = includeProp ? 2.32 : 1.74
+        cameraFocus.position = SCNVector3(includeProp ? 0.16 : -0.12, 1.23, 0)
     }
 
     func setAccessories(for mood: FeliMood) {
