@@ -64,6 +64,36 @@ try await MainActor.run {
     try store.mergeSleep(watchID: "watch-a", sessions: [recovered], retrievalComplete: true)
     expect(store.day(otherDay, watchID: "watch-a")?.sleepMinutes == 248,
            "Resync must not duplicate a recovered session")
+    // Regresión confirmada en iPhone: el firmware primero comunica una
+    // sesión parcial 179 min, y más tarde una sesión envolvente total 248 min.
+    // NO son 2 sesiones independientes: guardar 427 min sería incorrecto.
+    let rollingDay = date.addingTimeInterval(-2 * 86400)
+    let rollingStart = rollingDay.addingTimeInterval(-20000)
+    let initial179 = WatchSleepProtocol.Session(
+        startedAt: rollingStart,
+        endedAt: rollingStart.addingTimeInterval(3 * 3600), minutes: 179)
+    let final248 = WatchSleepProtocol.Session(
+        startedAt: rollingStart,
+        endedAt: rollingStart.addingTimeInterval(4 * 3600 + 20 * 60), minutes: 248)
+    try store.mergeSleep(watchID: "watch-a", sessions: [initial179], retrievalComplete: false)
+    expect(store.day(rollingDay, watchID: "watch-a")?.sleepMinutes == 179,
+           "Initial partial sleep should keep 179min")
+    try store.mergeSleep(watchID: "watch-a", sessions: [final248], retrievalComplete: true)
+    expect(store.day(rollingDay, watchID: "watch-a")?.sleepMinutes == 248,
+           "Official 248min rollup must REPLACE overlapping 179min")
+    expect(store.day(rollingDay, watchID: "watch-a")?.sleepSessions?.count == 1,
+           "Superseded 179min sample must not be double-counted")
+    expect(store.day(rollingDay, watchID: "watch-a")?.sleepRetrievalComplete == true,
+           "Completed 248min retrieval should unlock the graph")
+    try store.mergeSleep(watchID: "watch-a", sessions: [initial179], retrievalComplete: false)
+    expect(store.day(rollingDay, watchID: "watch-a")?.sleepMinutes == 248,
+           "Stale shorter retry must not downgrade the new 248min total")
+    expect(store.day(rollingDay, watchID: "watch-a")?.sleepRetrievalComplete == true,
+           "A stale partial retry must not reset a completed retrieval")
+    let stored = store.latest(.sleep, watchID: "watch-a", dates: [rollingDay])
+    expect(stored != nil && Int((stored!.value * 60).rounded()) == 248,
+           "The Health screen must read the persisted 248min, not the old 179min")
+
     try store.mergeCounter(watchID: "watch-b", metric: .steps, value: 50, at: date)
     expect(store.day(date, watchID: "watch-a")?.steps == 2190, "Histories from different watches mixed")
     let reopened = WatchHealthStore(fileURL: file)
@@ -77,7 +107,7 @@ try await MainActor.run {
         try store.mergeReadings(watchID: "watch-a", metric: .oxygen, readings: [WatchHealthReading(id: "invalid", timestamp: date, value: .nan)])
         fatalError("Nonfinite oxygen accepted")
     } catch WatchHealthStore.StoreError.invalidReading { }
-    let overlap = WatchSleepProtocol.Session(startedAt: first.startedAt.addingTimeInterval(60), endedAt: first.endedAt, minutes: 30)
+    let overlap = WatchSleepProtocol.Session(startedAt: first.startedAt.addingTimeInterval(60), endedAt: first.endedAt.addingTimeInterval(600), minutes: 30)
     do { try store.mergeSleep(watchID: "watch-a", sessions: [overlap]); fatalError("Overlapping sleep accepted") }
     catch WatchHealthStore.StoreError.overlappingSleep { }
     expect(store.day(date, watchID: "watch-a")?.sleepMinutes == 257, "Rejected sleep changed persisted data")
