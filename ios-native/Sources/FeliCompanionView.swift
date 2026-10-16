@@ -14,6 +14,7 @@ struct FeliCompanionView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var pettedAt: Date = .distantPast
+    @State private var appearedAt = Date()
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 16.0,
@@ -21,8 +22,11 @@ struct FeliCompanionView: View {
             let seconds = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
             let petAge = context.date.timeIntervalSince(pettedAt)
             let petting = !reduceMotion && petAge >= 0 && petAge < 1.4
+            let greetingAge = context.date.timeIntervalSince(appearedAt)
+            let greeting = !reduceMotion && greetingAge >= 0 && greetingAge < 1.5
+                ? sin(.pi * greetingAge / 1.5) : 0.0
             FeliIllustration(mood: mood, seconds: seconds, petted: petting,
-                             reduceMotion: reduceMotion)
+                             greeting: greeting, reduceMotion: reduceMotion)
                 .frame(width: 160, height: 160)
                 .scaleEffect(diameter / 160)
                 .frame(width: diameter, height: diameter)
@@ -32,6 +36,7 @@ struct FeliCompanionView: View {
                 }
         }
         .frame(width: diameter, height: diameter)
+        .onAppear { appearedAt = Date() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibleDescription + ". Tocá para acariciarlo.")
         .accessibilityAddTraits(.isButton)
@@ -55,6 +60,7 @@ private struct FeliIllustration: View {
     let mood: FeliMood
     let seconds: Double
     let petted: Bool
+    let greeting: Double
     let reduceMotion: Bool
 
     private let fur = Color(red: 0.81, green: 0.52, blue: 0.28)
@@ -98,7 +104,7 @@ private struct FeliIllustration: View {
             torso
             paws
             face
-                .rotationEffect(.degrees((petted ? -8 : glance) + sniff * 5 - stretch * 5),
+                .rotationEffect(.degrees((petted ? -8 : glance) + sniff * 5 - stretch * 5 - greeting * 4),
                                 anchor: .bottom)
                 .offset(y: CGFloat((petted ? -3.0 : 0) + sniff * 4 - stretch * 3))
             moodAccessory
@@ -119,7 +125,7 @@ private struct FeliIllustration: View {
             .overlay(alignment: .top) {
                 Capsule().fill(.white).frame(width: 16, height: 13)
             }
-            .rotationEffect(.degrees(-42 + wag + raisedPaw * 8), anchor: .bottom)
+            .rotationEffect(.degrees(-42 + wag + raisedPaw * 8 + greeting * 11), anchor: .bottom)
             .offset(x: 46, y: 7)
     }
 
@@ -153,9 +159,9 @@ private struct FeliIllustration: View {
                 .offset(x: CGFloat(-28 - stretch * 6), y: CGFloat(61 + stretch * 3))
             Ellipse().fill(.white)
                 .frame(width: 27, height: 18)
-                .rotationEffect(.degrees(-18 * raisedPaw), anchor: .leading)
-                .offset(x: CGFloat(28 + stretch * 6 + raisedPaw * 3),
-                        y: CGFloat(61 - raisedPaw * 16 -
+                .rotationEffect(.degrees(-18 * max(raisedPaw, greeting)), anchor: .leading)
+                .offset(x: CGFloat(28 + stretch * 6 + max(raisedPaw, greeting) * 3),
+                        y: CGFloat(61 - max(raisedPaw, greeting) * 16 -
                                    (mood == .active ? max(0, sin(seconds * 3)) * 1.6 : 0)))
         }
     }
