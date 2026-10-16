@@ -131,20 +131,21 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
             tailSwing = 0
             eyeClosing = 1
         case .active:
-            // Actual four-legged trot: diagonal paws travel in opposite directions.
-            let stride = wave(t, 6.1)
-            leftStep = stride * 0.55 - 0.12
-            rightStep = -stride * 0.55 - 0.12
-            hindLeftStep = -stride * 0.33
-            hindRightStep = stride * 0.33
-            bodyY = abs(stride) * 0.065
-            headY += abs(stride) * 0.025
-            headRoll = wave(t, 3.1) * 0.045
-            mouth = 0.46
+            // Four legs alternate, body follows the stride, ears bounce.
+            let stride = wave(t, 5.7)
+            leftStep = stride * 0.76 - 0.16
+            rightStep = -stride * 0.76 - 0.16
+            hindLeftStep = -stride * 0.54
+            hindRightStep = stride * 0.54
+            bodyY = abs(stride) * 0.115
+            headY += abs(stride) * 0.055
+            headRoll = wave(t, 2.85) * 0.078
+            headYaw = wave(t, 1.35) * 0.11
+            mouth = 0.52
             tailSpeed = 11.0
             tailSwing = 0.42
-            leftEarTilt = stride * 0.14
-            rightEarTilt = -stride * 0.14
+            leftEarTilt = stride * 0.22
+            rightEarTilt = -stride * 0.22
         case .worried:
             // Elevación en la escala del reloj: gesto atento, no "diagnóstico
             // de ansiedad". Cabeza mira reloj/persona, orejas descienden,
@@ -189,33 +190,37 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
             tailSpeed = 6.2
             tailSwing = 0.23
         case .sniff:
-            // Deliberate nose-to-ground gesture, no paw wave.
-            let dip = 0.67 + 0.33 * wave(t, 1.65)
-            headY = 1.53 - 0.36 * dip
-            headPitch = -0.42 * dip
-            bodyY = -0.08 * dip
-            leftEarTilt = 0.18 * dip
-            rightEarTilt = -0.18 * dip
+            // Repeated nose-to-ground sniff: unmistakable head, chest and nose
+            // movement, unlike the little paw motion in the older build.
+            let dip = 0.5 + 0.5 * wave(t, 1.75)
+            headY = 1.53 - 0.57 * dip
+            headPitch = -0.65 * dip
+            headYaw = wave(t, 0.7) * 0.16
+            bodyY = -0.12 * dip
+            bodyPitch = -0.09 * dip
+            leftEarTilt = 0.31 * dip
+            rightEarTilt = -0.30 * dip
             mouth = 0
             tailSpeed = 2.4
         case .stretch:
-            // Two forelegs reaching forward and lowered chest.
-            let stretch = 0.73 + 0.27 * wave(t, 1.1)
-            bodyY = -0.23 * stretch
-            bodyPitch = -0.24 * stretch
-            headY -= 0.28 * stretch
-            headPitch = -0.18
-            leftStep = -0.68 * stretch
-            rightStep = -0.68 * stretch
-            hindLeftStep = 0.22
-            hindRightStep = 0.22
+            // Long bow: both paws move forward while chest/head sink.
+            let stretch = 0.70 + 0.30 * wave(t, 1.05)
+            bodyY = -0.33 * stretch
+            bodyPitch = -0.34 * stretch
+            headY -= 0.42 * stretch
+            headPitch = -0.32 * stretch
+            leftStep = -0.84 * stretch
+            rightStep = -0.84 * stretch
+            hindLeftStep = 0.28
+            hindRightStep = 0.28
             tailSpeed = 2.2
         case .yawn:
-            // Big hinged jaw opening with tongue visible.
-            mouth = 0.85 + 0.14 * wave(t, 1.8)
-            headPitch = 0.17
-            headY += 0.05
-            eyeClosing = 0.86
+            // Visibly open jaw and pink tongue; eyes squint while head tips.
+            let open = 0.5 + 0.5 * wave(t, 1.45)
+            mouth = 0.48 + open * 1.12
+            headPitch = 0.10 + open * 0.19
+            headY += 0.04 + open * 0.07
+            eyeClosing = 0.79 + open * 0.21
             tailSpeed = 0.5
             tailSwing = 0.04
         case .greet:
@@ -269,7 +274,10 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
         rightEarTilt += earReaction * 0.23
 
         // Actual articulated joints; all rotations have physical meaning.
-        rig.dog.eulerAngles.y = Float(wave(t, 0.47) * 0.045)
+        let travelX = mood == .active ? wave(t, 2.85) * 0.15 : 0
+        rig.dog.position.x = Float(-0.22 + travelX)
+        rig.dog.position.y = Float(mood == .active ? abs(wave(t, 5.7)) * 0.035 : 0)
+        rig.dog.eulerAngles.y = Float(wave(t, 0.60) * 0.11)
         rig.dog.eulerAngles.z = Float((mood == .bellyRub ? 0.79 : 0) + bellyReaction * 0.41)
         rig.body.position.y = Float(bodyY)
         rig.body.eulerAngles.x = Float(bodyPitch)
@@ -282,6 +290,9 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
                                              Float(leftEarTilt), Float(-0.09 - leftEarTilt))
         rig.rightEar.eulerAngles = SCNVector3(Float(-wave(t, 1.25) * 0.037),
                                               Float(rightEarTilt), Float(0.09 + rightEarTilt))
+        let forwardReach = mood == .stretch ? (0.70 + 0.30 * wave(t, 1.05)) * 0.32 : 0
+        rig.leftLeg.position.z = Float(0.30 + forwardReach)
+        rig.rightLeg.position.z = Float(0.30 + forwardReach)
         rig.leftLeg.eulerAngles.x = Float(leftStep)
         rig.rightLeg.eulerAngles.x = Float(rightStep)
         rig.leftBackLeg.eulerAngles.x = Float(hindLeftStep)
@@ -289,10 +300,12 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
         rig.tail.eulerAngles = SCNVector3(Float(0.3 + wave(t, tailSpeed) * tailSwing),
                                           Float(wave(t, tailSpeed + 0.3) * tailSwing),
                                           Float(-0.16 + wave(t, tailSpeed) * tailSwing * 0.7))
-        rig.nose.scale = SCNVector3(Float(1 + sniffCycle * 0.07),
-                                   Float(1 + sniffCycle * 0.04), 1)
-        rig.jaw.position.y = Float(-0.35 - max(0, mouth) * 0.16)
-        rig.jaw.scale = SCNVector3(1, Float(1 + mouth * 0.6), 1)
+        let sniffPower = mood == .sniff ? 0.5 + 0.5 * wave(t, 4.0) : sniffCycle
+        rig.nose.scale = SCNVector3(Float(1 + sniffPower * 0.15),
+                                    Float(1 + sniffPower * 0.10), 1)
+        rig.jaw.position.y = Float(-0.35 - max(0, mouth) * 0.29)
+        rig.jaw.position.z = Float(0.73 + mouth * 0.10)
+        rig.jaw.scale = SCNVector3(1, Float(1 + mouth * 0.83), 1)
         rig.tongue.isHidden = mouth < 0.18
 
         let close = max(eyeClosing, blink ? 0.94 : 0)
