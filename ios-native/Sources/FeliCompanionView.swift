@@ -12,10 +12,12 @@ struct FeliCompanionView: View {
     var diameter: CGFloat = 116
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var pettedAt: Date = .distantPast
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 16.0, paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 16.0,
+                                paused: reduceMotion || scenePhase != .active)) { context in
             let seconds = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
             let petAge = context.date.timeIntervalSince(pettedAt)
             let petting = !reduceMotion && petAge >= 0 && petAge < 1.4
