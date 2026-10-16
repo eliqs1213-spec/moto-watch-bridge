@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Prepare a valid ad-hoc-signed container for Sideloadly's Apple-ID re-sign.
+# This is NOT an installable, developer-signed IPA. Sideloadly must replace
+# all ad-hoc signatures and provision both main app and widget extension.
+# Use a *copy*: keep the unmodified unsigned IPA as a control.
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: bash prepare-sideload-ipa.sh MyApp.app output.ipa" >&2
+  exit 2
+fi
+source_app="$1"
+output_ipa="$2"
+if [[ ! -d "$source_app" ]]; then
+  echo "App directory not found: $source_app" >&2
+  exit 2
+fi
+mkdir -p "$(dirname "$output_ipa")"
+root="$(mktemp -d)"
+trap 'rm -rf "$root"' EXIT
+mkdir -p "$root/Payload"
+cp -R "$source_app" "$root/Payload/"
+app="$root/Payload/$(basename "$source_app")"
+
+# Sign executable nested code from deepest level towards the host.
+# Frameworks are code; do not apply app entitlements or embedded profiles.
+while IFS= read -r -d '' item; do
+  echo "ADHOC nested: $item"
+  /usr/bin/codesign --force --sign - --generate-entitlement-der "$item"
+done < <(/usr/bin/find "$app" -depth \( -name '*.framework' -o -name '*.dylib' \) \( -type d -o -type f \) -print0)
+
+plugin_dir="$app/PlugIns"
+if [[ ! -d "$plugin_dir" ]]; then
+  echo "Missing PlugIns: refusing to create package without WidgetKit" >&2
+  exit 1
+fi
+extension_count=0
+while IFS= read -r -d '' appex; do
+  extension_count=$((extension_count + 1))
+  echo "ADHOC extension: $appex"
+  /usr/bin/codesign --force --sign - --generate-entitlement-der "$appex"
+  /usr/bin/codesign --verify --strict --verbose=2 "$appex"
+done < <(/usr/bin/find "$plugin_dir" -mindepth 1 -maxdepth 1 -type d -name '*.appex' -print0)
+if [[ "$extension_count" -ne 1 ]]; then
+  echo "Expected one WidgetKit extension, found $extension_count" >&2
+  exit 1
+fi
+
+echo "ADHOC host: $app"
+/usr/bin/codesign --force --sign - --generate-entitlement-der "$app"
+/usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+
+main_id=$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app/Info.plist")
+widget_id=$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$plugin_dir/MotoBatteryWidgets.appex/Info.plist")
+if [[ "$widget_id" != "$main_id.widgets" ]]; then
+  echo "Widget/app bundle IDs are not related: $main_id <> $widget_id" >&2
+  exit 1
+fi
+echo "IDs validated: $main_id | $widget_id"
+echo "All signatures above are AD-HOC. A real install needs Apple-ID re-signing."
+(cd "$root" && /usr/bin/zip -qry "$output_ipa" Payload)
+if [[ ! -s "$output_ipa" ]]; then
+  echo "IPA archive was not created" >&2
+  exit 1
+fi
+echo "Created: $output_ipa"
