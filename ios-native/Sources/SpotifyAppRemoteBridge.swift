@@ -29,6 +29,60 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     private var sessionManager: SPTSessionManager?
     private var appRemote: SPTAppRemote?
     private var authorizing = false
+    private var lastConnectAttemptAt: Date?
+    private var connectionAttemptGeneration = 0
+
+    // El estado «Reconectando» no debe permanecer indefinidamente si
+    // SPTAppRemote no llama a didFail/didEstablish. El timeout solo corrige
+    // el estado visual, nunca envía una orden musical ni relanza Spotify.
+    private func requestConnection(reason: String, force: Bool = false) {
+        guard enabled, let remote = appRemote else { return }
+        let now = Date()
+        guard SpotifySDKReconnectPolicy.shouldConnect(
+            enabled: enabled,
+            inForeground: UIApplication.shared.applicationState == .active,
+            connected: remote.isConnected || isConnected,
+            lastAttempt: lastConnectAttemptAt,
+            now: now,
+            force: force
+        ) else { return }
+        guard remote.connectionParameters.accessToken != nil else {
+            status = "SDK sin token · tocá Activar SDK Spotify"
+            return
+        }
+        lastConnectAttemptAt = now
+        connectionAttemptGeneration &+= 1
+        let attempt = connectionAttemptGeneration
+        status = "SDK reconectando con Spotify..."
+        WatchBLEManager.shared.record("SPOTIFY-SDK",
+            "Intento de conexión App Remote (\(reason)), intento=\(attempt); Web API continúa independiente")
+        remote.connect()
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + SpotifySDKReconnectPolicy.responseTimeoutSeconds
+        ) { [weak self] in
+            guard let self = self, self.enabled,
+                  self.connectionAttemptGeneration == attempt,
+                  !self.isConnected, !remote.isConnected,
+                  UIApplication.shared.applicationState == .active else { return }
+            self.status = "SDK no respondió en 12 s · Web API sigue disponible"
+            self.lastNativeEvent = "App Remote: connect() sin callback en 12 s"
+            WatchBLEManager.shared.record("SPOTIFY-SDK",
+                "Reconexión sin respuesta tras 12 s; sin nuevas tentativas en bucle")
+        }
+    }
+
+    func retryConnection() {
+        guard enabled else {
+            status = "Activá SDK Spotify primero"
+            return
+        }
+        if sessionManager?.session?.isExpired == true {
+            status = "SDK: renovando autorización guardada"
+            sessionManager?.renewSession()
+            return
+        }
+        requestConnection(reason: "reintento manual", force: true)
+    }
 
     // Distinguir entre SDK no disponible y comando enviado con resultado incierto.
     // Un salto NEXT/PREV no se repite por Web si el SDK ya lo intentó.
@@ -104,7 +158,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         } else {
             remote.connectionParameters.accessToken = session.accessToken
             status = "SDK: sesión recuperada · conectando"
-            if UIApplication.shared.applicationState == .active { remote.connect() }
+            requestConnection(reason: "sesión restaurada")
         }
         return true
     }
@@ -131,6 +185,8 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         UserDefaults.standard.set(clientID, forKey: "motowatch.spotify.clientid")
         UserDefaults.standard.set(true, forKey: Self.enabledKey)
         authorizing = true
+        lastConnectAttemptAt = nil
+        connectionAttemptGeneration &+= 1
         status = "Esperando autorización del SDK de Spotify..."
         // Solicita app-remote-control, sin iniciar música artificialmente.
         sessionManager?.initiateSession(with: [.appRemoteControl], options: .clientOnly, campaign: nil)
@@ -144,6 +200,8 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     func disable() {
         authorizing = false
         enabled = false
+        connectionAttemptGeneration &+= 1
+        lastConnectAttemptAt = nil
         appRemote?.disconnect()
         appRemote = nil
         sessionManager = nil
@@ -160,6 +218,8 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     func applicationDidEnterBackground() {
         // Recomendación del SDK oficial: cerrar su sesión cuando pasamos a fondo.
         // No afecta el CoreBluetooth que mantiene conectado al reloj.
+        connectionAttemptGeneration &+= 1
+        lastConnectAttemptAt = nil
         appRemote?.disconnect()
         isConnected = false
         metadataEventsActive = false
@@ -184,8 +244,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
             status = "SDK sin token · tocá Activar SDK Spotify"
             return
         }
-        status = "SDK reconectando con Spotify..."
-        remote.connect()
+        requestConnection(reason: "retorno al primer plano")
     }
 
     // MARK: SPTSessionManagerDelegate
@@ -196,14 +255,14 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         Self.saveSession(session)
         remote.connectionParameters.accessToken = session.accessToken
         status = "SDK autorizado · conectando con Spotify"
-        remote.connect()
+        requestConnection(reason: "OAuth completado", force: true)
     }
 
     func sessionManager(manager: SPTSessionManager, didRenew session: SPTSession) {
         guard enabled, let remote = appRemote else { return }
         Self.saveSession(session)
         remote.connectionParameters.accessToken = session.accessToken
-        if UIApplication.shared.applicationState == .active { remote.connect() }
+        requestConnection(reason: "sesión renovada", force: true)
     }
 
     func sessionManager(manager: SPTSessionManager, didFailWith error: Error) {
@@ -215,6 +274,9 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
 
     func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         isConnected = true
+        lastConnectAttemptAt = nil
+        connectionAttemptGeneration &+= 1
+        WatchBLEManager.shared.record("SPOTIFY-SDK", "App Remote confirmó conexión")
         metadataEventsActive = false
         hasNativeMetadata = false
         lastNativeReceivedAt = nil
@@ -244,7 +306,10 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         metadataEventsActive = false
         hasNativeMetadata = false
         lastNativeReceivedAt = nil
-        status = "SDK sin conexión: \(error?.localizedDescription ?? "Spotify no disponible")"
+        connectionAttemptGeneration &+= 1
+        status = "SDK sin conexión: \(error?.localizedDescription ?? "Spotify no disponible") · Web API disponible"
+        WatchBLEManager.shared.record("SPOTIFY-SDK",
+            "Intento App Remote fallido: \(error?.localizedDescription ?? "Spotify no disponible")")
     }
 
     func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
@@ -252,7 +317,10 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         metadataEventsActive = false
         hasNativeMetadata = false
         lastNativeReceivedAt = nil
-        status = "SDK desconectado · controles Web API disponibles"
+        connectionAttemptGeneration &+= 1
+        status = enabled && UIApplication.shared.applicationState == .background
+            ? "SDK en reposo · Web API activa en segundo plano"
+            : "SDK desconectado · controles Web API disponibles"
     }
 
     // Comandos oficiales del Spotify iOS SDK. Deben invocarse en el hilo principal.
