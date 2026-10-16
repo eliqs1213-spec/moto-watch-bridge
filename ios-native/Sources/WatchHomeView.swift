@@ -4,6 +4,7 @@ import UIKit
 /// Portada independiente de la depuración avanzada. Los estados vienen de los
 /// ObservableObject existentes y no se simulan lecturas de batería ni de música.
 struct WatchHomeView: View {
+    let isSelected: Bool
     @EnvironmentObject private var watch: WatchBLEManager
     @EnvironmentObject private var spotify: SpotifyBridge
     @StateObject private var remote = SpotifyAppRemoteBridge.shared
@@ -52,7 +53,7 @@ struct WatchHomeView: View {
         // únicamente en primer plano; iOS puede suspender la app bloqueada.
         .task {
             while !Task.isCancelled {
-                if UIApplication.shared.applicationState == .active && spotify.controlEnabled {
+                if isSelected && UIApplication.shared.applicationState == .active && spotify.controlEnabled {
                     if remote.isConnected {
                         remote.requestCurrentPlayerState(fallbackToWeb: true)
                         if !remote.nativeMetadataIsFresh && watch.isConnected {
