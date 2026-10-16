@@ -47,7 +47,7 @@ enum SmartHealthChartAnalytics {
             guard let day = rows[key] else { return nil }
             // Las sesiones incompletas permanecen en el histórico, pero no
             // entran en gráficos de promedio/regularidad como noches completas.
-            if metric == .sleep && day.sleepRetrievalComplete == false { return nil }
+            if metric == .sleep && day.sleepRetrievalComplete != true { return nil }
             guard let value = day.value(for: metric), value.isFinite else { return nil }
             return SmartDailyPoint(date: calendar.startOfDay(for: date), value: value)
         }
