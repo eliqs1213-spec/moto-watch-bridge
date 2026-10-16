@@ -30,7 +30,23 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     private var appRemote: SPTAppRemote?
     private var authorizing = false
     private var lastConnectAttemptAt: Date?
+    private var lastSessionRenewalAt: Date?
     private var connectionAttemptGeneration = 0
+
+    private func renewExpiredSessionIfNeeded(reason: String) -> Bool {
+        guard let manager = sessionManager, manager.session?.isExpired == true else { return false }
+        // Evitar dos renewSession() cuando SwiftUI y AppDelegate notifican .active.
+        let now = Date()
+        if let last = lastSessionRenewalAt,
+           now.timeIntervalSince(last) < SpotifySDKReconnectPolicy.responseTimeoutSeconds {
+            return true
+        }
+        lastSessionRenewalAt = now
+        status = "SDK: renovando sesión guardada"
+        WatchBLEManager.shared.record("SPOTIFY-SDK", "Renovación de token App Remote (\(reason))")
+        manager.renewSession()
+        return true
+    }
 
     // El estado «Reconectando» no debe permanecer indefinidamente si
     // SPTAppRemote no llama a didFail/didEstablish. El timeout solo corrige
@@ -76,11 +92,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
             status = "Activá SDK Spotify primero"
             return
         }
-        if sessionManager?.session?.isExpired == true {
-            status = "SDK: renovando autorización guardada"
-            sessionManager?.renewSession()
-            return
-        }
+        if renewExpiredSessionIfNeeded(reason: "reintento manual") { return }
         requestConnection(reason: "reintento manual", force: true)
     }
 
@@ -236,6 +248,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
             status = "SDK sin sesión · tocá Activar SDK Spotify"
             return
         }
+        if renewExpiredSessionIfNeeded(reason: "retorno al primer plano") { return }
         if remote.isConnected {
             requestCurrentPlayerState(fallbackToWeb: true)
             return
@@ -253,6 +266,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         authorizing = false
         guard enabled, let remote = appRemote else { return }
         Self.saveSession(session)
+        lastSessionRenewalAt = nil
         remote.connectionParameters.accessToken = session.accessToken
         status = "SDK autorizado · conectando con Spotify"
         requestConnection(reason: "OAuth completado", force: true)
@@ -261,13 +275,15 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     func sessionManager(manager: SPTSessionManager, didRenew session: SPTSession) {
         guard enabled, let remote = appRemote else { return }
         Self.saveSession(session)
+        lastSessionRenewalAt = nil
         remote.connectionParameters.accessToken = session.accessToken
         requestConnection(reason: "sesión renovada", force: true)
     }
 
     func sessionManager(manager: SPTSessionManager, didFailWith error: Error) {
         authorizing = false
-        status = "Autorización SDK fallida: \(error.localizedDescription)"
+        lastSessionRenewalAt = nil
+        status = "Autorización SDK fallida: \(error.localizedDescription) · Web API disponible"
     }
 
     // MARK: SPTAppRemoteDelegate
