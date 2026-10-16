@@ -51,7 +51,7 @@ enum WidgetExtensionDiagnostics {
             "Versión: \(bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (build \(bundle.infoDictionary?["CFBundleVersion"] as? String ?? "?"))",
             "Directorio PlugIns: \(dirExists ? "presente" : "ausente")",
             "Cantidad de extensiones .appex: \(appExtensions.count)",
-            "Extensiones: \(appExtensions.map(\\.lastPathComponent).joined(separator: ", ").isEmpty ? "(ninguna)" : appExtensions.map(\\.lastPathComponent).joined(separator: ", "))",
+            "Extensiones: \(appExtensions.map { $0.lastPathComponent }.joined(separator: ", ").isEmpty ? "(ninguna)" : appExtensions.map { $0.lastPathComponent }.joined(separator: ", "))",
             "MotoBatteryWidgets.appex: \(widgetURL == nil ? "NO" : "SÍ")",
             "ID de extensión: \(widgetID)",
             "Nombre de extensión: \(extensionName)",
