@@ -26,6 +26,10 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
         rig.setAccessories(for: newMood)
     }
 
+    func restartGreeting() {
+        startedAt = nil
+    }
+
     func touch(_ part: String) {
         touchedPart = part
         touchAt = lastTime
