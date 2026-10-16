@@ -95,6 +95,21 @@ jobs:
           /usr/bin/zip -qry "$GITHUB_WORKSPACE/MotoWatchNativeProbe-unsigned.ipa" Payload
           ls -lh "$GITHUB_WORKSPACE/MotoWatchNativeProbe-unsigned.ipa"
 
+      - name: Crear IPA con firmas ad-hoc verificadas de app y extensión
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          bash ios-native/scripts/prepare-sideload-ipa.sh "$APP" "$GITHUB_WORKSPACE/MotoWatchNativeProbe-sideload-prepared.ipa"
+          unzip -Z1 "$GITHUB_WORKSPACE/MotoWatchNativeProbe-sideload-prepared.ipa" | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/MotoBatteryWidgets'
+          ls -lh "$GITHUB_WORKSPACE/MotoWatchNativeProbe-sideload-prepared.ipa"
+
+      - name: Publicar IPA preparado para ser re-firmado con Sideloadly
+        uses: actions/upload-artifact@v4
+        with:
+          name: MotoWatchNativeProbe-sideload-prepared
+          path: MotoWatchNativeProbe-sideload-prepared.ipa
+          retention-days: 14
+
       - name: Verificar extensión WidgetKit empaquetada dentro del IPA
         run: |
           set -euo pipefail
