@@ -17,12 +17,12 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         WatchBLEManager.shared.record("SISTEMA", "iPhone: aplicación en segundo plano")
         WatchBLEManager.shared.pauseAuxiliaryWork()
         SpotifyAppRemoteBridge.shared.applicationDidEnterBackground()
-        MusicBackgroundExperiment.shared.didEnterBackground()
+        MusicBackgroundExperiment.shared.didEnterBackground(source: "UIApplicationDelegate")
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
         WatchBLEManager.shared.record("SISTEMA", "iPhone: aplicación vuelve al primer plano")
-        MusicBackgroundExperiment.shared.willEnterForeground()
+        MusicBackgroundExperiment.shared.willEnterForeground(source: "UIApplicationDelegate")
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
@@ -34,6 +34,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct MotoWatchBridgeApp: App {
     @UIApplicationDelegateAdaptor(MotoAppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var appScenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -45,6 +46,24 @@ struct MotoWatchBridgeApp: App {
                 NotificationsView()
                     .tabItem { Label("Notificaciones", systemImage: "bell.badge") }
             }
+                // App con ciclo SwiftUI: algunos estados de escena NO pasan por
+                // UIApplicationDelegate. Observar acá, en la raíz, incluso si
+                // el usuario navega a Salud o Notificaciones.
+                .onChange(of: appScenePhase) { phase in
+                    switch phase {
+                    case .background:
+                        WatchBLEManager.shared.record("BG-LIFECYCLE", "ScenePhase raíz: background")
+                        MusicBackgroundExperiment.shared.didEnterBackground(source: "SwiftUI scenePhase")
+                        WatchBLEManager.shared.flushLog()
+                    case .inactive:
+                        WatchBLEManager.shared.record("BG-LIFECYCLE", "ScenePhase raíz: inactive")
+                    case .active:
+                        WatchBLEManager.shared.record("BG-LIFECYCLE", "ScenePhase raíz: active")
+                        MusicBackgroundExperiment.shared.willEnterForeground(source: "SwiftUI scenePhase")
+                    @unknown default:
+                        break
+                    }
+                }
                 .onOpenURL { url in
                     SpotifyAppRemoteBridge.shared.handleOpenURL(url)
                 }
