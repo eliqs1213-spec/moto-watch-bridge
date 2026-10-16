@@ -411,13 +411,16 @@ struct ContentView: View {
                                 }.buttonStyle(.bordered)
                                 Button("Desactivar SDK") { spotifyRemote.disable() }
                                     .buttonStyle(.bordered)
+                                Button("Reintentar SDK") { spotifyRemote.retryConnection() }
+                                    .buttonStyle(.bordered)
+                                    .disabled(!spotifyRemote.enabled)
                             }
                             statusRow("Spotify SDK", spotifyRemote.status)
                             statusRow("SDK conectado", spotifyRemote.isConnected ? "Sí" : "No")
                             statusRow("Eventos del SDK", spotifyRemote.metadataEventsActive ? "Suscripto" : "Sin suscripción")
                             statusRow("Último dato nativo", spotifyRemote.lastNativeEvent)
                             statusRow("Metadatos SDK vigentes", spotifyRemote.nativeMetadataIsFresh ? "Sí" : "No · respaldo Web API")
-                            Text("Si aparece Web API con iWatch abierta, mirá estas tres líneas. SDK conectado: No indica un problema de sesión, no del reloj. Para autorizar, tocá Activar SDK Spotify una vez con Spotify instalado.")
+                            Text("Si el SDK queda en reconectando, esperá hasta 12 s. La Web API sigue funcionando y no hace falta desvincularla. Para reintentar, dejá Spotify abierto reproduciendo, regresá a iWatch y tocá Reintentar SDK una sola vez.")
                                 .font(.caption).foregroundStyle(.secondary)
                             HStack {
                                 Button("Consultar Spotify") {
