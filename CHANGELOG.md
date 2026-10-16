@@ -2,6 +2,12 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.28 · build 868 (candidata)
+
+- Orejas de Feli corregidas: ahora se dibujan delante de la cabeza y a los lados, con forma caída larga de beagle, detalle interno y articulación independiente; no deberían quedar ocultas tras el hocico.
+- Gestos y disparadores conservados: estrés reciente alto/bajo, sueño o actividad semanales cuando hay datos, estados por métrica; respiración, olfateo, estiramiento, patita, bostezo y caricias. «Mate», «asado» y «celebrar» no tienen activadores automáticos basados en lecturas.
+- Pendiente de inspección visual en iPhone; la compilación CI solo valida código, no el aspecto. El oxígeno y sueño multisesión permanecen pendientes de diagnóstico físico.
+
 ## 0.8.4.27 · build 867 (candidata, prueba pendiente)
 
 - Feli en Salud: animación viva sin rebote — respiración, parpadeos, orejas, cola, mirada, olfateo, estiramiento, pata levantada y bostezos en un ciclo de gestos suaves; acariciarlo con un toque acelera la cola y mueve la cabeza. Respeta «Reducir movimiento» y pausa la animación en segundo plano.

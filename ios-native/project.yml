@@ -35,8 +35,8 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: iWatch
-        CFBundleShortVersionString: '0.8.4.27'
-        CFBundleVersion: '867'
+        CFBundleShortVersionString: '0.8.4.28'
+        CFBundleVersion: '868'
         NSBluetoothAlwaysUsageDescription: 'iWatch se conecta a Moto Watch Fit para controlar Spotify, consultar batería y localizar el teléfono.'
         CFBundleURLTypes:
           - CFBundleURLName: org.motowatchbridge.spotify-auth
@@ -69,8 +69,8 @@ targets:
       path: BatteryWidgets/Info.plist
       properties:
         CFBundleDisplayName: iWatch Battery
-        CFBundleShortVersionString: '0.8.4.27'
-        CFBundleVersion: '867'
+        CFBundleShortVersionString: '0.8.4.28'
+        CFBundleVersion: '868'
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
