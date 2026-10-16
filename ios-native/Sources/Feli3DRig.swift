@@ -369,7 +369,7 @@ final class Feli3DRig {
         scene.rootNode.addChildNode(butterfly)
         let wingPink = UIColor(red: 1.00, green: 0.63, blue: 0.25, alpha: 1)
         let wingOrange = UIColor(red: 0.95, green: 0.43, blue: 0.11, alpha: 1)
-        for side: Float in [-1, 1] {
+        for side in [Float(-1), Float(1)] {
             let wing = sphere("butterfly-wing", side == -1 ? wingPink : wingOrange,
                               scale: SCNVector3(0.15, 0.21, 0.033),
                               at: SCNVector3(side * 0.13, 0.06, 0), parent: butterfly)
