@@ -36,7 +36,7 @@ enum SleepScheduleAdvisor {
                     $0.endedAt <= now && $0.endedAt >= cutoff &&
                     $0.minutes >= 10 && $0.minutes <= 720 &&
                     $0.endedAt > $0.startedAt &&
-                    (4...12).contains(calendar.component(.hour, from: $0.endedAt))
+                    (0...12).contains(calendar.component(.hour, from: $0.endedAt))
                 }
                 .sorted { $0.startedAt < $1.startedAt }
             guard let first = segments.first, let last = segments.last else { continue }
