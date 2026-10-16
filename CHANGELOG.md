@@ -2,6 +2,16 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.31 · build 871 (candidata)
+
+- El nuevo Feli es un personaje vectorial animado en SwiftUI, NO una imagen estática ni un GIF: pelaje limón y blanco, franja blanca, arnés naranja, orejas largas caídas y piezas animadas independientes (respiración, parpadeos, nariz/olfateo, inclinación, orejas, cola, pata, estiramiento y bostezo). El toque en cabeza, orejas o pancita desencadena gestos y corazones.
+- **Salud**: conserva lectura más reciente, histórico y promedio por día (868–869); solo se anima según datos efectivamente almacenados, sin conclusiones clínicas.
+- **Ayuno**: Feli acompaña en dock minimizable durante el temporizador y nunca tapa el cronómetro. Al iniciar toma mate feliz; luego descansa, curiosea, imagina un **vacío sobre la parrilla** con brasas animadas, mira el reloj y festeja al alcanzar el objetivo o después de guardar un corte real que cumplió el objetivo.
+- Las etapas de Ayuno se activan por porcentaje transcurrido, no por supuestas sensaciones físicas de hambre; muestra frases simbólicas. Completar el objetivo NO corta el ayuno automáticamente. Reduce Motion pausa las animaciones; fuera de la app también se pausan.
+- Galería interactiva en Ayuno («Ver todas las animaciones de Feli»): permite elegir las 8 escenas reales y tocar cabeza, orejas o pancita sin falsear sensores ni modificar el historial del ayuno.
+- CI valida estados de Ayuno y el pipeline iOS; la apariencia, la escala y la firma en Sideloadly requieren prueba en iPhone.
+- Mantiene oxígeno y el guardado de sueño BLE 248 minutos de build 870.
+
 ## 0.8.4.30 · build 870 (candidata)
 
 - Corrección basada en datos reales del Moto Watch, **16/10/2026**: el diagnóstico 31/09 entrega una sesión de **248 min (4 h 08)**; Salud conserva un registro antiguo de **179 min (2 h 59)**.
