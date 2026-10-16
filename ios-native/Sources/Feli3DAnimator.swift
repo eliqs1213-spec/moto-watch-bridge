@@ -298,6 +298,12 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
             flame.scale.y = Float(flicker)
             flame.opacity = CGFloat(0.64 + flicker * 0.34)
         }
+        // Independent 3D butterfly in calm mode and an analog hand in attentive mode.
+        rig.butterfly.position.x = Float(0.98 + wave(t, 1.15) * 0.14)
+        rig.butterfly.position.y = Float(1.95 + wave(t, 2.2) * 0.13)
+        rig.butterfly.eulerAngles.y = Float(wave(t, 7.8) * 0.47)
+        rig.clockHand.eulerAngles.z = Float(-t * 0.45)
+        rig.littleClock.eulerAngles.z = Float(wave(t, 0.85) * 0.05)
         rig.sparkle.eulerAngles.z = Float(wave(t, 1.9) * 0.16)
         let sparkleSize = Float(0.85 + 0.15 * abs(wave(t, 2.5)))
         rig.sparkle.scale = SCNVector3(sparkleSize, sparkleSize, sparkleSize)
