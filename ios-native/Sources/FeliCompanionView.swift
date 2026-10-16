@@ -102,6 +102,13 @@ private struct FeliIllustration: View {
                                 anchor: .bottom)
                 .offset(y: CGFloat((petted ? -3.0 : 0) + sniff * 4 - stretch * 3))
             moodAccessory
+            if petted {
+                Text("♥")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.pink)
+                    .offset(x: 48, y: -64)
+                    .accessibilityHidden(true)
+            }
         }
         .frame(width: 160, height: 160)
     }
