@@ -36,16 +36,21 @@ struct FeliAnimationGallery: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 15) {
-                    Text("Modelo 3D de Feli. Elegí cada movimiento: olfateo, bostezo, estiramiento, carrera y orejas son animaciones distintas. También podés tocar el personaje.")
+                    Text("Mirá a Feli de cerca: cada escena mueve distintas partes de su cuerpo. Tocá su cabeza, orejas o pancita para acariciarlo.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    VStack(spacing: 9) {
-                        FeliThoughtBubble(thought: FeliThoughtBubble.thought(for: selected))
-                            .padding(.bottom, -12)
-                        FeliCompanionView(mood: selected, diameter: 235)
+                    VStack(spacing: 8) {
+                        GeometryReader { geometry in
+                            let size = min(CGFloat(310), geometry.size.width)
+                            FeliCharacterStage(
+                                mood: selected,
+                                diameter: size,
+                                thought: FeliThoughtBubble.thought(for: selected)
+                            )
                             .id(selected)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 245)
+                        }
+                        .frame(height: 310)
                         if let row = scenes.first(where: { $0.mood == selected }) {
                             Text(row.label).font(.title3.bold())
                             Text(row.detail).font(.subheadline)

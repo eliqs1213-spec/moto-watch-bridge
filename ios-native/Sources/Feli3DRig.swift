@@ -27,6 +27,8 @@ final class Feli3DRig {
     let butterfly = SCNNode()
     let littleClock = SCNNode()
     let clockHand = SCNNode()
+    private let cameraNode = SCNNode()
+    private let cameraFocus = SCNNode()
     var steam: [SCNNode] = []
     var flames: [SCNNode] = []
 
@@ -105,18 +107,18 @@ final class Feli3DRig {
     }
 
     private func buildLightsAndCamera() {
-        let cameraNode = SCNNode()
         let camera = SCNCamera()
         camera.usesOrthographicProjection = true
-        camera.orthographicScale = 3.35
+        // User video: dog occupied too little of SCNView.
+        // Frame dog tightly; widen only for mate, grill and fireworks.
+        camera.orthographicScale = 2.05
         camera.zNear = 0.05
         camera.zFar = 60
         cameraNode.camera = camera
         cameraNode.position = SCNVector3(0.13, 1.23, 7.4)
-        let target = SCNNode()
-        target.position = SCNVector3(0, 1.18, 0)
-        scene.rootNode.addChildNode(target)
-        cameraNode.constraints = [SCNLookAtConstraint(target: target)]
+        cameraFocus.position = SCNVector3(-0.12, 1.23, 0)
+        scene.rootNode.addChildNode(cameraFocus)
+        cameraNode.constraints = [SCNLookAtConstraint(target: cameraFocus)]
         scene.rootNode.addChildNode(cameraNode)
 
         let fill = SCNNode()
@@ -417,7 +419,15 @@ final class Feli3DRig {
         littleClock.addChildNode(clockHand)
     }
 
+    func configureCamera(for mood: FeliMood) {
+        let includeProp = mood == .mate || mood == .grill || mood == .celebrate
+        // Scene is larger in portrait while its props stay inside the frame.
+        cameraNode.camera?.orthographicScale = includeProp ? 2.68 : 2.05
+        cameraFocus.position = SCNVector3(includeProp ? 0.18 : -0.12, 1.23, 0)
+    }
+
     func setAccessories(for mood: FeliMood) {
+        configureCamera(for: mood)
         mate.isHidden = mood != .mate
         grill.isHidden = mood != .grill && mood != .celebrate
         sparkle.isHidden = mood != .celebrate

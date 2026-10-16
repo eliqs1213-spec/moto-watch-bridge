@@ -2,6 +2,16 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.34 · build 874 (candidata — evaluación visual pendiente)
+
+- Ajustes directamente basados en el video real de iWatch 873 (46 segundos): Feli aparece minúsculo dentro de una galería con mucho espacio vacío, y el globo de pensamiento queda lejos de su cabeza; en Salud Feli también se ve diminuto en modo compacto.
+- Cámara 3D más próxima al beagle (escala ortográfica 2.05) y encuadre más ancho (2.68) en escenas con mate, vacío y festejos para no recortar los accesorios.
+- Galería con personaje 3D en escena responsiva de hasta 310 puntos; Salud y Ayuno muestran Feli a 178 puntos expandido y 107 compacto. No se sobreponen a las tarjetas: continúan dentro de Safe Area.
+- Nueva vista FeliCharacterStage: sitúa el globo directamente en la misma escena al lado de la cabeza, en lugar de sumarlo como un renglón independiente; escala la burbuja cuando la ventana es pequeña y no intercepta los toques para acariciar.
+- Acciones tridimensionales más expresivas: olfato mueve cabeza y hocico a mayor distancia y abre/cierra la nariz; bostezo abre la mandíbula y muestra lengua, estiramiento adelanta ambas patas y baja el pecho; la actividad alterna las cuatro patas, el torso se balancea y avanza lateralmente de forma sutil.
+- Mantiene el diseño limón y blanco, escenas de mate/asado, respuestas de estrés, lecturas Bluetooth, oxígeno y sueño de las anteriores versiones.
+- CI confirma la compilación del código; la calidad visual y fidelidad al diseño elegido solo se pueden valorar reproduciendo la escena en el iPhone.
+
 ## 0.8.4.33 · build 873 (candidata)
 
 - Feli 3D más grande en Salud y Ayuno (de 107/114 a 143/142 puntos) y con cámara más cercana. Las superficies esféricas pasan a una malla con 56–88 segmentos para suavizar facetas visibles; cápsulas y cilindros tienen más segmentos y las orejas se redondean con chaflán. Nariz suavizada.
