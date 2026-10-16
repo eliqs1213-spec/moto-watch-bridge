@@ -2,16 +2,17 @@
 
 App nativa de iPhone para conectar un **Moto Watch Fit**: controles de Spotify, avisos mediante Atajos, batería, búsqueda del teléfono e histórico de salud del reloj.
 
-**Última versión de la app: 0.8.4.5 (build 845).** Cierre de trabajo: 15 de octubre de 2026, Argentina. El código de este cierre incluye todas las mejoras; `main` todavía no contiene los PR de desarrollo apilados. Ver [estado de ramas y validación](docs/ESTADO_ACTUAL.md).
+**Versión candidata reciente: 0.8.4.25 (build 865)** en `feature/home-dashboard-stable-0865` ([PR #25](https://github.com/eliqs1213-spec/moto-watch-bridge/pull/25)). Todavía no está integrada a `main` ni verificada en un iPhone.
 
 ## Empezar
 
-- [Última compilación verificada](https://github.com/eliqs1213-spec/moto-watch-bridge/actions/runs/38676992260): descargar el artefacto **MotoWatchNativeProbe-unsigned**, descomprimirlo y firmar/instalar el IPA.
+- [Compilaciones de GitHub Actions](https://github.com/eliqs1213-spec/moto-watch-bridge/actions): elegir la ejecución verde de la rama 865, descargar **MotoWatchNativeProbe-unsigned**, descomprimirlo, firmar e instalar el IPA.
 - [Compilar e instalar](docs/COMPILAR_E_INSTALAR.md).
 - [Estado actual y funciones](docs/ESTADO_ACTUAL.md).
 - [Arquitectura y protocolo](docs/ARQUITECTURA.md).
 - [Pendientes para la próxima sesión](docs/PENDIENTES.md).
 - [Cambios de versión](CHANGELOG.md).
+- [Problemas conocidos: WidgetKit, Sideloadly y Spotify](docs/PROBLEMAS_CONOCIDOS.md).
 
 Los artefactos de Actions caducan a los 14 días según el workflow. Si el enlace ya no permite descargar, generar otra compilación desde la rama que contiene los cambios. Un IPA descargado de Actions está sin firmar.
 
@@ -19,7 +20,10 @@ Los artefactos de Actions caducan a los 14 días según el workflow. Si el enlac
 
 | Área | Comportamiento actual |
 | --- | --- |
-| Salud | Pasos, ritmo cardíaco, oxígeno, estrés, calorías activas y sueño; solo Moto Watch, sin Apple Salud. |
+| Inicio | Reloj ilustrativo con hora actual, batería Motorola real, estados BLE/Spotify, acceso al SDK y guía de mediciones. El tema instalado no se lee todavía. |
+| Salud | Pasos, pulso, oxígeno A, estrés, calorías activas y sueño del reloj. Feli chibi animado aparece solo aquí. |
+| Estadísticas | Observaciones por métrica con cobertura de datos y recomendaciones prudentes, sin diagnósticos. |
+| Ayuno | Temporizador editable, sugerencias de horario en función de 3+ noches, recordatorios locales opt-in e inicio/corte real guardados. |
 | Histórico | Portada de hoy, último valor con fecha de medición y actualización; detalle por día, semana o mes. Guardado local en el iPhone. |
 | Actualización | Botón manual y consultas automáticas mientras Salud esté visible y la app activa. |
 | Spotify | SDK prioritario, Web API de respaldo y funcionamiento restaurado al anterior a la optimización de ahorro. |
