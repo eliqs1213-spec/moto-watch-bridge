@@ -183,19 +183,75 @@ final class WatchHealthStore: ObservableObject {
         }
     }
     func mergeSleep(watchID: String, sessions: [WatchSleepProtocol.Session], retrievalComplete: Bool? = nil) throws {
-        guard sessions.allSatisfy({ $0.minutes.isFinite && $0.minutes > 0 && $0.minutes <= 1440 && $0.startedAt < $0.endedAt }) else { throw StoreError.invalidReading }
+        guard sessions.allSatisfy({
+            $0.minutes.isFinite && $0.minutes > 0 && $0.minutes <= 1440 &&
+            $0.startedAt < $0.endedAt
+        }) else { throw StoreError.invalidReading }
         try mutate(keys: Set(sessions.map { Self.key($0.endedAt) }), watchID: watchID, metric: .sleep) { day, key in
-            var indexed = Dictionary((day.sleepSessions ?? []).map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-            for session in sessions where Self.key(session.endedAt) == key {
-                indexed[session.id] = StoredSleepSession(id: session.id, startedAt: session.startedAt, endedAt: session.endedAt, minutes: session.minutes)
+            var indexed = Dictionary(
+                (day.sleepSessions ?? []).map { ($0.id, $0) },
+                uniquingKeysWith: { _, latest in latest })
+            var acceptedNewInformation = false
+            let incoming = sessions.filter { Self.key($0.endedAt) == key }
+                .sorted { $0.startedAt < $1.startedAt }
+
+            for session in incoming {
+                let row = StoredSleepSession(id: session.id, startedAt: session.startedAt,
+                                             endedAt: session.endedAt, minutes: session.minutes)
+                let overlapping = indexed.values.filter {
+                    $0.startedAt < row.endedAt && row.startedAt < $0.endedAt
+                }
+                if overlapping.isEmpty {
+                    indexed[row.id] = row
+                    acceptedNewInformation = true
+                    continue
+                }
+
+                // Motorola puede devolver primero 2h59 y, al terminar otro
+                // bloque, actualizar el MISMO descanso a 4h08 (envolvente).
+                // El registro total reemplaza a los fragmentos que abarca:
+                // nunca se debe sumar ambos ni fallar por superposición.
+                let fullyCoversOld = overlapping.allSatisfy {
+                    row.startedAt <= $0.startedAt && row.endedAt >= $0.endedAt
+                }
+                let totalOverlappedMinutes = overlapping.reduce(0) { $0 + $1.minutes }
+                if fullyCoversOld && row.minutes >= totalOverlappedMinutes {
+                    if overlapping.count != 1 || overlapping[0].id != row.id ||
+                        overlapping[0].minutes != row.minutes {
+                        acceptedNewInformation = true
+                    }
+                    for old in overlapping { indexed.removeValue(forKey: old.id) }
+                    indexed[row.id] = row
+                    continue
+                }
+
+                // Una sincronización tardía puede traer nuevamente un bloque
+                // antiguo de 2h59. No degradar un total ya recuperado de 4h08.
+                if overlapping.count == 1, let saved = overlapping.first,
+                   saved.startedAt <= row.startedAt, saved.endedAt >= row.endedAt,
+                   saved.minutes >= row.minutes {
+                    continue
+                }
+                // Superposición sin una relación inequívoca: no adivinar.
+                throw StoreError.overlappingSleep
             }
+
             let sorted = indexed.values.sorted { $0.startedAt < $1.startedAt }
-            for pair in zip(sorted, sorted.dropFirst()) where pair.0.endedAt > pair.1.startedAt { throw StoreError.overlappingSleep }
-            day.sleepSessions = sorted; day.sleepMinutes = sorted.reduce(0) { $0 + $1.minutes }
+            for pair in zip(sorted, sorted.dropFirst()) where pair.0.endedAt > pair.1.startedAt {
+                throw StoreError.overlappingSleep
+            }
+            day.sleepSessions = sorted
+            day.sleepMinutes = sorted.reduce(0) { $0 + $1.minutes }
             if let retrievalComplete {
-                // No declarar una jornada completa después de una consulta
-                // que cortó por timeout o por un índice no reconocido.
-                day.sleepRetrievalComplete = retrievalComplete
+                // Una relectura parcial sin novedades no borra la confirmación
+                // anterior; si sí hay información nueva parcial, se advierte.
+                if retrievalComplete {
+                    day.sleepRetrievalComplete = true
+                } else if acceptedNewInformation {
+                    day.sleepRetrievalComplete = false
+                } else if day.sleepRetrievalComplete == nil {
+                    day.sleepRetrievalComplete = false
+                }
             }
         }
     }

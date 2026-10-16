@@ -112,7 +112,6 @@ final class HealthDashboardSync: ObservableObject {
 
                 if groups.contains(.sleep) {
                 try self.check(watch, watchID)
-                self.schedule.mark(.sleep, watchID: watchID, at: Date())
                 self.status = "Actualizando sesiones de sueño…"
                 try await self.wait(watch.refreshSleepProbe(day: Date()), running: { WatchSleepProbe.shared.isRunning })
                 try self.check(watch, watchID)
@@ -121,6 +120,9 @@ final class HealthDashboardSync: ObservableObject {
                 if !sessions.isEmpty {
                     try store.mergeSleep(watchID: watchID, sessions: sessions,
                                          retrievalComplete: sleepProbe.scanCompleted)
+                    if sleepProbe.scanCompleted {
+                        self.schedule.mark(.sleep, watchID: watchID, at: Date())
+                    }
                     if !sleepProbe.scanCompleted {
                         self.issues.append("Sueño: lectura parcial · \(sessions.count) sesión(es). Verificá el total en el reloj.")
                     }
@@ -140,6 +142,9 @@ final class HealthDashboardSync: ObservableObject {
                 self.status = "Actualización en pausa; se conservan los datos guardados"
             } catch SyncError.connectionChanged {
                 self.status = "La conexión cambió. Los datos ya guardados se conservan."
+            } catch WatchHealthStore.StoreError.overlappingSleep {
+                self.status = "Sueño: el reloj devolvió sesiones superpuestas que no se pueden reconciliar. Copiá el diagnóstico de sueño."
+                self.issues.append("No se actualizó el total de sueño; no se modificaron los registros en conflicto.")
             } catch {
                 self.status = store.storageError ?? "No se pudo completar la actualización. Revisá el diagnóstico."
             }
