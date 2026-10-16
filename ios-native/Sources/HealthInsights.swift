@@ -65,10 +65,16 @@ enum HealthInsights {
 
         switch metric {
         case .sleep:
+            let keys = Set(current.map { DateFormatterDay.key($0.date, calendar: calendar) })
+            let dividedNights = days.filter { $0.watchID == watchID &&
+                keys.contains($0.dayKey) && $0.sleepRetrievalComplete == true &&
+                ($0.sleepSessions?.count ?? 0) >= 2 }.count
             let phrase = average < 7 ? "El descanso registrado fue menor a siete horas en promedio. Intentá mantener horarios regulares."
                 : "Observá la constancia de tus horarios para conocer mejor tu descanso."
-            return WatchHealthInsight(title: "Tu descanso", message: "\(phrase) \(trend)",
-                                      coverage: "\(current.count) de 7 días con sueño", mood: .sleepy)
+            let interruption = dividedNights > 0 ?
+                "Hubo \(dividedNights) día(s) con varios bloques de sueño registrados; el tiempo entre sesiones no se suma." : ""
+            return WatchHealthInsight(title: "Tu descanso", message: "\(phrase) \(interruption) \(trend)",
+                                      coverage: "\(current.count) de 7 días con sueño completo", mood: .sleepy)
         case .stress:
             // Se utiliza la escala que comunica Motorola, no umbrales clínicos.
             let mood: FeliMood = average >= 70 ? .worried : average <= 30 ? .calm : .curious
@@ -123,6 +129,14 @@ enum HealthInsights {
 }
 
 private enum DateFormatterDay {
+    static func key(_ date: Date, calendar: Calendar) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
     static func day(_ key: String, calendar: Calendar) -> Date? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
