@@ -1,6 +1,31 @@
-# Estado actual · 15/10/2026
+# Estado actual · 16/10/2026
 
-## Versión y código de referencia
+## Versión candidata y límites comprobados
+
+- App propuesta: **0.8.4.25 / build 865**. Rama \`feature/home-dashboard-stable-0865\`, [PR #25](https://github.com/eliqs1213-spec/moto-watch-bridge/pull/25) (en revisión). **No confundir con \`main\`**; todavía requiere build verde e instalación en iPhone.
+- Base de los cambios: **0.8.4.24 build 864**, con mejoras de apariencia, Salud y comportamiento Spotify/BLE existente. En 865 no se cambió el protocolo Motorola ni la lógica de emisión musical, excepto aportar el mismo refresco en primer plano cuando Inicio es la pestaña visible.
+- **Inicio:** representación ilustrativa del Moto Watch y hora del teléfono; porcentaje de batería real solo si el reloj está conectado y respondió, estados de BLE y Spotify, reintento manual de SDK, guía de medición con lectura posterior. **No promete sincronizar el watchface exacto.**
+- **Salud:** seis métricas validadas con su histórico local, chibi animado Feli solo en Salud, resúmenes semanales por categoría que indican cuántos días tienen datos. Un valor del pasado conserva su fecha. Los datos sin medir no se inventan ni se computan como ceros.
+- **Ayuno:** una pestaña aparte **sin mascota**; temporizador desde la hora real guardada en \`UserDefaults\`, duración editable de 8–18 h, notificaciones locales opcionales, registro explícito del corte. Si se dispone de tres noches comparables de los últimos catorce días, se calcula una sugerencia **del horario** a partir de sueño; no una prescripción de duración. Sin HealthKit ni cuentas online.
+- **Feli:** dibujado en SwiftUI como chibi pequeño; movimientos suaves con respeto a **Reducir movimiento**, reacción amable basada en registros suficientes. Los dibujos 2D definitivos a partir de fotos quedan como refinamiento visual; las ilustraciones creadas como maquetas NO son assets integrados.
+- **WidgetKit:** extensión presente en la instalación de 864 y una actividad ActivityKit activa, pero no se muestra el widget ni contenido en Dynamic Island. Crash de extensión en 862: **CODESIGNING / Invalid Page**. No se demostró que el firmado de Sideloadly 0.70.1 se resuelva con la build 865; [guía](PROBLEMAS_CONOCIDOS.md).
+- **Música bloqueada:** iOS puede suspender iWatch sin eventos BLE; no se garantiza que cambios de pista naturales lleguen al reloj con pantalla bloqueada.
+- No desinstalar por rutina: se podrían perder registros locales de Salud/Ayuno. No publicar capturas de datos privados ni tokens.
+
+## Validación pendiente de 865
+
+1. Build XcodeGen / Swift / tests sintéticos en Actions, publicación de IPA **unsigned**.
+2. Instalación de IPA firmado en dispositivo, batería 10/01, conexión F8F0/F8F1 y prioridad de avisos.
+3. Transiciones de pestaña sin duplicación problemática de consultas Spotify, comandos NEXT/PREV/PLAY y recuperación SDK.
+4. Histórico por día/semana/mes, Feli sin invadir interface, carga con registros insuficientes.
+5. Ayuno empieza/corta con fechas exactas, reanudación después de relanzar, permisos y avisos sin duplicación, sugerencia horaria según 3+ noches.
+6. Diagnóstico WidgetKit independiente del funcionamiento de las pestañas.
+
+---
+
+# Historial de estado · 15/10/2026 (build 845)
+
+## Versión y código de referencia de aquel cierre
 
 - App: **0.8.4.5 / build 845**, configurada en `ios-native/project.yml` para aplicación y extensión.
 - Código de la última compilación: `8246e4aa45674e4ffcbb235dc8a687d58105f86c`, rama `codex/iwatch-design`.
