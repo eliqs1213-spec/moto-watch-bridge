@@ -36,6 +36,7 @@ struct HealthHistoryView: View {
     @State private var visible = false
     @State private var today = Date()
     @AppStorage("motowatch.health.selectedWatch") private var selectedWatch = ""
+    private let dashboardColumns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
     private var ids: [String] { Array(Set(store.watchIDs + [watch.healthWatchID].compactMap { $0 })).sorted() }
     private var watchID: String {
         ids.contains(selectedWatch) ? selectedWatch : (watch.healthWatchID ?? ids.first ?? "")
@@ -54,14 +55,33 @@ struct HealthHistoryView: View {
                         }.pickerStyle(.menu)
                     }
                     updatePanel
-                    Text("Hoy · \(today.formatted(date: .abbreviated, time: .omitted))").font(.title2.bold())
-                    ForEach(HealthMetric.allCases.filter { $0 != .workouts }) { metric in
-                        NavigationLink {
-                            HealthMetricHistoryView(metric: metric, watchID: watchID, store: store)
-                        } label: {
-                            HealthMetricCard(metric: metric, snapshot: store.latest(metric, watchID: watchID, dates: [today]),
-                                emptyTitle: "Sin registros de hoy", emptyDetail: "Consultá el histórico para ver días anteriores")
-                        }.buttonStyle(.plain)
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Últimos registros").font(.title2.bold())
+                            Text("Tus mediciones más recientes, incluso de días anteriores.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Text(today.formatted(.dateTime.day().month(.abbreviated)))
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                    }
+                    LazyVGrid(columns: dashboardColumns, spacing: 12) {
+                        ForEach(HealthMetric.allCases.filter { $0 != .workouts }) { metric in
+                            NavigationLink {
+                                HealthMetricHistoryView(metric: metric, watchID: watchID, store: store)
+                            } label: {
+                                HealthMetricCard(
+                                    metric: metric,
+                                    snapshot: store.latest(metric, watchID: watchID),
+                                    emptyTitle: "Sin registros",
+                                    emptyDetail: "Abrir histórico",
+                                    compact: true
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Abre el histórico de \(metric.title)")
+                        }
                     }
                     Label("Entrenamientos: sincronización pendiente", systemImage: "figure.run")
                         .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
@@ -90,19 +110,35 @@ struct HealthHistoryView: View {
         .onChange(of: watch.isConnected) { _ in sync.connectionChanged(watch: watch) }
     }
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Tu bienestar").font(.largeTitle.bold())
-                Text("Cada día cuenta").font(.subheadline).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 9) {
+                Text("Tu bienestar")
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(.primary)
+                Text("Un vistazo a tu actividad y descanso")
+                    .font(.subheadline).foregroundStyle(.secondary)
                 Label(watch.isConnected ? "Moto Watch conectado" : "Histórico disponible sin conexión",
                       systemImage: watch.isConnected ? "checkmark.circle.fill" : "clock.arrow.circlepath")
-                    .font(.caption).foregroundStyle(watch.isConnected ? Color.green : Color.secondary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(watch.isConnected ? Color.green : Color.secondary)
             }
-            Spacer(minLength: 8)
-            Image(systemName: "heart.text.square.fill").font(.system(size: 44)).foregroundStyle(.pink)
+            Spacer(minLength: 0)
+            Image(systemName: "heart.text.square.fill")
+                .font(.system(size: 32, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 64, height: 64)
+                .background(
+                    LinearGradient(colors: [.pink, .red.opacity(0.8)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 19)
+                )
                 .accessibilityHidden(true)
         }
+        .padding(18)
+        .background(Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 24))
     }
+
     private var updatePanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -131,10 +167,62 @@ private struct HealthMetricCard: View {
     let snapshot: HealthSnapshot?
     var emptyTitle = "Sin registros"
     var emptyDetail = "Consultá tu reloj para empezar"
+    var compact = false
+
     var body: some View {
+        Group {
+            if compact { compactContent } else { detailedContent }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var compactContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: metric.symbol)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(metric.color)
+                    .frame(width: 40, height: 40)
+                    .background(metric.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 13))
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.bold()).foregroundStyle(.tertiary)
+            }
+            Text(metric.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Text(snapshot.map { metric.formatted($0.value) } ?? emptyTitle)
+                .font(.title3.bold()).foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
+            if let snapshot = snapshot {
+                Label(snapshot.measuredAt.formatted(date: .abbreviated, time: .shortened),
+                      systemImage: "clock")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            } else {
+                Text(emptyDetail).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 166, alignment: .topLeading)
+        .padding(15)
+        .background(Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 22))
+        .overlay(alignment: .top) {
+            RoundedRectangle(cornerRadius: 22)
+                .strokeBorder(metric.color.opacity(0.12), lineWidth: 1)
+        }
+    }
+
+    private var detailedContent: some View {
         HStack(spacing: 14) {
             Image(systemName: metric.symbol).font(.title2).foregroundStyle(metric.color)
-                .frame(width: 48, height: 54).background(metric.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 16))
+                .frame(width: 48, height: 54)
+                .background(metric.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 16))
             VStack(alignment: .leading, spacing: 6) {
                 Text(metric.title).font(.subheadline.bold()).foregroundStyle(metric.color)
                 Text(snapshot.map { metric.formatted($0.value) } ?? emptyTitle)
@@ -143,12 +231,15 @@ private struct HealthMetricCard: View {
                     Text("\(metric == .sleep ? "Último descanso" : "Medición"): \(snapshot.measuredAt.formatted(date: .abbreviated, time: .shortened))")
                     Text("Actualizado: \(snapshot.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                 } else { Text(emptyDetail) }
-            }.font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(metric.color)
-        }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(metric.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 22))
-            .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(metric.color.opacity(0.12)))
-            .accessibilityElement(children: .combine)
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(metric.color.opacity(0.12)))
     }
 }
 
@@ -181,17 +272,28 @@ private struct HealthMetricHistoryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Picker("Período", selection: $period) {
-                    ForEach(HealthHistoryPeriod.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }.pickerStyle(.segmented)
-                DatePicker("Consultar fecha", selection: $date, in: ...Date(), displayedComponents: .date)
-                HStack {
-                    Button { move(-1) } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Período anterior")
-                    Spacer(); Text(title).font(.subheadline.bold()); Spacer()
-                    Button { move(1) } label: { Image(systemName: "chevron.right") }
-                        .disabled(dates.first! >= period.dates(containing: Date()).first!)
-                        .accessibilityLabel("Período siguiente")
-                }.tint(metric.color)
+                VStack(alignment: .leading, spacing: 14) {
+                    Label("Explorar histórico", systemImage: "calendar")
+                        .font(.headline)
+                        .foregroundStyle(metric.color)
+                    Picker("Período", selection: $period) {
+                        ForEach(HealthHistoryPeriod.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.segmented)
+                    DatePicker("Consultar fecha", selection: $date, in: ...Date(), displayedComponents: .date)
+                    HStack {
+                        Button { move(-1) } label: { Image(systemName: "chevron.left") }
+                            .accessibilityLabel("Período anterior")
+                        Spacer()
+                        Text(title).font(.subheadline.bold())
+                        Spacer()
+                        Button { move(1) } label: { Image(systemName: "chevron.right") }
+                            .disabled(dates.first! >= period.dates(containing: Date()).first!)
+                            .accessibilityLabel("Período siguiente")
+                    }.tint(metric.color)
+                }
+                .padding(16)
+                .background(Color(uiColor: .secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 22))
                 HealthMetricCard(metric: metric, snapshot: latest)
                 if let summary = summary {
                     VStack(alignment: .leading, spacing: 12) {
