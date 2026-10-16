@@ -146,14 +146,25 @@ final class Feli3DAnimator: NSObject, SCNSceneRendererDelegate {
             leftEarTilt = stride * 0.14
             rightEarTilt = -stride * 0.14
         case .worried:
-            headYaw = 0.27 + wave(t, 0.8) * 0.10
-            headPitch = -0.05
-            headRoll = -0.07
-            leftEarTilt = 0.21
-            rightEarTilt = -0.21
+            // Elevación en la escala del reloj: gesto atento, no "diagnóstico
+            // de ansiedad". Cabeza mira reloj/persona, orejas descienden,
+            // cuerpo respira y alterna el apoyo de las patas.
+            let glance = wave(t, 0.85)
+            let chestBreath = wave(t, 1.9)
+            headYaw = 0.22 + 0.20 * glance
+            headPitch = -0.08 + 0.035 * chestBreath
+            headRoll = -0.045 + 0.055 * glance
+            headY -= 0.035 * (0.5 + 0.5 * chestBreath)
+            bodyY = -0.025 + 0.018 * chestBreath
+            bodyPitch = -0.045
+            leftStep = 0.05 * max(0, glance)
+            rightStep = 0.05 * max(0, -glance)
+            leftEarTilt = 0.21 + 0.11 * wave(t, 1.2)
+            rightEarTilt = -0.21 - 0.10 * wave(t + 0.6, 1.1)
             tailSpeed = 1.4
             tailSwing = 0.035
-            mouth = 0
+            eyeClosing = 0.08
+            mouth = 0.025
         case .mate:
             // Sip: head approaches the bombilla, lowers mouth and returns.
             let sip = max(0, wave(t, 1.55))
