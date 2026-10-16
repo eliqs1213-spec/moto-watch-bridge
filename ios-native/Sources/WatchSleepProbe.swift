@@ -30,7 +30,9 @@ final class WatchSleepProbe: ObservableObject {
     var totalMinutes: Double { daySessions.reduce(0) { $0 + $1.minutes } }
     var report: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        return (["iWatch \(version) · diagnóstico de sueño", status] + messages).joined(separator: "\n")
+        return (["iWatch \(version) · diagnóstico de sueño", status,
+                 "Sesiones recibidas: \(sessions.count) · del día: \(daySessions.count) · \(Int(totalMinutes.rounded())) minutos",
+                 "Recorrido temporal finalizado: \(scanCompleted ? "sí (no garantiza igualdad con reloj)" : "no")"] + messages).joined(separator: "\n")
     }
     private func note(_ message: String) {
         messages.append(message)
@@ -117,6 +119,10 @@ final class WatchSleepProbe: ObservableObject {
             guard frame.command == 0x08, let fields = WatchHealthProtocol.fields(frame.payload) else { return }
             let indicator = WatchHealthProtocol.integer(1, in: fields)
             note("Indicador del índice: " + (indicator.map { String($0) } ?? "ausente"))
+            note("Campos del índice 31/08: " + VitalsCandidateProtocol.schema(frame))
+            if let next = WatchHealthProtocol.integer(2, in: fields) {
+                note("Campo 2 del índice (sin semántica confirmada): \(next)")
+            }
             guard WatchHealthProtocol.canProbeFirstPulseBlock(indicator) else {
                 if let indicator = indicator, indicator != 0 {
                     finish("Consulta parcial: indicador de sueño no admitido")
@@ -135,6 +141,7 @@ final class WatchSleepProbe: ObservableObject {
             return
         }
         guard frame.command == 0x09 else { return }
+        note("Campos de sesión 31/09: " + VitalsCandidateProtocol.schema(frame))
         guard let session = WatchSleepProtocol.decode(frame, start: lowerBound, end: upperBound) else {
             note("31/09 rechazado: fechas, duración o formato no compatibles")
             note("Estructura recibida: " + VitalsCandidateProtocol.schema(frame))

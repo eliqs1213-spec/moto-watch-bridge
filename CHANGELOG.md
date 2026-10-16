@@ -2,6 +2,14 @@
 
 Las versiones listadas corresponden a compilaciones de desarrollo. Consultar [estado actual](docs/ESTADO_ACTUAL.md) para distinguir las ramas de `main` y la validación pendiente.
 
+## 0.8.4.27 · build 867 (candidata, prueba pendiente)
+
+- Feli en Salud: animación viva sin rebote — respiración, parpadeos, orejas, cola, mirada, olfateo, estiramiento, pata levantada y bostezos en un ciclo de gestos suaves; acariciarlo con un toque acelera la cola y mueve la cabeza. Respeta «Reducir movimiento» y pausa la animación en segundo plano.
+- Un acompañante compacto queda visible durante el scroll de Salud y dentro de cada categoría mediante Safe Area, sin superponerse a gráficos; botón para minimizar/expandir y conocer por qué Feli está así. No aparece en Inicio ni Ayuno.
+- Oxígeno: consulta de hasta 7 días de muestras disponibles (antes 24 horas), accesos al diagnóstico desde su pantalla y mensajes específicos del protocolo 31/0B/0C. **No inicia una lectura física del sensor** y no asigna datos de canales no validados a SpO₂.
+- Sueño: informe de diagnóstico con campos del índice/sesión y razones de consulta parcial; **el problema comunicado de 4 h 08 en reloj contra 2 h 59 en iWatch sigue sin resolverse en dispositivo** y necesita la captura de «Copiar diagnóstico de sueño».
+- Integra los gráficos inteligentes de 866 de la rama base. **A la espera de CI e instalación física.**
+
 ## 0.8.4.26 · build 866 (candidata)
 
 - Gráficos específicos por métrica en Salud: tendencias con cobertura, dispersión de pulso/oxígeno, distribución de estrés, pasos/calorías por día y horario de sueño con al menos tres noches verificadas.

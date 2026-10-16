@@ -54,7 +54,6 @@ struct HealthHistoryView: View {
                         }.pickerStyle(.menu)
                     }
                     updatePanel
-                    FeliHealthAssistantView(watchID: watchID, store: store)
                     SmartHealthWeeklyOverview(days: store.days, watchID: watchID)
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -94,6 +93,9 @@ struct HealthHistoryView: View {
                 }.padding(20)
             }
             .background(Color(uiColor: .systemGroupedBackground))
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                FeliHealthDock(watchID: watchID, store: store)
+            }
             .navigationTitle("Salud").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 NavigationLink { HealthDiagnosticsView() } label: { Image(systemName: "slider.horizontal.3") }
@@ -296,6 +298,24 @@ private struct HealthMetricHistoryView: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 22))
                 HealthMetricCard(metric: metric, snapshot: latest)
+                if metric == .oxygen {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Oxígeno: lecturas recuperadas del Moto Watch")
+                            .font(.subheadline.bold())
+                        Text("iWatch consulta muestras ya guardadas en el reloj; no puede iniciar una medición física por Bluetooth. Si no hay valores, medí primero desde el Moto Watch y volvé a actualizar Salud.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        NavigationLink {
+                            HealthDiagnosticsView()
+                        } label: {
+                            Label("Abrir diagnóstico de oxígeno", systemImage: "waveform.path.ecg.rectangle")
+                                .font(.subheadline.bold())
+                        }
+                    }
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 18))
+                }
                 if metric == .sleep, records.contains(where: { $0.sleepMinutes != nil && $0.sleepRetrievalComplete != true }) {
                     Label("Algunos descansos no tienen una recuperación completa verificada. Su duración es provisional y no se usa para recomendaciones.",
                           systemImage: "exclamationmark.triangle.fill")
@@ -305,7 +325,6 @@ private struct HealthMetricHistoryView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
                 }
-                FeliHealthMetricNote(metric: metric, days: store.days, watchID: watchID)
                 SmartHealthChartsView(metric: metric, watchID: watchID, days: store.days,
                                       dates: dates, period: period)
                 if summary != nil {
@@ -316,6 +335,9 @@ private struct HealthMetricHistoryView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }.padding(20)
         }.background(Color(uiColor: .systemGroupedBackground))
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                FeliHealthDock(watchID: watchID, store: store, metric: metric)
+            }
             .navigationTitle(metric.title).navigationBarTitleDisplayMode(.inline)
     }
     @ViewBuilder private var dayDetail: some View {
