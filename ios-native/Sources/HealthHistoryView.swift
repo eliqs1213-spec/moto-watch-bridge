@@ -328,8 +328,8 @@ private struct HealthMetricHistoryView: View {
                         .font(.subheadline.bold()).foregroundStyle(.indigo)
                     Text("El reloj registró varios bloques de descanso. La app suma solamente los minutos dormidos informados por cada sesión.")
                         .font(.caption).foregroundStyle(.secondary)
-                    ForEach(Array(zip(sessions, sessions.dropFirst()).enumerated()), id: \.offset) { index, pair in
-                        let gap = max(0, Int(pair.1.startedAt.timeIntervalSince(pair.0.endedAt) / 60))
+                    ForEach(0..<(sessions.count - 1), id: \.self) { index in
+                        let gap = max(0, Int(sessions[index + 1].startedAt.timeIntervalSince(sessions[index].endedAt) / 60))
                         if gap > 0 {
                             Label("Entre la sesión \(index + 1) y la \(index + 2): \(gap) min sin sueño registrado", systemImage: "sun.max")
                                 .font(.caption).foregroundStyle(.secondary)
