@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 
 extension HealthMetric {
     var color: Color {
@@ -56,6 +55,7 @@ struct HealthHistoryView: View {
                     }
                     updatePanel
                     FeliHealthAssistantView(watchID: watchID, store: store)
+                    SmartHealthWeeklyOverview(days: store.days, watchID: watchID)
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Últimos registros").font(.title2.bold())
@@ -296,30 +296,20 @@ private struct HealthMetricHistoryView: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 22))
                 HealthMetricCard(metric: metric, snapshot: latest)
+                if metric == .sleep, records.contains(where: { $0.sleepMinutes != nil && $0.sleepRetrievalComplete != true }) {
+                    Label("Algunos descansos no tienen una recuperación completa verificada. Su duración es provisional y no se usa para recomendaciones.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                }
                 FeliHealthMetricNote(metric: metric, days: store.days, watchID: watchID)
-                if let summary = summary {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(metric.isSample ? "Promedio de las mediciones" : "Total de los días registrados")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        Text(metric.formatted(summary)).font(.title.bold()).foregroundStyle(metric.color)
-                        historyChart
-                        if metric.isSample, let low = readings.map(\.value).min(), let high = readings.map(\.value).max() {
-                            Text("Mínimo \(metric.formatted(low)) · Máximo \(metric.formatted(high))")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        if period != .day {
-                            Text("\(dailyValues.count) de \(dates.filter { $0 <= Date() }.count) días transcurridos con datos. Los días sin registros no se cuentan como cero.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
+                SmartHealthChartsView(metric: metric, watchID: watchID, days: store.days,
+                                      dates: dates, period: period)
+                if summary != nil {
                     if period == .day { dayDetail } else { dailyList }
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: metric.symbol).font(.system(size: 38)).foregroundStyle(metric.color)
-                        Text("Sin registros en este período").font(.headline)
-                        Text("Actualizá desde Salud para guardar los datos que entregue tu Moto Watch.")
-                            .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    }.frame(maxWidth: .infinity).padding(.vertical, 28)
                 }
                 if metric == .sleep { sleepGoal }
                 Text(metric.isSample ? "Se muestran las mediciones guardadas con la hora informada por el reloj." : "Pasos y calorías son contadores del día. Cada día aporta su último valor; las consultas del mismo día no se suman.")
@@ -328,35 +318,25 @@ private struct HealthMetricHistoryView: View {
         }.background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle(metric.title).navigationBarTitleDisplayMode(.inline)
     }
-    private var historyChart: some View {
-        Chart {
-            if period == .day && metric != .sleep {
-                ForEach(readings) { row in
-                    if !metric.isSample {
-                        LineMark(x: .value("Hora", row.timestamp), y: .value(metric.title, row.value))
-                            .foregroundStyle(metric.color.opacity(0.5))
-                    }
-                    PointMark(x: .value("Hora", row.timestamp), y: .value(metric.title, row.value))
-                        .foregroundStyle(metric.color)
-                }
-            } else {
-                ForEach(dates, id: \.self) { day in
-                    if let value = store.day(day, watchID: watchID)?.value(for: metric) {
-                        BarMark(x: .value("Día", day, unit: .day), y: .value(metric.title, value))
-                            .foregroundStyle(metric.color.gradient).cornerRadius(4)
-                    }
-                }
-            }
-        }.chartXScale(domain: dates.first!...Calendar.current.date(byAdding: .day, value: 1, to: dates.last!)!)
-            .chartYAxis { AxisMarks(position: .leading) }
-            .frame(height: 210)
-            .accessibilityLabel(period == .day ? "\(metric.title) durante el día" : "\(metric.title) por día; promedio diario para mediciones")
-    }
     @ViewBuilder private var dayDetail: some View {
         if metric == .sleep {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Tus descansos").font(.headline)
-                ForEach((records.first?.sleepSessions ?? []).sorted { $0.endedAt > $1.endedAt }) { session in
+                let sessions = (records.first?.sleepSessions ?? []).sorted { $0.startedAt < $1.startedAt }
+                if sessions.count >= 2 {
+                    Label("Descanso dividido en \(sessions.count) sesiones", systemImage: "moon.zzz")
+                        .font(.subheadline.bold()).foregroundStyle(.indigo)
+                    Text("El reloj registró varios bloques de descanso. La app suma solamente los minutos dormidos informados por cada sesión.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(0..<(sessions.count - 1), id: \.self) { index in
+                        let gap = max(0, Int(sessions[index + 1].startedAt.timeIntervalSince(sessions[index].endedAt) / 60))
+                        if gap > 0 {
+                            Label("Entre la sesión \(index + 1) y la \(index + 2): \(gap) min sin sueño registrado", systemImage: "sun.max")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                ForEach(sessions.reversed()) { session in
                     HStack(alignment: .top) {
                         Image(systemName: "moon.fill").foregroundStyle(metric.color)
                         VStack(alignment: .leading, spacing: 5) {
@@ -366,7 +346,7 @@ private struct HealthMetricHistoryView: View {
                         }
                     }
                 }
-                Text("Se suman los descansos que terminan en este día, incluso si dormiste más de una vez. La duración es la informada por el reloj.")
+                Text("Se suman los descansos que terminan en este día, incluso si dormiste más de una vez. El tiempo entre sesiones no se suma. La duración es la informada por el reloj.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else {

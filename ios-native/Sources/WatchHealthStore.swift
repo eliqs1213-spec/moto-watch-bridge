@@ -71,6 +71,9 @@ struct WatchHealthDay: Codable, Identifiable {
     var stepsHistory: [WatchHealthReading]? = nil
     var activeCaloriesHistory: [WatchHealthReading]? = nil
     var sleepSessions: [StoredSleepSession]? = nil
+    // nil: lectura de una versión antigua, cobertura sin verificar.
+    // false: consulta parcial; true: el recorrido temporal concluyó.
+    var sleepRetrievalComplete: Bool? = nil
     var metricUpdates: [String: Date]? = nil
     var id: String { "\(watchID)|\(dayKey)" }
 
@@ -179,7 +182,7 @@ final class WatchHealthStore: ObservableObject {
             } else { day.activeCaloriesHistory = Self.union(day.activeCaloriesHistory ?? [], [row]) }
         }
     }
-    func mergeSleep(watchID: String, sessions: [WatchSleepProtocol.Session]) throws {
+    func mergeSleep(watchID: String, sessions: [WatchSleepProtocol.Session], retrievalComplete: Bool? = nil) throws {
         guard sessions.allSatisfy({ $0.minutes.isFinite && $0.minutes > 0 && $0.minutes <= 1440 && $0.startedAt < $0.endedAt }) else { throw StoreError.invalidReading }
         try mutate(keys: Set(sessions.map { Self.key($0.endedAt) }), watchID: watchID, metric: .sleep) { day, key in
             var indexed = Dictionary((day.sleepSessions ?? []).map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
@@ -189,6 +192,11 @@ final class WatchHealthStore: ObservableObject {
             let sorted = indexed.values.sorted { $0.startedAt < $1.startedAt }
             for pair in zip(sorted, sorted.dropFirst()) where pair.0.endedAt > pair.1.startedAt { throw StoreError.overlappingSleep }
             day.sleepSessions = sorted; day.sleepMinutes = sorted.reduce(0) { $0 + $1.minutes }
+            if let retrievalComplete {
+                // No declarar una jornada completa después de una consulta
+                // que cortó por timeout o por un índice no reconocido.
+                day.sleepRetrievalComplete = retrievalComplete
+            }
         }
     }
     // Conserva la API del panel de diagnóstico anterior.

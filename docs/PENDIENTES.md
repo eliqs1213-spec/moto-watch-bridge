@@ -1,5 +1,18 @@
 # Próxima sesión
 
+**Nueva rama:** `feature/health-intelligent-charts-0866` ([PR #26](https://github.com/eliqs1213-spec/moto-watch-bridge/pull/26)), sobre la build 865. Falta CI y prueba real de la consulta de sueño segmentado.
+
+## Prueba obligatoria de sueño interrumpido
+
+- [ ] Anotar horarios aproximados de primera y segunda sesión (incluido si cruzaron medianoche). El reloj muestra 4 h 08 y la app 2 h 59; diferencia 1 h 09. No asumir cuál bloque falta hasta examinar el diagnóstico.
+- [ ] En Salud > Diagnóstico > Sueño, elegir el día de despertar, consultar y copiar el reporte completo 31/08 y 31/09, con sesiones devueltas, indicator, cursor y estado final.
+- [ ] Comparar suma y cantidad de sesiones con la interfaz del Moto Watch; si hay desajuste marcar el día «parcial». No fabricar 69 minutos.
+- [ ] Verificar que los gráficos inteligentes y la sugerencia de Ayuno excluyen consultas parciales.
+- [ ] Probar sueño de una sola sesión, dos sesiones, período sin lecturas y transiciones de medianoche, respetando zona horaria.
+- [ ] Confirmar que Spotify y Bluetooth no sufren regresiones por esta consulta.
+
+## Historial anterior
+
 **Candidata actual:** 0.8.4.25 (865), rama `feature/home-dashboard-stable-0865`, [PR #25](https://github.com/eliqs1213-spec/moto-watch-bridge/pull/25).
 
 ## Validaciones prioritarias de 865

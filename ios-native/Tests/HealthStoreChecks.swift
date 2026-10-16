@@ -42,6 +42,28 @@ try await MainActor.run {
     try store.mergeSleep(watchID: "watch-a", sessions: [first])
     expect(store.day(date, watchID: "watch-a")?.sleepMinutes == 257, "Sleep total must be 4h17 across two sessions without duplication")
     expect(store.day(date, watchID: "watch-a")?.sleepSessions?.count == 2, "Separate sleep sessions lost")
+    // Caso observado en dispositivo: el reloj muestra 4h08, pero la app solo
+    // recibe una sesión de 2h59. No hay que inventar los 69 min faltantes.
+    let otherDay = date.addingTimeInterval(-86400)
+    let partial = WatchSleepProtocol.Session(
+        startedAt: otherDay.addingTimeInterval(-28800),
+        endedAt: otherDay.addingTimeInterval(-18000), minutes: 179)
+    let recovered = WatchSleepProtocol.Session(
+        startedAt: otherDay.addingTimeInterval(-14400),
+        endedAt: otherDay.addingTimeInterval(-10260), minutes: 69)
+    try store.mergeSleep(watchID: "watch-a", sessions: [partial], retrievalComplete: false)
+    expect(store.day(otherDay, watchID: "watch-a")?.sleepMinutes == 179,
+           "Partial sleep must not be automatically inflated to 248 min")
+    expect(store.day(otherDay, watchID: "watch-a")?.sleepRetrievalComplete == false,
+           "Partial retrieval must be labeled incomplete")
+    try store.mergeSleep(watchID: "watch-a", sessions: [recovered], retrievalComplete: true)
+    expect(store.day(otherDay, watchID: "watch-a")?.sleepMinutes == 248,
+           "2h59 + recovered 1h09 must equal 4h08")
+    expect(store.day(otherDay, watchID: "watch-a")?.sleepRetrievalComplete == true,
+           "Completed retrieval should mark the day as verified")
+    try store.mergeSleep(watchID: "watch-a", sessions: [recovered], retrievalComplete: true)
+    expect(store.day(otherDay, watchID: "watch-a")?.sleepMinutes == 248,
+           "Resync must not duplicate a recovered session")
     try store.mergeCounter(watchID: "watch-b", metric: .steps, value: 50, at: date)
     expect(store.day(date, watchID: "watch-a")?.steps == 2190, "Histories from different watches mixed")
     let reopened = WatchHealthStore(fileURL: file)

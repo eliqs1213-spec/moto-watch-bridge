@@ -116,9 +116,19 @@ final class HealthDashboardSync: ObservableObject {
                 self.status = "Actualizando sesiones de sueño…"
                 try await self.wait(watch.refreshSleepProbe(day: Date()), running: { WatchSleepProbe.shared.isRunning })
                 try self.check(watch, watchID)
-                let sessions = WatchSleepProbe.shared.sessions
-                if !sessions.isEmpty { try store.mergeSleep(watchID: watchID, sessions: sessions) }
-                else { self.issues.append("Sueño: no se recibieron sesiones") }
+                let sleepProbe = WatchSleepProbe.shared
+                let sessions = sleepProbe.sessions
+                if !sessions.isEmpty {
+                    try store.mergeSleep(watchID: watchID, sessions: sessions,
+                                         retrievalComplete: sleepProbe.scanCompleted)
+                    if !sleepProbe.scanCompleted {
+                        self.issues.append("Sueño: lectura parcial · \(sessions.count) sesión(es). Verificá el total en el reloj.")
+                    }
+                } else {
+                    self.issues.append(sleepProbe.scanCompleted ?
+                        "Sueño: no se encontraron sesiones en el rango" :
+                        "Sueño: consulta inconclusa, no se recibieron sesiones")
+                }
 
                 }
                 self.progress = 1

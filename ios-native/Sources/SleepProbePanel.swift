@@ -18,6 +18,11 @@ struct SleepProbePanel: View {
                     watch.refreshSleepProbe(day: date)
                 }.buttonStyle(.borderedProminent).disabled(busy)
                 Text(sleep.status).font(.caption).foregroundStyle(.secondary)
+                if !sleep.isRunning, !sleep.daySessions.isEmpty, !sleep.scanCompleted {
+                    Label("Total parcial: la consulta todavía no recuperó todas las sesiones verificables.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 Stepper("Objetivo: \(goalHours.formatted(.number.precision(.fractionLength(0...1)))) h", value: $goalHours, in: 1...16, step: 0.5)
                     .font(.subheadline)
                 if !sleep.daySessions.isEmpty {
@@ -37,7 +42,8 @@ struct SleepProbePanel: View {
                 }
                 Text("Se suman las sesiones que terminaron en el día consultado. La duración informada por el reloj puede ser menor que el tiempo entre inicio y fin. Las etapas todavía están pendientes de identificar.")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Este panel consulta sin guardar. Actualizar en Salud consulta y guarda las sesiones.")
+                Text("Este panel consulta sin guardar. Actualizar en Salud consulta y guarda las sesiones. Si la suma no coincide con el reloj, copiá el diagnóstico 31/08 y 31/09.")
+                    .font(.caption).foregroundStyle(.secondary)
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Copiar diagnóstico de sueño") { UIPasteboard.general.string = sleep.report }
                     .buttonStyle(.bordered)
