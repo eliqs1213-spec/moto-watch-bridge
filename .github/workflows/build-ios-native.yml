@@ -58,6 +58,13 @@ jobs:
           cat ios-native/Sources/MusicBackgroundExperimentPolicy.swift ios-native/Tests/MusicBackgroundExperimentChecks.swift > "$RUNNER_TEMP/music-bg-experiment-checks.swift"
           swift "$RUNNER_TEMP/music-bg-experiment-checks.swift"
 
+      - name: Validar respuestas Web API reales contra SDK reciente y suspensión
+        run: |
+          cat ios-native/Sources/SpotifyBackgroundProbePolicy.swift ios-native/Tests/SpotifyBackgroundProbeChecks.swift > "$RUNNER_TEMP/spotify-bg-http-checks.swift"
+          swift "$RUNNER_TEMP/spotify-bg-http-checks.swift"
+          grep -F 'let playback = try await fetchPlayback()' ios-native/Sources/SpotifyBridge.swift
+          grep -F 'probeWebPlaybackWhileBackgrounded()' ios-native/Sources/MusicBackgroundExperiment.swift
+
       - name: Configurar Xcode y generar proyecto
         run: |
           xcodebuild -version
