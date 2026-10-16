@@ -16,14 +16,14 @@ struct FeliAnimationGallery: View {
         }
     }
     private let scenes: [Scene] = [
-        (.curious, "Curioso", "Olisquea, inclina la cabeza, pestañea y mira alrededor."),
-        (.calm, "Tranquilo", "Respira suave, mueve orejas y observa una mariposa."),
-        (.sleepy, "Dormido", "Descansa, respira más lento y mantiene los ojos cerrados."),
-        (.active, "Activo", "Levanta una patita, mueve la cola y saluda."),
-        (.worried, "Atento", "Observa un reloj y presta atención."),
-        (.mate, "Mate feliz", "Al iniciar Ayuno, toma un mate y mueve la cola."),
-        (.grill, "Vacío a la parrilla", "Vacío, brasas y humo en movimiento."),
-        (.celebrate, "Festejo", "Mueve la cola más rápido y aparecen destellos.")
+        Scene(.curious, "Curioso", "Olisquea, inclina la cabeza, pestañea y mira alrededor."),
+        Scene(.calm, "Tranquilo", "Respira suave, mueve orejas y observa una mariposa."),
+        Scene(.sleepy, "Dormido", "Descansa, respira más lento y mantiene los ojos cerrados."),
+        Scene(.active, "Activo", "Levanta una patita, mueve la cola y saluda."),
+        Scene(.worried, "Atento", "Observa un reloj y presta atención."),
+        Scene(.mate, "Mate feliz", "Al iniciar Ayuno, toma un mate y mueve la cola."),
+        Scene(.grill, "Vacío a la parrilla", "Vacío, brasas y humo en movimiento."),
+        Scene(.celebrate, "Festejo", "Mueve la cola más rápido y aparecen destellos.")
     ]
 
     var body: some View {
