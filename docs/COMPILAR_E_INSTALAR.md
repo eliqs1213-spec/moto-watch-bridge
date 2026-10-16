@@ -2,14 +2,14 @@
 
 ## Elegir la rama correcta
 
-`main` aún no incluye los PR recientes. La última app compilada y compartida es **0.8.4.5 (845)** en `codex/iwatch-design`; la documentación y limpieza de este cierre están en `codex/repo-docs-cleanup`, que incluye ese código.
+`main` aún no incluye las funciones recientes. Para Inicio + Feli en Salud + Ayuno, usar **`feature/home-dashboard-stable-0865`**, build **865**, PR #25. Comprobar que el workflow termine en verde; un código publicado no significa un IPA instalado.
 
 Desde una copia nueva:
 
 ```powershell
 git clone https://github.com/eliqs1213-spec/moto-watch-bridge.git
 cd moto-watch-bridge
-git switch codex/repo-docs-cleanup
+git switch feature/home-dashboard-stable-0865
 ```
 
 En una copia existente, revisar antes los cambios locales. No usar comandos de reset o limpieza que descarten trabajo para cambiar de rama.
@@ -23,7 +23,7 @@ En una copia existente, revisar antes los cambios locales. No usar comandos de r
 5. Descargar **MotoWatchNativeProbe-unsigned**. El ZIP del artefacto contiene `MotoWatchNativeProbe-unsigned.ipa`.
 6. Firmar e instalar ese IPA con la herramienta local que ya se usa en Windows. Nunca subir credenciales de Apple a GitHub.
 
-[Última ejecución verificada de la interfaz 0.8.4.5](https://github.com/eliqs1213-spec/moto-watch-bridge/actions/runs/38676992260). Los artefactos se retienen 14 días. Si caducan, volver a compilar.
+[Compilaciones de la rama 865](https://github.com/eliqs1213-spec/moto-watch-bridge/actions). Los artefactos se retienen 14 días. Si caducan, volver a compilar.
 
 La app instalada debe mostrar la versión esperada al pie de iWatch. Subir fuentes o descargar un ZIP no actualiza por sí solo la instalación del teléfono. Conservar el identificador de la app y el contexto de firma al actualizar; desinstalar puede eliminar el histórico local de salud.
 
@@ -71,5 +71,8 @@ Cubren tramas/CRC, fragmentación, índices/selectores, decodificación de categ
 - Conceder Bluetooth, conectar el reloj y esperar que la sesión esté lista.
 - Configurar Spotify desde **iWatch → Ajustes y diagnóstico** con el Client ID y la Redirect URI que muestra la app. No usar ni compartir un Client Secret en la app.
 - Configurar los avisos desde **Notificaciones** y comprobar qué campos entrega realmente la automatización de Atajos.
-- En **Salud**, consultar y verificar las lecturas contra el reloj; el botón no inicia mediciones.
+- En **Inicio**, ver batería y conexiones reales; la esfera es ilustrativa y la hora la da el iPhone.
+- En **Salud**, verificar lecturas contra reloj; la consulta no inicia sensores manuales. Feli es un chibi informativo solamente en Salud.
+- En **Ayuno**, fijar objetivo/horario, activar avisos locales solo si se desean y probar registro de inicio/corte real tras cerrar la app.
+- Si falta WidgetKit o la Dynamic Island queda negra, consultar [problemas conocidos](PROBLEMAS_CONOCIDOS.md) antes de reinstalar.
 - Si falla algo, copiar el registro y anotar versión, hora, estado del teléfono y acción realizada. Revisar el texto antes de compartirlo.
