@@ -10,6 +10,7 @@ struct WatchHomeView: View {
     @StateObject private var remote = SpotifyAppRemoteBridge.shared
     @StateObject private var health = WatchHealthStore.shared
     @StateObject private var sync = HealthDashboardSync.shared
+    @Environment(\.scenePhase) private var scenePhase
     let openWatch: () -> Void
     let openHealth: () -> Void
     @State private var showMeasurements = false
@@ -45,9 +46,9 @@ struct WatchHomeView: View {
             GuidedWatchReadingView(openHealth: openHealth)
                 .environmentObject(watch)
         }
-        .onAppear {
-            watch.autoConnectIfNeeded()
-            watch.refreshBattery(force: false)
+        .onAppear { recoverForeground() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active && isSelected { recoverForeground() }
         }
         // Mismo criterio de recuperación de Spotify existente en ContentView:
         // únicamente en primer plano; iOS puede suspender la app bloqueada.
@@ -66,6 +67,16 @@ struct WatchHomeView: View {
                 do { try await Task.sleep(nanoseconds: 6_000_000_000) }
                 catch { return }
             }
+        }
+    }
+
+    private func recoverForeground() {
+        watch.autoConnectIfNeeded()
+        watch.refreshBattery(force: false)
+        if spotify.controlEnabled {
+            MusicSyncEngine.shared.requestForegroundRecovery()
+            if remote.isConnected { remote.requestCurrentPlayerState(fallbackToWeb: true) }
+            else { Task { await spotify.refreshPlaybackInfo() } }
         }
     }
 
