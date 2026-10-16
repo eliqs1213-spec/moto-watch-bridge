@@ -53,6 +53,8 @@ struct MotoWatchBridgeApp: App {
                     switch phase {
                     case .background:
                         WatchBLEManager.shared.record("BG-LIFECYCLE", "ScenePhase raíz: background")
+                        WatchBLEManager.shared.record("SPOTIFY-ORIGEN",
+                            "SwiftUI background: SDK conectado=\(SpotifyAppRemoteBridge.shared.isConnected); eventos=\(SpotifyAppRemoteBridge.shared.metadataEventsActive); estadoApp=\(UIApplication.shared.applicationState.rawValue)")
                         MusicBackgroundExperiment.shared.didEnterBackground(source: "SwiftUI scenePhase")
                         WatchBLEManager.shared.flushLog()
                     case .inactive:
