@@ -1,0 +1,131 @@
+import Foundation
+
+/// Interpretaciones descriptivas; nunca un diagnóstico ni una evaluación médica.
+struct WatchHealthInsight {
+    let title: String
+    let message: String
+    let coverage: String
+    let mood: FeliMood
+}
+
+enum HealthInsights {
+    static func weekly(days: [WatchHealthDay], watchID: String, now: Date = Date(),
+                       calendar: Calendar = .current) -> WatchHealthInsight {
+        guard !watchID.isEmpty else { return missing }
+        let recent = rows(days: days, watchID: watchID, metric: .sleep, now: now, calendar: calendar)
+        let steps = rows(days: days, watchID: watchID, metric: .steps, now: now, calendar: calendar)
+        if recent.count >= 3 {
+            let average = recent.map(\.value).reduce(0, +) / Double(recent.count)
+            let hours = Int(average)
+            let minutes = Int(((average - Double(hours)) * 60).rounded())
+            return WatchHealthInsight(
+                title: "Descanso de la semana",
+                message: "Dormiste un promedio de \(hours) h \(minutes) min en las noches registradas. Revisá los horarios para identificar si tu rutina fue constante.",
+                coverage: "\(recent.count) de 7 días con sueño · \(steps.count) de 7 con pasos",
+                mood: .sleepy)
+        }
+        if steps.count >= 3 {
+            let average = Int((steps.map(\.value).reduce(0, +) / Double(steps.count)).rounded())
+            return WatchHealthInsight(
+                title: "Actividad semanal",
+                message: "Promedio de \(average.formatted()) pasos en los días registrados. Una caminata breve puede ayudarte a sumar movimiento a tu rutina.",
+                coverage: "\(steps.count) de 7 días con pasos · el resto no se cuenta como cero",
+                mood: .active)
+        }
+        return missing
+    }
+
+    static func metric(_ metric: HealthMetric, days: [WatchHealthDay], watchID: String,
+                       now: Date = Date(), calendar: Calendar = .current) -> WatchHealthInsight {
+        let current = rows(days: days, watchID: watchID, metric: metric, now: now, calendar: calendar)
+        guard !current.isEmpty else {
+            return WatchHealthInsight(
+                title: "Feli está esperando datos",
+                message: "Todavía no hay registros recientes de \(metric.title.lowercased()). Actualizá Salud cuando tengas el reloj conectado.",
+                coverage: "0 de 7 días con datos", mood: .curious)
+        }
+        let average = current.map(\.value).reduce(0, +) / Double(current.count)
+        let previousStart = calendar.date(byAdding: .day, value: -14, to: calendar.startOfDay(for: now)) ?? now
+        let previousEnd = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: now)) ?? now
+        let previous = days.filter { $0.watchID == watchID &&
+            ((DateFormatterDay.day($0.dayKey, calendar: calendar)).map { $0 >= previousStart && $0 < previousEnd } ?? false) }
+            .compactMap { $0.value(for: metric) }
+        let trend: String
+        if previous.count >= 3 && current.count >= 3 {
+            let old = previous.reduce(0, +) / Double(previous.count)
+            let delta = average - old
+            let tolerance = max(0.01, abs(old) * 0.03)
+            trend = abs(delta) <= tolerance ? "Parecido al período anterior."
+                : delta > 0 ? "Promedio mayor que el período anterior."
+                : "Promedio menor que el período anterior."
+        } else {
+            trend = "Aún faltan días comparables para analizar la tendencia."
+        }
+
+        switch metric {
+        case .sleep:
+            let phrase = average < 7 ? "El descanso registrado fue menor a siete horas en promedio. Intentá mantener horarios regulares."
+                : "Observá la constancia de tus horarios para conocer mejor tu descanso."
+            return WatchHealthInsight(title: "Tu descanso", message: "\(phrase) \(trend)",
+                                      coverage: "\(current.count) de 7 días con sueño", mood: .sleepy)
+        case .stress:
+            // Se utiliza la escala que comunica Motorola, no umbrales clínicos.
+            let mood: FeliMood = average >= 70 ? .worried : average <= 30 ? .calm : .curious
+            let intro = average >= 70 ? "La escala de estrés del reloj mostró lecturas elevadas entre las muestras disponibles."
+                : average <= 30 ? "Las lecturas de la escala de estrés del reloj fueron bajas en promedio."
+                : "Las lecturas de estrés del reloj variaron durante la semana."
+            return WatchHealthInsight(title: "Estrés registrado",
+                                      message: "\(intro) \(trend) No es una medición clínica.",
+                                      coverage: "\(current.count) de 7 días con lecturas", mood: mood)
+        case .steps:
+            return WatchHealthInsight(title: "Tu actividad",
+                                      message: "Promedio de \(Int(average.rounded()).formatted()) pasos en los días registrados. \(trend)",
+                                      coverage: "\(current.count) de 7 días con pasos", mood: .active)
+        case .heartRate:
+            return WatchHealthInsight(title: "Ritmo cardíaco",
+                                      message: "Promedio de \(Int(average.rounded())) lpm entre las mediciones guardadas. \(trend) No representa tu pulso en reposo.",
+                                      coverage: "\(current.count) de 7 días con lecturas", mood: .curious)
+        case .oxygen:
+            return WatchHealthInsight(title: "Oxígeno registrado",
+                                      message: "Promedio de \(Int(average.rounded())) % entre las lecturas disponibles. No sustituye una medición médica ni evalúa tu estado de salud.",
+                                      coverage: "\(current.count) de 7 días con lecturas", mood: .curious)
+        case .activeCalories:
+            return WatchHealthInsight(title: "Calorías activas",
+                                      message: "Promedio diario registrado: \(Int(average.rounded()).formatted()) kcal. \(trend) Son estimaciones del reloj.",
+                                      coverage: "\(current.count) de 7 días con datos", mood: .active)
+        case .workouts:
+            return WatchHealthInsight(title: "Entrenamientos pendientes",
+                                      message: "La sincronización de sesiones de entrenamiento todavía no está validada.",
+                                      coverage: "Sin importar sesiones", mood: .curious)
+        }
+    }
+
+    private static var missing: WatchHealthInsight {
+        WatchHealthInsight(title: "Faltan registros",
+                           message: "Conectá el Moto Watch y actualizá Salud para que aparezca un resumen basado en tus datos.",
+                           coverage: "Sin información suficiente · no se inventan mediciones", mood: .curious)
+    }
+
+    private static func rows(days: [WatchHealthDay], watchID: String, metric: HealthMetric,
+                             now: Date, calendar: Calendar) -> [(date: Date, value: Double)] {
+        let first = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)) ?? now
+        let limit = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
+        return days.filter { $0.watchID == watchID }
+            .compactMap { day -> (date: Date, value: Double)? in
+                guard let date = DateFormatterDay.day(day.dayKey, calendar: calendar),
+                      date >= first && date < limit,
+                      let value = day.value(for: metric) else { return nil }
+                return (date, value)
+            }
+    }
+}
+
+private enum DateFormatterDay {
+    static func day(_ key: String, calendar: Calendar) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: key)
+    }
+}
