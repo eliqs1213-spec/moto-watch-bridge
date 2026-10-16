@@ -457,6 +457,72 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                                            recoveredFromIdle: wasIdle)
     }
 
+    // Diagnóstico opt-in independiente de refreshPlaybackInfo:
+    // este GET no puede ser omitido porque el SDK haya informado una pista
+    // recién antes del bloqueo. La Web API no se vuelve una tarea periódica:
+    // MusicBackgroundExperiment lo invoca solo durante la ventana finita de iOS
+    // o ante una notificación Bluetooth REAL y permitida.
+    @MainActor
+    func probeWebPlaybackWhileBackgrounded() async -> String {
+        guard UIApplication.shared.applicationState == .background else {
+            return "OMITIDA: iWatch ya no está en segundo plano"
+        }
+        guard controlEnabled else {
+            return "OMITIDA: controles Spotify desactivados"
+        }
+        guard SecureTokenStorage.load() != nil else {
+            return "OMITIDA: Spotify Web API sin autorización guardada"
+        }
+        let epochAtStart = controlEpoch
+        let nativeRevisionAtStart = sdkMetadataRevision
+        let started = Date()
+        record("BG-HTTP: GET /me/player iniciado (Web API real; no depende del caché SDK)")
+        do {
+            // HTTP 204 representa ausencia de player, no una canción vacía
+            // ni autorización para borrar la pantalla del reloj.
+            let playback = try await fetchPlayback()
+            let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+            let sdkChanged = sdkMetadataRevision != nativeRevisionAtStart
+            guard SpotifyBackgroundProbePolicy.shouldApplyHTTPResult(
+                inBackground: UIApplication.shared.applicationState == .background,
+                enabled: controlEnabled,
+                cancelled: Task.isCancelled,
+                startedEpoch: epochAtStart,
+                currentEpoch: controlEpoch,
+                startedNativeRevision: nativeRevisionAtStart,
+                currentNativeRevision: sdkMetadataRevision
+            ) else {
+                return sdkChanged
+                    ? "HTTP respondió en \(elapsed) ms, descartado: llegó estado SDK más nuevo"
+                    : "HTTP respondió en \(elapsed) ms, descartado por salida/cancelación/cambio de sesión"
+            }
+            guard let playback else {
+                return "GET /me/player HTTP 204 confirmado en \(elapsed) ms; última canción conservada"
+            }
+            guard playback.device != nil || playback.item != nil else {
+                return "GET /me/player HTTP 200 sin pista/dispositivo en \(elapsed) ms; metadatos conservados"
+            }
+            let previousTitle = lastMusicSnapshot?.title
+            let previousArtist = lastMusicSnapshot?.artist
+            let previousPlaying = lastIsPlaying
+            markAvailable(playback)
+            // Los metadatos sólo se reenvían si MusicSyncEngine detecta un
+            // cambio confirmado. Este log no afirma que la pantalla lo muestre.
+            let newTitle = lastMusicSnapshot?.title ?? "sin título"
+            let newArtist = lastMusicSnapshot?.artist ?? "sin artista"
+            let changed = previousTitle != newTitle || previousArtist != newArtist
+                || previousPlaying != playback.is_playing
+            return "GET /me/player HTTP 200 en \(elapsed) ms; cambio=\(changed ? "sí" : "no"); pista=\(newTitle) — \(newArtist); pantalla no verificada"
+        } catch {
+            let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+            if let spotifyError = error as? SpotifyBridgeError,
+               case let .response(code, _) = spotifyError {
+                return "GET /me/player HTTP \(code) en \(elapsed) ms; se conservan metadatos"
+            }
+            return "GET /me/player sin respuesta HTTP válida tras \(elapsed) ms: \(error.localizedDescription)"
+        }
+    }
+
     func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
         guard controlEnabled else { return }
         let epochAtStart = controlEpoch
