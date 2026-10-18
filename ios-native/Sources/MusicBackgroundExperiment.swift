@@ -114,8 +114,13 @@ final class MusicBackgroundExperiment: ObservableObject {
         probeTask?.cancel()
         probeTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            let predicted = SpotifyBridge.shared.plannedNaturalChangeProbeOffset()
+            let offsets = MusicBackgroundExperimentPolicy.exitProbeOffsets(
+                naturalChangeOffset: predicted)
+            WatchBLEManager.shared.record("BG-EXPERIMENTO",
+                "Consultas de salida planificadas: \(offsets); estimación no garantiza ejecución")
             var previous: UInt64 = 0
-            for (index, second) in MusicBackgroundExperimentPolicy.foregroundExitOffsets.enumerated() {
+            for (index, second) in offsets.enumerated() {
                 let delay = second - previous
                 previous = second
                 if delay > 0 {
@@ -134,11 +139,11 @@ final class MusicBackgroundExperiment: ObservableObject {
                 }
                 let safeTime = MusicBackgroundExperimentPolicy.remainingTimeLabel(remaining)
                 WatchBLEManager.shared.record("BG-EXPERIMENTO",
-                    "Ventana al bloquear: consulta \(index+1)/3; tiempo iOS restante: \(safeTime)")
+                    "Ventana al bloquear: consulta \(index+1)/\(offsets.count); tiempo iOS restante: \(safeTime)")
                 // Si iOS termina el proceso al pasar a background,
                 // persistir evidencia ANTES de iniciar la consulta Web.
                 WatchBLEManager.shared.flushLog()
-                await self.fetchNow(trigger: "bloqueo \(index+1)/3")
+                await self.fetchNow(trigger: "bloqueo \(index+1)/\(offsets.count)")
             }
             self.finishBackgroundTask()
             WatchBLEManager.shared.record("BG-EXPERIMENTO",
