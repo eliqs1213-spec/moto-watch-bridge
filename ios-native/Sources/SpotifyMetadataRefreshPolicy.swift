@@ -1,11 +1,20 @@
 import Foundation
 
+// La Web API no envía eventos de cambio de pista como el SDK.
+// En primer plano se comprueba Spotify periódicamente con un intervalo acotado;
+// en segundo plano sólo cuando iOS permite una ventana de ejecución.
 enum SpotifyMetadataRefreshPolicy {
-    static let minimumAutomaticInterval: TimeInterval = 12
+    static let playingInterval: TimeInterval = 7
+    static let pausedOrUnknownInterval: TimeInterval = 18
 
     static func shouldStart(inFlight: Bool, forced: Bool,
-                            lastAutomaticAt: Date, now: Date) -> Bool {
+                            lastAutomaticAt: Date, now: Date,
+                            isPlaying: Bool, retryAfterUntil: Date?) -> Bool {
         guard !inFlight else { return false }
-        return forced || now.timeIntervalSince(lastAutomaticAt) >= minimumAutomaticInterval
+        // El Retry-After protege tanto consultas manuales como automáticas.
+        if let retryAfterUntil, now < retryAfterUntil { return false }
+        if forced { return true }
+        let interval = isPlaying ? playingInterval : pausedOrUnknownInterval
+        return now.timeIntervalSince(lastAutomaticAt) >= interval
     }
 }
