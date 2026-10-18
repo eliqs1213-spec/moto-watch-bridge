@@ -27,4 +27,19 @@ check(SpotifyMetadataRefreshPolicy.shouldRefreshUnauthorizedGET(method: "GET", s
 check(!SpotifyMetadataRefreshPolicy.shouldRefreshUnauthorizedGET(method: "POST", statusCode: 401), "No repetir siguiente/previo")
 check(!SpotifyMetadataRefreshPolicy.shouldRefreshUnauthorizedGET(method: "PUT", statusCode: 401), "No repetir play/pausa")
 check(!SpotifyMetadataRefreshPolicy.shouldRefreshUnauthorizedGET(method: "GET", statusCode: 429), "429 no se soluciona renovando token")
-print("Spotify Web metadata policy: thirteen checks passed")
+check(SpotifyMetadataRefreshPolicy.nearTrackEndProbeDelay(
+    progressMs: 165_000, durationMs: 180_000, isPlaying: true) == 16,
+    "Programar comprobación un segundo después de fin previsto")
+check(SpotifyMetadataRefreshPolicy.nearTrackEndProbeDelay(
+    progressMs: 100_000, durationMs: 180_000, isPlaying: true) == nil,
+    "No programar comprobación prematura de pista larga")
+check(SpotifyMetadataRefreshPolicy.nearTrackEndProbeDelay(
+    progressMs: 179_800, durationMs: 180_000, isPlaying: true) == 1.2,
+    "Transición próxima: consulta sin delay largo")
+check(SpotifyMetadataRefreshPolicy.nearTrackEndProbeDelay(
+    progressMs: 20_000, durationMs: 180_000, isPlaying: false) == nil,
+    "Pausa no implica transición automática")
+check(SpotifyMetadataRefreshPolicy.nearTrackEndProbeDelay(
+    progressMs: 180_100, durationMs: 180_000, isPlaying: true) == nil,
+    "Posición inválida no habilita consulta")
+print("Spotify Web metadata policy: eighteen checks passed")
