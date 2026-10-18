@@ -5,8 +5,8 @@ import Security
 import SpotifyiOS
 
 // Motor prioritario de Spotify cuando la sesión App Remote está realmente activa.
-// El SDK NO puede mantenerse conectado al suspenderse Spotify/iWatch.
-// La Web API respalda consultas solo durante ventanas reales de ejecución de iOS.
+// El SDK NO puede mantenerse conectado al suspenderse Spotify/iWatch; la Web API
+// conserva el respaldo cuando el iPhone está bloqueado.
 final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
     SPTSessionManagerDelegate, SPTAppRemoteDelegate, SPTAppRemotePlayerStateDelegate {
 
@@ -237,7 +237,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         metadataEventsActive = false
         hasNativeMetadata = false
         lastNativeReceivedAt = nil
-        if enabled { status = "SDK en reposo · Web API sujeta a ejecución permitida por iOS" }
+        if enabled { status = "SDK en reposo · Web API activa en segundo plano" }
     }
 
     func applicationDidBecomeActive() {
@@ -335,7 +335,7 @@ final class SpotifyAppRemoteBridge: NSObject, ObservableObject,
         lastNativeReceivedAt = nil
         connectionAttemptGeneration &+= 1
         status = enabled && UIApplication.shared.applicationState == .background
-            ? "SDK en reposo · Web API sujeta a iOS"
+            ? "SDK en reposo · Web API activa en segundo plano"
             : "SDK desconectado · controles Web API disponibles"
     }
 
