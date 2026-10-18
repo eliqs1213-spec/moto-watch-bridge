@@ -332,7 +332,22 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             WatchBLEManager.shared.flushLog()
         }
         if playback.item != nil {
-            metadataSource = "Spotify Web API · respaldo"
+            // Una verificación Web de la MISMA pista no debe aparentar que
+            // sustituyó metadatos ya recibidos desde el SDK.
+            let newSnapshot = lastMusicSnapshot
+            if SpotifyMetadataRefreshPolicy.shouldLabelWebAsSource(
+                previousTitle: previousSnapshot?.title,
+                previousArtist: previousSnapshot?.artist,
+                previousAlbum: previousSnapshot?.album,
+                previousPlaying: previousSnapshot?.isPlaying,
+                newTitle: newSnapshot?.title,
+                newArtist: newSnapshot?.artist,
+                newAlbum: newSnapshot?.album,
+                newPlaying: newSnapshot?.isPlaying,
+                previousSourceWasNative: metadataSource.hasPrefix("Spotify iOS SDK")
+            ) {
+                metadataSource = "Spotify Web API · respaldo"
+            }
         }
         if playback.item != nil {
             playbackAvailability = playback.is_playing ? "Reproduciendo" : "Pausado"
@@ -595,8 +610,10 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                              bypassAutomaticCooldown: Bool = false) async {
         guard controlEnabled else { return }
         if !force, let until = manualIdlePreviewUntil, Date() < until { return }
-        // No consumir cooldown Web cuando el SDK sí está aportando datos vigentes.
-        if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
+        // El parámetro allowSDKFallback se conserva por compatibilidad con
+        // llamadas existentes del SDK, pero NO permite desplazar un evento
+        // nativo vigente: la Web es exclusivamente un respaldo.
+        if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh { return }
         let now = Date()
         guard SpotifyMetadataRefreshPolicy.shouldStart(
             inFlight: playbackRefreshInProgress, forced: force || bypassAutomaticCooldown,
@@ -625,7 +642,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             // Un callback App Remote llegó mientras esperaba HTTP: sus metadatos
             // son más recientes que la respuesta Web y tienen prioridad.
             if sdkMetadataRevision != nativeRevisionAtStart { return }
-            if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
+            // Incluso si el GET empezó mientras el SDK estaba sin datos,
+            // no aplicar una respuesta Web si el SDK se recuperó entretanto.
+            if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh { return }
             if let playback = playback {
                 // Una pista pausada sin dispositivo Connect sigue siendo válida.
                 if playback.device != nil || playback.item != nil {
@@ -639,7 +658,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         } catch {
             guard controlEnabled && controlEpoch == epochAtStart else { return }
             if sdkMetadataRevision != nativeRevisionAtStart { return }
-            if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
+            if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh { return }
             // Nunca borrar canción ni cambiar a Idle por una caída de red o 429.
             playbackAvailability = "Consulta fallida; estado conservado"
             if let until = webRetryAfterUntil, until > Date() {
