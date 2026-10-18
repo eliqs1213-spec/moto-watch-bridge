@@ -7,6 +7,17 @@ enum SpotifyMetadataRefreshPolicy {
     static let playingInterval: TimeInterval = 7
     static let pausedOrUnknownInterval: TimeInterval = 18
 
+    // La Web API no emite callbacks. Usamos la posición/duración sólo para
+    // una consulta cerca de una transición esperada, sin adivinar la pista.
+    static func nearTrackEndProbeDelay(progressMs: Int?, durationMs: Int?,
+                                       isPlaying: Bool) -> TimeInterval? {
+        guard isPlaying, let progressMs, let durationMs,
+              durationMs > 0, progressMs >= 0, progressMs <= durationMs else { return nil }
+        let remainingMs = durationMs - progressMs
+        guard remainingMs <= 30_000 else { return nil }
+        return max(1, Double(remainingMs) / 1000 + 1)
+    }
+
     // Un GET de lectura puede repetirse tras renovar el token. Las operaciones
     // que cambian reproducción no deben reintentarse automáticamente.
     static func shouldRefreshUnauthorizedGET(method: String, statusCode: Int) -> Bool {
