@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 extension HealthMetric {
     var color: Color {
@@ -514,9 +515,27 @@ private struct HealthMetricHistoryView: View {
 
 private struct HealthDiagnosticsView: View {
     @StateObject private var sync = HealthDashboardSync.shared
+    @StateObject private var store = WatchHealthStore.shared
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                if let warning = store.storageError {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Histórico local protegido", systemImage: "externaldrive.badge.exclamationmark")
+                            .font(.headline).foregroundStyle(.orange)
+                        Text(warning).font(.subheadline)
+                        Text("Las nuevas lecturas no se guardarán hasta resolver este problema. No desinstales la app ni borres sus datos.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let detail = store.storageDiagnostic {
+                            Text(detail).font(.caption.monospaced()).textSelection(.enabled)
+                            Button("Copiar diagnóstico del histórico") {
+                                UIPasteboard.general.string = "iWatch · histórico local\n" + detail
+                            }.buttonStyle(.bordered)
+                        }
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+                }
                 Text("Consultas individuales de diagnóstico. Para consultar todas las categorías y guardarlas usá Actualizar en Salud.")
                     .font(.subheadline).foregroundStyle(.secondary)
                 HealthSyncPanel(); StressProbePanel(); VitalsProbePanel(); SleepProbePanel()
