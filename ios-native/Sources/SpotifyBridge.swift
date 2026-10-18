@@ -147,6 +147,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var playbackRefreshInProgress = false
     private var lastAutomaticWebRefreshAt = Date.distantPast
     private var webRetryAfterUntil: Date?
+    private var webTransientRetryUntil: Date?
+    private var consecutiveWebFailures = 0
     // Una sola comprobación cerca del final natural del tema, sin reenvío repetitivo.
     private var nearEndVerification: DispatchWorkItem?
     private var lastNearEndProbeKey: String?
@@ -173,6 +175,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         controlEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "motowatch.spotify.enabled")
         if !enabled {
+            consecutiveWebFailures = 0
+            webTransientRetryUntil = nil
             nearEndVerification?.cancel()
             nearEndVerification = nil
             skipNoActiveDeviceUntil = nil
@@ -358,7 +362,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         if let snapshot = lastMusicSnapshot, playback.item != nil {
             let manualResync = consumeManualResyncRequest()
             MusicSyncEngine.shared.acceptFresh(snapshot,
-                                               manual: manualResync || force,
+                                               manual: manualResync,
                                                recoveredFromIdle: wasIdle)
         }
         scheduleNearEndWebVerification(playback)
@@ -618,7 +622,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         guard SpotifyMetadataRefreshPolicy.shouldStart(
             inFlight: playbackRefreshInProgress, forced: force || bypassAutomaticCooldown,
             lastAutomaticAt: lastAutomaticWebRefreshAt, now: now,
-            isPlaying: lastIsPlaying == true, retryAfterUntil: webRetryAfterUntil
+            isPlaying: lastIsPlaying == true, retryAfterUntil: webRetryAfterUntil,
+            transientRetryUntil: webTransientRetryUntil
         ) else { return }
         // Una verificación forzada también cuenta: no lanzar otro GET en el
         // tick automático inmediatamente posterior.
@@ -638,6 +643,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
         do {
             let playback = try await fetchPlayback()
+            consecutiveWebFailures = 0
+            webTransientRetryUntil = nil
             guard controlEnabled && controlEpoch == epochAtStart else { return }
             // Un callback App Remote llegó mientras esperaba HTTP: sus metadatos
             // son más recientes que la respuesta Web y tienen prioridad.
@@ -659,6 +666,22 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             guard controlEnabled && controlEpoch == epochAtStart else { return }
             if sdkMetadataRevision != nativeRevisionAtStart { return }
             if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh { return }
+            // Ante falla de red o servidor, conservar metadatos y espaciar
+            // consultas para no saturar Spotify ni consumir batería.
+            let code: Int? = {
+                if case let SpotifyBridgeError.response(status, _) = error { return status }
+                return nil
+            }()
+            let networkFailure = (error as NSError).domain == NSURLErrorDomain
+            if networkFailure || code == 408 || (code ?? 0) >= 500 {
+                consecutiveWebFailures += 1
+                let delay = SpotifyMetadataRefreshPolicy.transientRetryDelay(
+                    consecutiveFailures: consecutiveWebFailures)
+                webTransientRetryUntil = Date().addingTimeInterval(delay)
+                playbackAvailability = "Error temporal de red · datos conservados"
+                record("Spotify Web API: error transitorio; nuevo GET después de \(Int(delay)) s")
+                return
+            }
             // Nunca borrar canción ni cambiar a Idle por una caída de red o 429.
             playbackAvailability = "Consulta fallida; estado conservado"
             if let until = webRetryAfterUntil, until > Date() {
