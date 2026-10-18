@@ -145,6 +145,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     // Evita respuestas Web duplicadas de distintas pantallas y callbacks.
     private var playbackRefreshInProgress = false
     private var lastAutomaticWebRefreshAt = Date.distantPast
+    private var webRetryAfterUntil: Date?
     private var skipNoActiveDeviceUntil: Date?
     private var lastBlockedSkipLoggedAt = Date.distantPast
     private var lastBlockedSkipProbeAt: Date?
@@ -423,14 +424,10 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     func verifyCurrentMetadataForWatch() async {
         guard UIApplication.shared.applicationState == .active,
               controlEnabled, WatchBLEManager.shared.isConnected else { return }
-        if SpotifyAppRemoteBridge.shared.isConnected {
-            if !SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh {
-                SpotifyAppRemoteBridge.shared.requestCurrentPlayerState(fallbackToWeb: false)
-                await refreshPlaybackInfo(allowSDKFallback: true)
-            }
-        } else {
-            await refreshPlaybackInfo()
-        }
+        // Sólo consultar la Web si el SDK deja de emitir datos recientes.
+        // No invocamos controles del SDK ni modificamos su conexión.
+        guard !SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh else { return }
+        await refreshPlaybackInfo(allowSDKFallback: true)
     }
 
     func recoverAfterWatchReady() async {
@@ -567,7 +564,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         let now = Date()
         guard SpotifyMetadataRefreshPolicy.shouldStart(
             inFlight: playbackRefreshInProgress, forced: force,
-            lastAutomaticAt: lastAutomaticWebRefreshAt, now: now
+            lastAutomaticAt: lastAutomaticWebRefreshAt, now: now,
+            isPlaying: lastIsPlaying == true, retryAfterUntil: webRetryAfterUntil
         ) else { return }
         if !force { lastAutomaticWebRefreshAt = now }
         playbackRefreshInProgress = true
@@ -604,8 +602,13 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             guard controlEnabled && controlEpoch == epochAtStart else { return }
             if sdkMetadataRevision != nativeRevisionAtStart { return }
             if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
-            // No ocultar la música por fallos temporales de red o HTTP 429.
+            // Nunca borrar canción ni cambiar a Idle por una caída de red o 429.
             playbackAvailability = "Consulta fallida; estado conservado"
+            if let until = webRetryAfterUntil, until > Date() {
+                playbackAvailability = "Spotify limitó consultas · reintentará automáticamente"
+                record("Spotify Web API: respetando Retry-After hasta \(until)")
+                return
+            }
             if let spotifyError = error as? SpotifyBridgeError,
                case let .response(code, body) = spotifyError {
                 if code == 401 || (code == 400 && body.contains("invalid_grant")) {
@@ -957,10 +960,19 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 12
         let (data, response) = try await URLSession.shared.data(for: request)
-        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let http = response as? HTTPURLResponse
+        let statusCode = http?.statusCode ?? 0
+        if statusCode == 429 {
+            // Spotify informa cuándo volver a intentar; ninguna respuesta 429
+            // significa que debamos borrar la canción que ya se mostraba.
+            let seconds = Double(http?.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 30
+            let safeDelay = max(5, min(seconds, 600))
+            webRetryAfterUntil = Date().addingTimeInterval(safeDelay)
+        }
         guard (200..<300).contains(statusCode) else {
             throw SpotifyBridgeError.response(statusCode, String(data: data, encoding: .utf8) ?? "")
         }
+        if webRetryAfterUntil != nil { webRetryAfterUntil = nil }
         return data
     }
 
