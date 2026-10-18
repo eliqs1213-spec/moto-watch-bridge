@@ -587,14 +587,29 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         guard SecureTokenStorage.load() != nil else {
             return "OMITIDA: Spotify Web API sin autorización guardada"
         }
+        let started = Date()
+        // La actividad en vivo y la app comparten una única vía de consulta Web.
+        // No competir contra un GET ya iniciado y respetar los 429/reintentos.
+        guard SpotifyMetadataRefreshPolicy.shouldStart(
+            inFlight: playbackRefreshInProgress, forced: true,
+            lastAutomaticAt: lastAutomaticWebRefreshAt, now: started,
+            isPlaying: lastIsPlaying == true, retryAfterUntil: webRetryAfterUntil,
+            transientRetryUntil: webTransientRetryUntil
+        ) else {
+            return "OMITIDA: Web API ocupada o esperando Retry-After/backoff; última canción conservada"
+        }
+        playbackRefreshInProgress = true
+        lastAutomaticWebRefreshAt = started
+        defer { playbackRefreshInProgress = false }
         let epochAtStart = controlEpoch
         let nativeRevisionAtStart = sdkMetadataRevision
-        let started = Date()
         record("BG-HTTP: GET /me/player iniciado (Web API real; no depende del caché SDK)")
         do {
             // HTTP 204 representa ausencia de player, no una canción vacía
             // ni autorización para borrar la pantalla del reloj.
             let playback = try await fetchPlayback()
+            consecutiveWebFailures = 0
+            webTransientRetryUntil = nil
             let elapsed = Int(Date().timeIntervalSince(started) * 1000)
             let sdkChanged = sdkMetadataRevision != nativeRevisionAtStart
             guard SpotifyBackgroundProbePolicy.shouldApplyHTTPResult(
@@ -629,8 +644,21 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             return "GET /me/player HTTP 200 en \(elapsed) ms; cambio=\(changed ? "sí" : "no"); pista=\(newTitle) — \(newArtist); pantalla no verificada"
         } catch {
             let elapsed = Int(Date().timeIntervalSince(started) * 1000)
-            if let spotifyError = error as? SpotifyBridgeError,
-               case let .response(code, _) = spotifyError {
+            let code: Int? = {
+                if case let SpotifyBridgeError.response(status, _) = error {
+                    return status
+                }
+                return nil
+            }()
+            let networkFailure = (error as NSError).domain == NSURLErrorDomain
+            if networkFailure || code == 408 || (code ?? 0) >= 500 {
+                consecutiveWebFailures += 1
+                let delay = SpotifyMetadataRefreshPolicy.transientRetryDelay(
+                    consecutiveFailures: consecutiveWebFailures)
+                webTransientRetryUntil = Date().addingTimeInterval(delay)
+                return "GET /me/player falló: red/servidor; nuevo intento en \(Int(delay)) s; pista conservada"
+            }
+            if let code {
                 return "GET /me/player HTTP \(code) en \(elapsed) ms; se conservan metadatos"
             }
             return "GET /me/player sin respuesta HTTP válida tras \(elapsed) ms: \(error.localizedDescription)"
