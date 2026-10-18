@@ -959,9 +959,24 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 12
-        let (data, response) = try await URLSession.shared.data(for: request)
+        var (data, response) = try await URLSession.shared.data(for: request)
+        var statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if SpotifyMetadataRefreshPolicy.shouldRefreshUnauthorizedGET(method: method, statusCode: statusCode) {
+            // Reintentar UNA sola vez GET si el access token se invalidó antes
+            // de su expiración; nunca repetir POST/PUT para evitar dos comandos.
+            guard let saved = SecureTokenStorage.load(), !saved.refreshToken.isEmpty else {
+                throw SpotifyBridgeError.sessionExpired
+            }
+            let updated = try await tokenExchange([
+                "grant_type": "refresh_token",
+                "refresh_token": saved.refreshToken,
+                "client_id": clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+            ], priorRefreshToken: saved.refreshToken)
+            request.setValue("Bearer \(updated.accessToken)", forHTTPHeaderField: "Authorization")
+            (data, response) = try await URLSession.shared.data(for: request)
+            statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        }
         let http = response as? HTTPURLResponse
-        let statusCode = http?.statusCode ?? 0
         if statusCode == 429 {
             // Spotify informa cuándo volver a intentar; ninguna respuesta 429
             // significa que debamos borrar la canción que ya se mostraba.
