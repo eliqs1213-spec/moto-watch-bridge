@@ -142,6 +142,10 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var manualResyncUntil: Date?
     private var manualIdlePreviewUntil: Date?
     private var requestBusy = false
+    // Evita respuestas Web duplicadas de distintas pantallas y callbacks.
+    private var playbackRefreshInProgress = false
+    private var lastAutomaticWebRefreshAt = Date.distantPast
+    private let minimumAutomaticWebRefreshSeconds: TimeInterval = 12
     private var skipNoActiveDeviceUntil: Date?
     private var lastBlockedSkipLoggedAt = Date.distantPast
     private var lastBlockedSkipProbeAt: Date?
@@ -415,6 +419,21 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         record("Recuperación musical: SDK prioritario, Web API de respaldo")
     }
 
+    // Verificar la canción también en Salud, Inicio y Notificaciones.
+    // No se ejecuta en suspensión; iOS decide qué eventos BLE despiertan la app.
+    func verifyCurrentMetadataForWatch() async {
+        guard UIApplication.shared.applicationState == .active,
+              controlEnabled, WatchBLEManager.shared.isConnected else { return }
+        if SpotifyAppRemoteBridge.shared.isConnected {
+            if !SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh {
+                SpotifyAppRemoteBridge.shared.requestCurrentPlayerState(fallbackToWeb: false)
+                await refreshPlaybackInfo(allowSDKFallback: true)
+            }
+        } else {
+            await refreshPlaybackInfo()
+        }
+    }
+
     func recoverAfterWatchReady() async {
         guard controlEnabled, !recoveryInProgress else { return }
         MusicSyncEngine.shared.requestReconnectRecovery()
@@ -542,7 +561,12 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
-        guard controlEnabled else { return }
+        guard controlEnabled, !playbackRefreshInProgress else { return }
+        let now = Date()
+        if !force && now.timeIntervalSince(lastAutomaticWebRefreshAt) < minimumAutomaticWebRefreshSeconds { return }
+        if !force { lastAutomaticWebRefreshAt = now }
+        playbackRefreshInProgress = true
+        defer { playbackRefreshInProgress = false }
         let epochAtStart = controlEpoch
         if !force, let until = manualIdlePreviewUntil, Date() < until { return }
         if force { manualIdlePreviewUntil = nil }
