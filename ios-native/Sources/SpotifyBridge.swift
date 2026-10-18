@@ -128,6 +128,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var lastDeviceID: String?
     private var lastIsPlaying: Bool?
     private var lastMusicSnapshot: WatchMusicSnapshot?
+    // Hora de la última posición de reproducción confirmada, no de la UI.
+    private var lastAcceptedMetadataAt: Date?
     // Cada evento nativo invalida consultas Web todavía pendientes.
     // Evita que un GET /me/player lento reemplace una pista más nueva del SDK.
     private var sdkMetadataRevision: UInt64 = 0
@@ -327,6 +329,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         idleModeRequested = false
         let previousSnapshot = lastMusicSnapshot
         updateCachedPlayback(playback)
+        if playback.item != nil { lastAcceptedMetadataAt = Date() }
         if let snapshot = lastMusicSnapshot, playback.item != nil,
            previousSnapshot?.title != snapshot.title ||
            previousSnapshot?.artist != snapshot.artist ||
@@ -543,6 +546,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             WatchBLEManager.shared.flushLog()
         }
         lastMusicSnapshot = snapshot
+        lastAcceptedMetadataAt = Date()
         lastIsPlaying = isPlaying
         lastSong = title
         metadataSource = "Spotify iOS SDK · App Remote"
@@ -552,6 +556,19 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         MusicSyncEngine.shared.acceptFresh(snapshot,
                                            manual: manualResync,
                                            recoveredFromIdle: wasIdle)
+    }
+
+    // Sugiere sólo UN sondeo adicional dentro de una ventana finita al bloquear.
+    // Usa duración/posición observadas sin inferir el nombre del tema siguiente.
+    func plannedNaturalChangeProbeOffset(now: Date = Date()) -> UInt64? {
+        guard let snapshot = lastMusicSnapshot,
+              let measuredAt = lastAcceptedMetadataAt else { return nil }
+        return MusicBackgroundExperimentPolicy.naturalChangeOffset(
+            progressMs: snapshot.progressMs,
+            durationMs: snapshot.durationMs,
+            measuredAgo: now.timeIntervalSince(measuredAt),
+            playing: snapshot.isPlaying
+        )
     }
 
     // Diagnóstico opt-in independiente de refreshPlaybackInfo:
