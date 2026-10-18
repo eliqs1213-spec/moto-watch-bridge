@@ -145,7 +145,6 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     // Evita respuestas Web duplicadas de distintas pantallas y callbacks.
     private var playbackRefreshInProgress = false
     private var lastAutomaticWebRefreshAt = Date.distantPast
-    private let minimumAutomaticWebRefreshSeconds: TimeInterval = 12
     private var skipNoActiveDeviceUntil: Date?
     private var lastBlockedSkipLoggedAt = Date.distantPast
     private var lastBlockedSkipProbeAt: Date?
@@ -561,9 +560,12 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
-        guard controlEnabled, !playbackRefreshInProgress else { return }
+        guard controlEnabled else { return }
         let now = Date()
-        if !force && now.timeIntervalSince(lastAutomaticWebRefreshAt) < minimumAutomaticWebRefreshSeconds { return }
+        guard SpotifyMetadataRefreshPolicy.shouldStart(
+            inFlight: playbackRefreshInProgress, forced: force,
+            lastAutomaticAt: lastAutomaticWebRefreshAt, now: now
+        ) else { return }
         if !force { lastAutomaticWebRefreshAt = now }
         playbackRefreshInProgress = true
         defer { playbackRefreshInProgress = false }
