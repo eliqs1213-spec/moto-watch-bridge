@@ -27,6 +27,8 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         WatchBLEManager.shared.resumeAuxiliaryWork()
+        // Reintentar lectura protegida por iOS sin borrar ni reemplazar el JSON.
+        _ = WatchHealthStore.shared.retryLoadAfterUnlockIfNeeded()
         SpotifyAppRemoteBridge.shared.applicationDidBecomeActive()
     }
 }
