@@ -91,7 +91,7 @@ struct MotoWatchBridgeApp: App {
                 .task {
                     while !Task.isCancelled {
                         await SpotifyBridge.shared.verifyCurrentMetadataForWatch()
-                        do { try await Task.sleep(nanoseconds: 18_000_000_000) }
+                        do { try await Task.sleep(nanoseconds: 7_000_000_000) }
                         catch { break }
                     }
                 }
