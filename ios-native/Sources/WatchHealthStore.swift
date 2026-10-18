@@ -145,6 +145,26 @@ final class WatchHealthStore: ObservableObject {
         }
     }
 
+    // Si el primer intento falló por protección temporal del archivo en iOS,
+    // reintentar SOLO al volver la app activa y el dispositivo desbloqueado.
+    // Si persiste un error de JSON, seguir sin sobrescribir el original.
+    @discardableResult
+    func retryLoadAfterUnlockIfNeeded() -> Bool {
+        guard loadFailed else { return false }
+        do {
+            let decoded = try JSONDecoder().decode([WatchHealthDay].self,
+                                                   from: Data(contentsOf: fileURL))
+            days = decoded
+            loadFailed = false
+            storageError = nil
+            storageDiagnostic = nil
+            return true
+        } catch {
+            storageDiagnostic = Self.safeLoadDiagnostic(error)
+            return false
+        }
+    }
+
     private func persist(_ updated: [WatchHealthDay]) throws {
         guard !loadFailed else { throw StoreError.unreadableHistory }
         do {
