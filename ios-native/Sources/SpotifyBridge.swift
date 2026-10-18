@@ -370,7 +370,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                   !SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh else { return }
             self.lastNearEndProbeKey = key
             self.record("Spotify Web API: comprobando transición natural de canción")
-            Task { await self.refreshPlaybackInfo(force: true) }
+            // Obtener estado fresco sin activar reanuncio manual de la MISMA pista.
+            Task { await self.refreshPlaybackInfo(bypassAutomaticCooldown: true) }
         }
         nearEndVerification = job
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: job)
@@ -590,14 +591,15 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
     }
 
-    func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
+    func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false,
+                             bypassAutomaticCooldown: Bool = false) async {
         guard controlEnabled else { return }
         if !force, let until = manualIdlePreviewUntil, Date() < until { return }
         // No consumir cooldown Web cuando el SDK sí está aportando datos vigentes.
         if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
         let now = Date()
         guard SpotifyMetadataRefreshPolicy.shouldStart(
-            inFlight: playbackRefreshInProgress, forced: force,
+            inFlight: playbackRefreshInProgress, forced: force || bypassAutomaticCooldown,
             lastAutomaticAt: lastAutomaticWebRefreshAt, now: now,
             isPlaying: lastIsPlaying == true, retryAfterUntil: webRetryAfterUntil
         ) else { return }
@@ -938,16 +940,16 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         lastAction = "Web API: \(action.uppercased()) enviado"
         record("[SPOTIFY] Web API \(action.uppercased()) enviado")
         try? await Task.sleep(nanoseconds: 850_000_000)
-        // Esta lectura responde a una acción real del reloj, no al polling:
-        // no debe quedar demorada hasta 7 s por el cooldown automático.
-        await refreshPlaybackInfo(force: true)
+        // El GET verifica una pulsación nueva y puede omitir el cooldown.
+        // No reanunciar la canción anterior como una resincronización MANUAL.
+        await refreshPlaybackInfo(bypassAutomaticCooldown: true)
         if UIApplication.shared.applicationState == .active &&
            (action == "next" || action == "previous") &&
            lastMusicSnapshot?.id == previousTrackID {
-            // Spotify Connect puede confirmar la orden antes de que el estado
-            // de reproducción se actualice; consultar de nuevo SIN repetir NEXT.
+            // Spotify Connect puede confirmar NEXT antes de reflejar los cambios;
+            // intentar sólo una segunda lectura, NUNCA un segundo comando NEXT.
             try? await Task.sleep(nanoseconds: 1_300_000_000)
-            await refreshPlaybackInfo(force: true)
+            await refreshPlaybackInfo(bypassAutomaticCooldown: true)
         }
     }
 
