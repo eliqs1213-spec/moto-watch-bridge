@@ -8,6 +8,26 @@ enum MusicBackgroundExperimentPolicy {
     static let bleCooldownSeconds: TimeInterval = 35
     static let foregroundExitOffsets: [UInt64] = [0, 9, 18]
 
+    // Hasta una comprobación adicional en el tiempo de ejecución de salida
+    // que iOS pudiera conceder. No habilita sondeos periódicos suspendidos.
+    static func naturalChangeOffset(progressMs: Int?, durationMs: Int?,
+                                    measuredAgo: TimeInterval, playing: Bool) -> UInt64? {
+        guard playing, let progressMs, let durationMs,
+              durationMs > 0, progressMs >= 0, progressMs <= durationMs,
+              measuredAgo.isFinite, measuredAgo >= 0 else { return nil }
+        let secondsUntilEnd = Double(durationMs - progressMs) / 1000 - measuredAgo
+        guard secondsUntilEnd > 0, secondsUntilEnd < 20 else { return nil }
+        return UInt64(max(1, ceil(secondsUntilEnd + 1)))
+    }
+
+    static func exitProbeOffsets(naturalChangeOffset: UInt64?) -> [UInt64] {
+        guard let naturalChangeOffset,
+              naturalChangeOffset > 0, naturalChangeOffset <= 21,
+              foregroundExitOffsets.allSatisfy({ abs(Int($0) - Int(naturalChangeOffset)) >= 3 })
+        else { return foregroundExitOffsets }
+        return (foregroundExitOffsets + [naturalChangeOffset]).sorted()
+    }
+
     static func canProbeFromBLE(enabled: Bool, inBackground: Bool,
                                 watchReady: Bool, spotifyEnabled: Bool,
                                 isMusicCommand: Bool, isBusy: Bool,
