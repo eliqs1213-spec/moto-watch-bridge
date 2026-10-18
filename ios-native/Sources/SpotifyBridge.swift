@@ -66,6 +66,7 @@ private struct SpotifyPlayback: Decodable {
     }
     let is_playing: Bool
     let progress_ms: Int?
+    let timestamp: Int? // Hora de la última transición informada por Spotify.
     let device: Device?
     let item: Song?
 }
@@ -146,6 +147,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
     private var playbackRefreshInProgress = false
     private var lastAutomaticWebRefreshAt = Date.distantPast
     private var webRetryAfterUntil: Date?
+    // Una sola comprobación cerca del final natural del tema, sin reenvío repetitivo.
+    private var nearEndVerification: DispatchWorkItem?
+    private var lastNearEndProbeKey: String?
     private var skipNoActiveDeviceUntil: Date?
     private var lastBlockedSkipLoggedAt = Date.distantPast
     private var lastBlockedSkipProbeAt: Date?
@@ -169,6 +173,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         controlEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "motowatch.spotify.enabled")
         if !enabled {
+            nearEndVerification?.cancel()
+            nearEndVerification = nil
             skipNoActiveDeviceUntil = nil
             lastBlockedSkipProbeAt = nil
             pendingWatchCommands.removeAll()
@@ -340,6 +346,34 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                                                manual: manualResync || force,
                                                recoveredFromIdle: wasIdle)
         }
+        scheduleNearEndWebVerification(playback)
+    }
+
+    private func scheduleNearEndWebVerification(_ playback: SpotifyPlayback) {
+        nearEndVerification?.cancel()
+        nearEndVerification = nil
+        guard controlEnabled, UIApplication.shared.applicationState == .active,
+              WatchBLEManager.shared.isConnected, playback.is_playing,
+              !SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh,
+              let item = playback.item,
+              let delay = SpotifyMetadataRefreshPolicy.nearTrackEndProbeDelay(
+                progressMs: playback.progress_ms, durationMs: item.duration_ms,
+                isPlaying: playback.is_playing) else { return }
+        // El mismo tema puede sonar de nuevo en modo repetir; timestamp permite
+        // distinguir ciclos sin depender solamente del título o identificador.
+        let key = "\(item.id ?? item.name)|\(playback.timestamp ?? 0)"
+        guard lastNearEndProbeKey != key else { return }
+        let job = DispatchWorkItem { [weak self] in
+            guard let self = self, self.controlEnabled,
+                  UIApplication.shared.applicationState == .active,
+                  WatchBLEManager.shared.isConnected,
+                  !SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh else { return }
+            self.lastNearEndProbeKey = key
+            self.record("Spotify Web API: comprobando transición natural de canción")
+            Task { await self.refreshPlaybackInfo(force: true) }
+        }
+        nearEndVerification = job
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: job)
     }
 
     private func markNoActivePlayer(reason: String = "Spotify sin reproductor") {
@@ -567,7 +601,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
             lastAutomaticAt: lastAutomaticWebRefreshAt, now: now,
             isPlaying: lastIsPlaying == true, retryAfterUntil: webRetryAfterUntil
         ) else { return }
-        if !force { lastAutomaticWebRefreshAt = now }
+        // Una verificación forzada también cuenta: no lanzar otro GET en el
+        // tick automático inmediatamente posterior.
+        lastAutomaticWebRefreshAt = now
         playbackRefreshInProgress = true
         defer { playbackRefreshInProgress = false }
         let epochAtStart = controlEpoch
@@ -889,6 +925,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                 return
             }
         }
+        let previousTrackID = lastMusicSnapshot?.id
         let method = (action == "next" || action == "previous") ? "POST" : "PUT"
         _ = try await api("/me/player/\(action)", method: method)
         if action == "play" { lastIsPlaying = true }
@@ -901,10 +938,16 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         lastAction = "Web API: \(action.uppercased()) enviado"
         record("[SPOTIFY] Web API \(action.uppercased()) enviado")
         try? await Task.sleep(nanoseconds: 850_000_000)
-        await refreshPlaybackInfo()
-        if UIApplication.shared.applicationState == .active && (action == "next" || action == "previous") {
+        // Esta lectura responde a una acción real del reloj, no al polling:
+        // no debe quedar demorada hasta 7 s por el cooldown automático.
+        await refreshPlaybackInfo(force: true)
+        if UIApplication.shared.applicationState == .active &&
+           (action == "next" || action == "previous") &&
+           lastMusicSnapshot?.id == previousTrackID {
+            // Spotify Connect puede confirmar la orden antes de que el estado
+            // de reproducción se actualice; consultar de nuevo SIN repetir NEXT.
             try? await Task.sleep(nanoseconds: 1_300_000_000)
-            await refreshPlaybackInfo()
+            await refreshPlaybackInfo(force: true)
         }
     }
 
