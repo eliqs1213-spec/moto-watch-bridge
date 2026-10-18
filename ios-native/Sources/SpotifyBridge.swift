@@ -473,6 +473,15 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         record("Recuperación musical: SDK prioritario, Web API de respaldo")
     }
 
+    // Una conexión reanudada es evidencia suficiente para probar el HTTP
+    // sin esperar el backoff de una red que anteriormente estaba desconectada.
+    // No se altera Retry-After 429: los límites de Spotify siguen vigentes.
+    func resetTransientWebFailureAfterResume() {
+        consecutiveWebFailures = 0
+        webTransientRetryUntil = nil
+        lastAutomaticWebRefreshAt = .distantPast
+    }
+
     // Verificar la canción también en Salud, Inicio y Notificaciones.
     // No se ejecuta en suspensión; iOS decide qué eventos BLE despiertan la app.
     func verifyCurrentMetadataForWatch() async {
@@ -486,6 +495,7 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
 
     func recoverAfterWatchReady() async {
         guard controlEnabled, !recoveryInProgress else { return }
+        resetTransientWebFailureAfterResume()
         MusicSyncEngine.shared.requestReconnectRecovery()
         recoveryInProgress = true
         defer { recoveryInProgress = false }
