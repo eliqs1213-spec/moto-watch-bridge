@@ -5,19 +5,22 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 let now = Date(timeIntervalSince1970: 3_000_000)
-check(SpotifyMetadataRefreshPolicy.shouldStart(
-    inFlight: false, forced: false, lastAutomaticAt: .distantPast, now: now),
-    "Primer refresco permitido")
-check(!SpotifyMetadataRefreshPolicy.shouldStart(
-    inFlight: true, forced: true, lastAutomaticAt: .distantPast, now: now),
-    "Evitar solicitudes paralelas incluso si se fuerza")
-check(!SpotifyMetadataRefreshPolicy.shouldStart(
-    inFlight: false, forced: false, lastAutomaticAt: now.addingTimeInterval(-5), now: now),
-    "Evitar polling excesivo")
-check(SpotifyMetadataRefreshPolicy.shouldStart(
-    inFlight: false, forced: false, lastAutomaticAt: now.addingTimeInterval(-12), now: now),
-    "Permitir consulta luego del intervalo")
-check(SpotifyMetadataRefreshPolicy.shouldStart(
-    inFlight: false, forced: true, lastAutomaticAt: now, now: now),
-    "Permitir consulta manual aun con cooldown")
-print("Spotify metadata Web API policy checks passed")
+func permitted(_ previous: TimeInterval, playing: Bool = true,
+               forced: Bool = false, inFlight: Bool = false,
+               retry: TimeInterval? = nil) -> Bool {
+    SpotifyMetadataRefreshPolicy.shouldStart(
+        inFlight: inFlight, forced: forced,
+        lastAutomaticAt: now.addingTimeInterval(-previous),
+        now: now, isPlaying: playing,
+        retryAfterUntil: retry.map { now.addingTimeInterval($0) })
+}
+check(permitted(0, forced: true), "Permitir resync manual")
+check(!permitted(100, forced: true, inFlight: true), "No GET paralelo")
+check(!permitted(5), "Mientras reproduce, evitar polling antes de 7 s")
+check(permitted(7), "Mientras reproduce, permitir consulta a 7 s")
+check(!permitted(17, playing: false), "Mientras pausa, evitar polling antes de 18 s")
+check(permitted(18, playing: false), "Mientras pausa, permitir consulta a 18 s")
+check(!permitted(100, retry: 35), "Respetar Retry-After")
+check(!permitted(100, forced: true, retry: 35), "Forzado tampoco evade 429")
+check(permitted(100, retry: -1), "Permitir recuperación tras Retry-After")
+print("Spotify Web metadata policy: nine checks passed")
