@@ -66,4 +66,25 @@ requireTrial(MusicBackgroundExperimentPolicy.shouldLogBLEFrame(
     firstOfType: false, queryEligible: false, secondsSinceLastLog: 45),
     "Registrar muestra cada 45 segundos")
 
-print("Background music trial policy checks passed: opt-in, real BLE only, cooldown, finite window, safe time")
+requireTrial(MusicBackgroundExperimentPolicy.naturalChangeOffset(
+    progressMs: 175_000, durationMs: 180_000,
+    measuredAgo: 1, playing: true) == 5,
+    "Comprobar fin previsto contando antigüedad real de metadatos")
+requireTrial(MusicBackgroundExperimentPolicy.naturalChangeOffset(
+    progressMs: 175_000, durationMs: 180_000,
+    measuredAgo: 1, playing: false) == nil,
+    "No anticipar transición cuando Spotify está pausado")
+requireTrial(MusicBackgroundExperimentPolicy.naturalChangeOffset(
+    progressMs: 90_000, durationMs: 180_000,
+    measuredAgo: 0, playing: true) == nil,
+    "No mantener timers adicionales más allá de la ventana acotada")
+requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
+    naturalChangeOffset: 5) == [0,5,9,18],
+    "Un único sondeo adicional cerca de transición natural")
+requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
+    naturalChangeOffset: 10) == [0,9,18],
+    "Evitar solicitudes casi duplicadas cerca de la consulta 9 s")
+requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
+    naturalChangeOffset: nil) == [0,9,18],
+    "Sin pista vigente preservar ventana original")
+print("Background music trial policy checks passed: real BLE, finite window, safety and natural transitions")
