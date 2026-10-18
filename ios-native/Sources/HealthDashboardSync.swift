@@ -38,6 +38,10 @@ final class HealthDashboardSync: ObservableObject {
     func update(watch: WatchBLEManager, automatic: Bool = false) {
         guard UIApplication.shared.applicationState == .active else { return }
         guard !isRunning else { return }
+        guard WatchHealthStore.shared.storageError == nil else {
+            status = "Histórico local ilegible: se conserva el archivo original. Abrí Diagnóstico en Salud."
+            return
+        }
         guard watch.isConnected, let watchID = watch.healthWatchID else {
             if !automatic { status = "Conectá tu Moto Watch desde la pestaña iWatch" }; return
         }
