@@ -114,6 +114,8 @@ try await MainActor.run {
     let corrupt = directory.appendingPathComponent("corrupt.json")
     let original = Data("broken-history".utf8); try original.write(to: corrupt)
     let broken = WatchHealthStore(fileURL: corrupt)
+    expect(broken.storageDiagnostic?.contains("Formato o fecha inválidos") == true,
+           "Unreadable JSON must provide a safe, actionable diagnostic")
     do { try broken.mergeCounter(watchID: "a", metric: .steps, value: 1, at: date); fatalError("Unreadable history overwritten") }
     catch WatchHealthStore.StoreError.unreadableHistory { }
     let preserved = try Data(contentsOf: corrupt)
