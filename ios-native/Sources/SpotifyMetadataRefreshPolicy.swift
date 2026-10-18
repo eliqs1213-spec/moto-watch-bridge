@@ -7,6 +7,12 @@ enum SpotifyMetadataRefreshPolicy {
     static let playingInterval: TimeInterval = 7
     static let pausedOrUnknownInterval: TimeInterval = 18
 
+    // Un GET de lectura puede repetirse tras renovar el token. Las operaciones
+    // que cambian reproducción no deben reintentarse automáticamente.
+    static func shouldRefreshUnauthorizedGET(method: String, statusCode: Int) -> Bool {
+        method.uppercased() == "GET" && statusCode == 401
+    }
+
     static func shouldStart(inFlight: Bool, forced: Bool,
                             lastAutomaticAt: Date, now: Date,
                             isPlaying: Bool, retryAfterUntil: Date?) -> Bool {
