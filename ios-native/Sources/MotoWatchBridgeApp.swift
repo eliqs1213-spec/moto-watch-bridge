@@ -31,6 +31,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         WatchBLEManager.shared.resumeAuxiliaryWork()
         SpotifyLockMetadataHandoff.shared.didBecomeActive()
         SpotifyAppRemoteBridge.shared.applicationDidBecomeActive()
+        SpotifyBridge.shared.resetTransientWebFailureAfterResume()
         Task { @MainActor in await SpotifyBridge.shared.verifyCurrentMetadataForWatch() }
     }
 }
