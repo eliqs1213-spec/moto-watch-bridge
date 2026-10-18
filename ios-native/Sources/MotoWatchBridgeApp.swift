@@ -17,6 +17,8 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         WatchBLEManager.shared.record("SISTEMA", "iPhone: aplicación en segundo plano")
         WatchBLEManager.shared.pauseAuxiliaryWork()
         SpotifyAppRemoteBridge.shared.applicationDidEnterBackground()
+        // Única lectura Web al bloquear, solo si iOS concede ejecución.
+        SpotifyLockMetadataHandoff.shared.didEnterBackground()
         MusicBackgroundExperiment.shared.didEnterBackground(source: "UIApplicationDelegate")
     }
 
@@ -27,7 +29,9 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         WatchBLEManager.shared.resumeAuxiliaryWork()
+        SpotifyLockMetadataHandoff.shared.didBecomeActive()
         SpotifyAppRemoteBridge.shared.applicationDidBecomeActive()
+        Task { @MainActor in await SpotifyBridge.shared.verifyCurrentMetadataForWatch() }
     }
 }
 
@@ -82,6 +86,14 @@ struct MotoWatchBridgeApp: App {
                 }
                 .onOpenURL { url in
                     SpotifyAppRemoteBridge.shared.handleOpenURL(url)
+                }
+                // Comprobación global y acotada a primer plano; no mantiene iOS despierto.
+                .task {
+                    while !Task.isCancelled {
+                        await SpotifyBridge.shared.verifyCurrentMetadataForWatch()
+                        do { try await Task.sleep(nanoseconds: 18_000_000_000) }
+                        catch { break }
+                    }
                 }
                 .environmentObject(WatchBLEManager.shared)
                 .environmentObject(SpotifyBridge.shared)
@@ -168,25 +180,7 @@ struct ContentView: View {
                 }
             }
         }
-        .task {
-            // No afirmar que hay encuesta continua con el iPhone bloqueado.
-            while !Task.isCancelled {
-                if isSelected && UIApplication.shared.applicationState == .active && spotify.controlEnabled {
-                    if spotifyRemote.isConnected {
-                        // Una suscripción puede figurar activa pero no entregar
-                        // nuevos datos. Comprobar Web SOLO cuando el SDK lleva
-                        // más de 20 s sin un estado válido (o nunca entregó uno).
-                        spotifyRemote.requestCurrentPlayerState(fallbackToWeb: true)
-                        if !spotifyRemote.nativeMetadataIsFresh && watch.isConnected {
-                            await spotify.refreshPlaybackInfo(allowSDKFallback: true)
-                        }
-                    } else if watch.isConnected {
-                        await spotify.refreshPlaybackInfo()
-                    }
-                }
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
-            }
-        }
+
     }
 
     private var watchHero: some View {
