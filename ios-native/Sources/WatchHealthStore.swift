@@ -107,6 +107,8 @@ final class WatchHealthStore: ObservableObject {
     static let shared = WatchHealthStore()
     @Published private(set) var days: [WatchHealthDay] = []
     @Published private(set) var storageError: String?
+    // Diagnóstico estructural: no incluye valores ni identificadores de salud.
+    @Published private(set) var storageDiagnostic: String?
     private let fileURL: URL
     private var loadFailed = false
     enum StoreError: Error { case invalidReading, overlappingSleep, unreadableHistory }
@@ -116,8 +118,33 @@ final class WatchHealthStore: ObservableObject {
             .appendingPathComponent("WatchHealth/history-v1.json")
         guard FileManager.default.fileExists(atPath: self.fileURL.path) else { return }
         do { days = try JSONDecoder().decode([WatchHealthDay].self, from: Data(contentsOf: self.fileURL)) }
-        catch { loadFailed = true; storageError = "No se pudo abrir el histórico guardado. Se conserva el archivo original." }
+        catch {
+            loadFailed = true
+            storageError = "No se pudo abrir el histórico guardado. Se conserva el archivo original."
+            storageDiagnostic = Self.safeLoadDiagnostic(error)
+        }
     }
+
+    private static func safeLoadDiagnostic(_ error: Error) -> String {
+        func codingPath(_ path: [CodingKey]) -> String {
+            let labels = path.map { $0.stringValue }
+            return labels.isEmpty ? "raíz del JSON" : labels.joined(separator: " → ")
+        }
+        switch error {
+        case let DecodingError.keyNotFound(key, context):
+            return "Campo obligatorio ausente: \(key.stringValue). Ubicación: \(codingPath(context.codingPath))."
+        case let DecodingError.typeMismatch(_, context):
+            return "Tipo de dato incompatible. Ubicación: \(codingPath(context.codingPath))."
+        case let DecodingError.valueNotFound(_, context):
+            return "Valor obligatorio ausente. Ubicación: \(codingPath(context.codingPath))."
+        case let DecodingError.dataCorrupted(context):
+            return "Formato o fecha inválidos. Ubicación: \(codingPath(context.codingPath))."
+        default:
+            let failure = error as NSError
+            return "Error de lectura del archivo: \(failure.domain), código \(failure.code)."
+        }
+    }
+
     private func persist(_ updated: [WatchHealthDay]) throws {
         guard !loadFailed else { throw StoreError.unreadableHistory }
         do {
