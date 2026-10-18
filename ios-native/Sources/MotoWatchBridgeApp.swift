@@ -376,6 +376,10 @@ struct ContentView: View {
                                     watch.refreshBattery()
                                 }
                                 .buttonStyle(.borderedProminent)
+                                Button("Reiniciar prueba") {
+                                    batteryLive.restart(percentage: watch.batteryPercentage)
+                                    widgetInstallReport = WidgetExtensionDiagnostics.report()
+                                }.buttonStyle(.bordered)
                                 Button("Detener") { batteryLive.stop() }
                                     .buttonStyle(.bordered)
                             }
@@ -383,6 +387,8 @@ struct ContentView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                             Text("Bloqueá el iPhone y buscá la actividad debajo de las notificaciones o en la Dynamic Island. Es diferente al widget fijo debajo del reloj. Las actividades en vivo caducan según iOS y las lecturas solo se actualizan cuando iWatch logra comunicarse con el reloj.")
                                 .font(.caption).foregroundStyle(.secondary)
+                            Text("Si la Dynamic Island queda como una barra negra vacía, comprobá si el widget «iWatch · Prueba» aparece en la galería. Si tampoco aparece, priorizar la firma de MotoBatteryWidgets.appex; Reiniciar prueba no corrige CODESIGNING. Buscá un informe MotoBatteryWidgets en Datos de análisis y compartí su causa de terminación.")
+                                .font(.caption).foregroundStyle(.orange)
                             Text("Widget circular/rectangular «iWatch · Prueba»: solo muestra iWatch OK. Sirve para comprobar si Sideloadly registró la extensión; NO muestra una batería inventada.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
