@@ -561,6 +561,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
 
     func refreshPlaybackInfo(force: Bool = false, allowSDKFallback: Bool = false) async {
         guard controlEnabled else { return }
+        if !force, let until = manualIdlePreviewUntil, Date() < until { return }
+        // No consumir cooldown Web cuando el SDK sí está aportando datos vigentes.
+        if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
         let now = Date()
         guard SpotifyMetadataRefreshPolicy.shouldStart(
             inFlight: playbackRefreshInProgress, forced: force,
@@ -570,12 +573,9 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         playbackRefreshInProgress = true
         defer { playbackRefreshInProgress = false }
         let epochAtStart = controlEpoch
-        if !force, let until = manualIdlePreviewUntil, Date() < until { return }
         if force { manualIdlePreviewUntil = nil }
-        // «SDK conectado + suscripto» no prueba que esté entregando estados:
-        // permitir la lectura Web si el último evento nativo está vencido.
-        // No reemplazar nunca una respuesta SDK más reciente que HTTP.
-        if SpotifyAppRemoteBridge.shared.nativeMetadataIsFresh && !allowSDKFallback { return }
+        // Un GET Web lento no puede reemplazar una canción SDK posterior.
+        // Si el dato nativo está vencido se permite este respaldo HTTP.
         let nativeRevisionAtStart = sdkMetadataRevision
         guard SecureTokenStorage.load() != nil else {
             if !SpotifyAppRemoteBridge.shared.isConnected {
