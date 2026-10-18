@@ -42,4 +42,42 @@ check(SpotifyMetadataRefreshPolicy.nearTrackEndProbeDelay(
 check(SpotifyMetadataRefreshPolicy.nearTrackEndProbeDelay(
     progressMs: 180_100, durationMs: 180_000, isPlaying: true) == nil,
     "Posición inválida no habilita consulta")
-print("Spotify Web metadata policy: eighteen checks passed")
+check(!SpotifyMetadataRefreshPolicy.shouldLabelWebAsSource(
+    previousTitle: "Pista A", previousArtist: "Artista", previousAlbum: "Album",
+    previousPlaying: true, newTitle: "Pista A", newArtist: "Artista",
+    newAlbum: "Album", newPlaying: true, previousSourceWasNative: true),
+    "Confirmar por Web el mismo tema no reemplaza el origen SDK")
+check(SpotifyMetadataRefreshPolicy.shouldLabelWebAsSource(
+    previousTitle: "Pista A", previousArtist: "Artista", previousAlbum: "Album",
+    previousPlaying: true, newTitle: "Pista B", newArtist: "Artista",
+    newAlbum: "Album", newPlaying: true, previousSourceWasNative: true),
+    "Nueva canción Web sí cambia origen")
+check(SpotifyMetadataRefreshPolicy.shouldLabelWebAsSource(
+    previousTitle: "Pista A", previousArtist: "Artista", previousAlbum: "Album",
+    previousPlaying: true, newTitle: "Pista A", newArtist: "Artista",
+    newAlbum: "Album", newPlaying: false, previousSourceWasNative: true),
+    "Pausa real Web sí cambia origen")
+check(SpotifyMetadataRefreshPolicy.shouldLabelWebAsSource(
+    previousTitle: "Pista A", previousArtist: "Artista", previousAlbum: "Album",
+    previousPlaying: true, newTitle: "Pista A", newArtist: "Artista",
+    newAlbum: "Album", newPlaying: true, previousSourceWasNative: false),
+    "El origen sigue siendo Web después de revalidación")
+check(SpotifyMetadataRefreshPolicy.transientRetryDelay(consecutiveFailures: 1) == 5,
+      "Primer fallo de red: reintentar después de 5 s")
+check(SpotifyMetadataRefreshPolicy.transientRetryDelay(consecutiveFailures: 2) == 10,
+      "Dos fallos de red: espera 10 s")
+check(SpotifyMetadataRefreshPolicy.transientRetryDelay(consecutiveFailures: 3) == 20,
+      "Tres fallos de red: espera 20 s")
+check(SpotifyMetadataRefreshPolicy.transientRetryDelay(consecutiveFailures: 5) == 60,
+      "Reintentos limitados a 60 s")
+check(!SpotifyMetadataRefreshPolicy.shouldStart(
+    inFlight: false, forced: true, lastAutomaticAt: now.addingTimeInterval(-100),
+    now: now, isPlaying: true, retryAfterUntil: nil,
+    transientRetryUntil: now.addingTimeInterval(9)),
+    "Ni la consulta forzada omite la pausa tras error temporal")
+check(SpotifyMetadataRefreshPolicy.shouldStart(
+    inFlight: false, forced: false, lastAutomaticAt: now.addingTimeInterval(-100),
+    now: now, isPlaying: true, retryAfterUntil: nil,
+    transientRetryUntil: now.addingTimeInterval(-1)),
+    "Reanudar consultas al superar backoff temporal")
+print("Spotify Web metadata policy: twenty-eight checks passed")
