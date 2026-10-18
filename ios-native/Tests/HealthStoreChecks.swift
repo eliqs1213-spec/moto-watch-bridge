@@ -120,6 +120,12 @@ try await MainActor.run {
     catch WatchHealthStore.StoreError.unreadableHistory { }
     let preserved = try Data(contentsOf: corrupt)
     expect(preserved == original, "Unreadable history not preserved")
+    expect(!broken.retryLoadAfterUnlockIfNeeded(), "Corrupt history must not be treated as recovered")
+    try JSONEncoder().encode([legacy]).write(to: corrupt, options: .atomic)
+    expect(broken.retryLoadAfterUnlockIfNeeded(), "Retry should recover after valid history becomes readable")
+    expect(broken.storageError == nil, "Recovery should clear transient storage warning")
+    expect(broken.day(date, watchID: "watch-a")?.steps == 1885,
+           "Recovery should restore stored records")
 
     let leap = calendar.date(from: DateComponents(year: 2024, month: 2, day: 15))!
     let common = calendar.date(from: DateComponents(year: 2026, month: 2, day: 15))!
