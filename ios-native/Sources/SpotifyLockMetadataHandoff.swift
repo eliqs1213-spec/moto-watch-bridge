@@ -25,7 +25,8 @@ final class SpotifyLockMetadataHandoff {
         guard token != .invalid else { return }
         WatchBLEManager.shared.record("SPOTIFY-WEB", "Verificación breve al bloquear; sin consulta periódica")
         task = Task { @MainActor [weak self] in
-            await SpotifyBridge.shared.refreshPlaybackInfo(allowSDKFallback: true)
+            await SpotifyBridge.shared.refreshPlaybackInfo(
+                allowSDKFallback: true, bypassAutomaticCooldown: true)
             self?.finish()
         }
     }
