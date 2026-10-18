@@ -24,19 +24,34 @@ enum WidgetExtensionDiagnostics {
         let widgetBundle = widgetURL.flatMap { Bundle(url: $0) }
         let widgetID = widgetBundle?.bundleIdentifier ?? "(sin identificador)"
         let widgetInfo = widgetBundle?.infoDictionary ?? [:]
+        let executableName = widgetInfo["CFBundleExecutable"] as? String ?? "MotoBatteryWidgets"
+        let executableURL = widgetURL?.appendingPathComponent(executableName)
+        let executablePresent = executableURL.map {
+            FileManager.default.fileExists(atPath: $0.path)
+        } ?? false
+        let signatureManifest = widgetURL?.appendingPathComponent("_CodeSignature/CodeResources")
+        let signatureManifestPresent = signatureManifest.map {
+            FileManager.default.fileExists(atPath: $0.path)
+        } ?? false
         let extInfo = widgetInfo["NSExtension"] as? [String: Any] ?? [:]
         let extensionPoint = extInfo["NSExtensionPointIdentifier"] as? String ??
             "(ausente)"
         let extensionName = widgetInfo["CFBundleDisplayName"] as? String ??
             "(sin nombre)"
         let liveActivitiesAllowed = ActivityAuthorizationInfo().areActivitiesEnabled
-        let activeLiveActivities = Activity<MotoBatteryActivityAttributes>.activities.count
+        let currentActivities = Activity<MotoBatteryActivityAttributes>.activities
+        let activeLiveActivities = currentActivities.count
+        let activityDetails = currentActivities.map {
+            "ID=\(String($0.id.prefix(8))) estado=\(String(describing: $0.activityState))"
+        }.joined(separator: ", ")
         let idRelationOK = widgetURL != nil && widgetID.hasPrefix(appID + ".")
         let extensionNames = appExtensions.map { $0.lastPathComponent }.joined(separator: ", ")
 
         let conclusion: String
         if !dirExists || widgetURL == nil {
             conclusion = "FALTA EXTENSIÓN: el .appex no está dentro de la app instalada; revisar cómo Sideloadly firma/empaqueta el IPA."
+        } else if !executablePresent {
+            conclusion = "EJECUTABLE AUSENTE: la extensión se empaquetó sin su binario."
         } else if extensionPoint != "com.apple.widgetkit-extension" {
             conclusion = "MANIFIESTO INCORRECTO: falta el punto de extensión de WidgetKit."
         } else if !idRelationOK {
@@ -56,13 +71,18 @@ enum WidgetExtensionDiagnostics {
             "MotoBatteryWidgets.appex: \(widgetURL == nil ? "NO" : "SÍ")",
             "ID de extensión: \(widgetID)",
             "Nombre de extensión: \(extensionName)",
+            "Ejecutable de extensión: \(executablePresent ? "presente" : "AUSENTE")",
+            "Manifiesto _CodeSignature: \(signatureManifestPresent ? "presente" : "ausente / no inspeccionable")",
+            "Soporte Live Activities en app: \((bundle.infoDictionary?["NSSupportsLiveActivities"] as? Bool) == true ? "SÍ" : "NO")",
             "Punto de extensión: \(extensionPoint)",
             "Relación de IDs app/widget: \(idRelationOK ? "coherente" : "no comprobada / distinta")",
             "Actividad en vivo permitida: \(liveActivitiesAllowed ? "sí" : "no")",
             "Actividades de batería activas en ActivityKit: \(activeLiveActivities)",
+            "IDs/estados ActivityKit: \(activityDetails.isEmpty ? "sin actividades" : activityDetails)",
             "",
             "Diagnóstico: \(conclusion)",
-            "Nota: no se consulta el registro interno de WidgetKit, la firma de los binarios ni la galería de widgets."
+            "Nota: la presencia de un manifiesto NO valida la firma criptográfica ni asegura que WidgetKit ejecutó el widget.",
+            "Si la isla es negra sin contenido, buscar en Ajustes > Privacidad y seguridad > Análisis y mejoras > Datos de análisis un reporte MotoBatteryWidgets. 'CODESIGNING / Invalid Page' apunta a re-firma defectuosa tras Sideloadly."
         ].joined(separator: "\n")
     }
 }
