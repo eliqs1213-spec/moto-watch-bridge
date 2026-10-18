@@ -18,6 +18,28 @@ enum SpotifyMetadataRefreshPolicy {
         return max(1, Double(remainingMs) / 1000 + 1)
     }
 
+    // Una lectura Web que confirma metadatos idénticos no debe aparentar
+    // que reemplazó el origen SDK. Si cambia pista o reproducción sí.
+    static func shouldLabelWebAsSource(previousTitle: String?,
+                                       previousArtist: String?,
+                                       previousAlbum: String?,
+                                       previousPlaying: Bool?,
+                                       newTitle: String?,
+                                       newArtist: String?,
+                                       newAlbum: String?,
+                                       newPlaying: Bool?,
+                                       previousSourceWasNative: Bool) -> Bool {
+        guard previousSourceWasNative else { return true }
+        return previousTitle != newTitle || previousArtist != newArtist
+            || previousAlbum != newAlbum || previousPlaying != newPlaying
+    }
+
+    // Reintentos graduales sólo para lecturas fallidas; no repetir POST/PUT.
+    static func transientRetryDelay(consecutiveFailures: Int) -> TimeInterval {
+        let tier = min(max(consecutiveFailures - 1, 0), 4)
+        return min(60, Double(5 * (1 << tier)))
+    }
+
     // Un GET de lectura puede repetirse tras renovar el token. Las operaciones
     // que cambian reproducción no deben reintentarse automáticamente.
     static func shouldRefreshUnauthorizedGET(method: String, statusCode: Int) -> Bool {
@@ -26,10 +48,12 @@ enum SpotifyMetadataRefreshPolicy {
 
     static func shouldStart(inFlight: Bool, forced: Bool,
                             lastAutomaticAt: Date, now: Date,
-                            isPlaying: Bool, retryAfterUntil: Date?) -> Bool {
+                            isPlaying: Bool, retryAfterUntil: Date?,
+                            transientRetryUntil: Date? = nil) -> Bool {
         guard !inFlight else { return false }
-        // El Retry-After protege tanto consultas manuales como automáticas.
+        // El Retry-After y los fallos temporales limitan también GET forzados.
         if let retryAfterUntil, now < retryAfterUntil { return false }
+        if let transientRetryUntil, now < transientRetryUntil { return false }
         if forced { return true }
         let interval = isPlaying ? playingInterval : pausedOrUnknownInterval
         return now.timeIntervalSince(lastAutomaticAt) >= interval
