@@ -55,7 +55,8 @@ enum MotoAccessoryBridgeKit {
         let cityName = city.trimmingCharacters(in: .whitespacesAndNewlines)
         let description = condition.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cityName.isEmpty, !description.isEmpty,
-              temperatureCelsius.isFinite, (-100...75).contains(temperatureCelsius) else {
+              temperatureCelsius.isFinite,
+              temperatureCelsius >= -100, temperatureCelsius <= 75 else {
             return nil
         }
         return .weather(AccessoryWeather(
@@ -72,7 +73,8 @@ enum MotoAccessoryBridgeKit {
                               accuracyMeters: Double,
                               at date: Date = Date()) -> MotoAccessoryEvent? {
         guard latitude.isFinite, longitude.isFinite, accuracyMeters.isFinite,
-              (-90...90).contains(latitude), (-180...180).contains(longitude),
+              latitude >= -90, latitude <= 90,
+              longitude >= -180, longitude <= 180,
               accuracyMeters >= 0 else {
             return nil
         }
