@@ -33,6 +33,11 @@ jobs:
           cat ios-native/Sources/SpotifyPlaybackContinuityPolicy.swift ios-native/Sources/SpotifyCommandQueuePolicy.swift ios-native/Tests/SpotifyContinuityChecks.swift > "$RUNNER_TEMP/spotify-continuity-checks.swift"
           swift "$RUNNER_TEMP/spotify-continuity-checks.swift"
 
+      - name: Validar entradas MotoAccessoryBridgeKit sin escribir al reloj
+        run: |
+          cat ios-native/Sources/MotoAccessoryBridgeKit.swift ios-native/Tests/MotoAccessoryBridgeChecks.swift > "$RUNNER_TEMP/accessory-bridge-checks.swift"
+          swift "$RUNNER_TEMP/accessory-bridge-checks.swift"
+
       - name: Verificar diagnóstico de Atajos sin datos obsoletos
         run: |
           cat ios-native/Sources/SpotifyShortcutSyncPolicy.swift ios-native/Tests/SpotifyShortcutSyncChecks.swift > "$RUNNER_TEMP/spotify-shortcuts-checks.swift"
