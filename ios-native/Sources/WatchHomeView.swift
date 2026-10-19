@@ -29,12 +29,6 @@ struct WatchHomeView: View {
                     spotifyPanel
                     measurementPanel
                     recommendationPanel
-                    Button(action: openWatch) {
-                        Label("Controles y diagnóstico del reloj", systemImage: "slider.horizontal.3")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .font(.subheadline)
-                    .buttonStyle(.bordered)
                     Text("Carátula ilustrativa: la identificación del tema instalado sigue pendiente.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(18)
@@ -49,24 +43,6 @@ struct WatchHomeView: View {
         .onAppear { recoverForeground() }
         .onChange(of: scenePhase) { phase in
             if phase == .active && isSelected { recoverForeground() }
-        }
-        // Mismo criterio de recuperación de Spotify existente en ContentView:
-        // únicamente en primer plano; iOS puede suspender la app bloqueada.
-        .task {
-            while !Task.isCancelled {
-                if isSelected && UIApplication.shared.applicationState == .active && spotify.controlEnabled {
-                    if remote.isConnected {
-                        remote.requestCurrentPlayerState(fallbackToWeb: true)
-                        if !remote.nativeMetadataIsFresh && watch.isConnected {
-                            await spotify.refreshPlaybackInfo(allowSDKFallback: true)
-                        }
-                    } else if watch.isConnected {
-                        await spotify.refreshPlaybackInfo()
-                    }
-                }
-                do { try await Task.sleep(nanoseconds: 6_000_000_000) }
-                catch { return }
-            }
         }
     }
 
@@ -93,10 +69,10 @@ struct WatchHomeView: View {
                 Text(watch.connectionStatus)
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(3)
-                if !watch.isConnected {
-                    Button("Conectar reloj") { watch.connectToWatch() }
-                        .buttonStyle(.borderedProminent).tint(.orange)
+                Button(action: openWatch) {
+                    Label("Administrar reloj", systemImage: "chevron.right")
                 }
+                .font(.caption.bold()).buttonStyle(.bordered).tint(.orange)
             }
             Spacer(minLength: 0)
         }
@@ -108,11 +84,7 @@ struct WatchHomeView: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
             statusTile("Batería", value: watch.isConnected ? watch.batteryPercentage.map { "\($0) %" } ?? "Sin lectura" : "Sin conexión",
                        symbol: "battery.75percent", color: .green)
-            statusTile("Bluetooth", value: watch.isConnected ? "Conectado" : watch.bluetoothStatus,
-                       symbol: "bluetooth", color: .blue)
-            statusTile("Spotify SDK", value: remote.isConnected ? "Conectado" : remote.enabled ? "No disponible" : "Desactivado",
-                       symbol: "music.note", color: .orange)
-            statusTile("Música", value: spotify.controlEnabled ? (remote.isConnected ? "SDK prioritario" : "Web API de respaldo") : "Controles apagados",
+            statusTile("Música", value: spotify.controlEnabled ? spotify.metadataSource : "Controles apagados",
                        symbol: "play.circle.fill", color: .indigo)
         }
     }
@@ -137,26 +109,18 @@ struct WatchHomeView: View {
             HStack {
                 Label("Spotify", systemImage: "music.note").font(.headline)
                 Spacer()
-                Text(remote.isConnected ? "SDK conectado" : "Respaldo Web")
+                Text(remote.isConnected ? "SDK disponible" : "SDK sin conexión")
                     .font(.caption.bold())
                     .foregroundStyle(remote.isConnected ? Color.green : Color.secondary)
             }
             Text(spotify.lastSong).font(.subheadline.bold()).lineLimit(2)
             Text(spotify.playbackAvailability).font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button {
-                    remote.retryConnection()
-                } label: {
-                    Label("Reconectar SDK", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderedProminent).tint(.orange)
-                .disabled(!remote.enabled)
-                Spacer(minLength: 8)
-                Button("Actualizar música") { spotify.forceWatchMusicRecovery() }
-                    .buttonStyle(.bordered).font(.caption)
-                    .disabled(!spotify.controlEnabled)
+            Button(action: openWatch) {
+                Label("Abrir controles musicales", systemImage: "arrow.right")
             }
-            Text(remote.status).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            .font(.caption.bold()).buttonStyle(.bordered)
+            Text("La sincronización se gestiona desde Reloj; SDK y Web API se arbitran sin prioridad fija.")
+                .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(16).background(Color(uiColor: .secondarySystemGroupedBackground),
                                 in: RoundedRectangle(cornerRadius: 20))
@@ -167,7 +131,6 @@ struct WatchHomeView: View {
             HStack {
                 Text("Mediciones del reloj").font(.headline)
                 Spacer()
-                Button("Ver Salud", action: openHealth).font(.caption.bold())
             }
             Text("Consultá mediciones disponibles y seguí una guía antes de medir desde tu reloj.")
                 .font(.caption).foregroundStyle(.secondary)
