@@ -913,11 +913,20 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
     }
 
+    private var currentMusicCommandTask: Task<Void, Never>?
+
+    @MainActor
+    func waitForCurrentMusicCommand() async {
+        // AudioPlaybackIntent puede despertar iWatch sin abrirla: esperar a
+        // que termine el comando real antes de devolver el control a iOS.
+        await currentMusicCommandTask?.value
+    }
+
     private func performWatchCommand(_ command: WatchCommand) {
         requestBusy = true
         let key = command.rawValue
         lastAction = "Procesando \(key)"
-        Task { @MainActor in
+        currentMusicCommandTask = Task { @MainActor in
             // El evento BLE puede despertar la app con iOS bloqueado. Solicitamos
             // tiempo breve adicional para terminar la petición HTTP, sin garantizarlo.
             let backgroundTask: UIBackgroundTaskIdentifier = UIApplication.shared.applicationState == .background
