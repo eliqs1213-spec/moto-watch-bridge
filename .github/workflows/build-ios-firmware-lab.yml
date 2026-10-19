@@ -1,0 +1,69 @@
+name: Compilar Moto Firmware Lab iOS
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ios-firmware-lab/**'
+      - '.github/workflows/build-ios-firmware-lab.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-firmware-lab-unsigned:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v4
+
+      - name: Comprobar que el laboratorio no escribe en BLE
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = "\n".join(p.read_text() for p in Path("ios-firmware-lab/Sources").glob("*.swift"))
+          banned_calls = ("writeValue(", "setNotifyValue(", "discoverDescriptors(", "writeDescriptor(")
+          for call in banned_calls:
+              assert call not in source, f"Operación no permitida en laboratorio: {call}"
+          assert "readOnlyKnownStandardCharacteristic" in source
+          assert "NSBluetoothAlwaysUsageDescription" in Path("ios-firmware-lab/project.yml").read_text()
+          print("Protección de solo lectura: OK")
+          PY
+
+      - name: Configurar Xcode y generar proyecto separado
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          cd ios-firmware-lab
+          xcodegen generate
+
+      - name: Compilar para iPhone físico sin firmar
+        run: |
+          xcodebuild \
+            -project ios-firmware-lab/MotoWatchFirmwareLab.xcodeproj \
+            -scheme MotoWatchFirmwareLab \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/FirmwareLabDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Empaquetar IPA independiente
+        run: |
+          APP="$RUNNER_TEMP/FirmwareLabDerivedData/Build/Products/Release-iphoneos/MotoWatchFirmwareLab.app"
+          test -d "$APP"
+          mkdir -p "$RUNNER_TEMP/lab-ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/lab-ipa/Payload/"
+          cd "$RUNNER_TEMP/lab-ipa"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/MotoFirmwareLab-unsigned.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/MotoFirmwareLab-unsigned.ipa"
+
+      - name: Publicar IPA para AltStore
+        uses: actions/upload-artifact@v4
+        with:
+          name: MotoFirmwareLab-unsigned
+          path: MotoFirmwareLab-unsigned.ipa
+          retention-days: 14
