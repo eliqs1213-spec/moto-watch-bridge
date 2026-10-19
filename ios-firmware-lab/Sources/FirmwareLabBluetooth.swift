@@ -4,7 +4,7 @@ import CoreBluetooth
 
 // Aplicación de diagnóstico estrictamente observacional.
 // No contiene llamadas a writeValue, setNotifyValue, OTA ni comandos propietarios.
-// Sólo lee identificadores conocidos de Device Information / Battery Service.
+// Lee identificadores públicos Device Information / Battery y Model ID Fast Pair.
 struct ObservedPeripheral: Identifiable {
     let id: UUID
     var name: String
@@ -47,7 +47,8 @@ final class FirmwareLabBluetooth: NSObject, ObservableObject {
         "2A26", // Firmware Revision
         "2A27", // Hardware Revision
         "2A28", // Software Revision
-        "2A29"  // Manufacturer Name
+        "2A29", // Manufacturer Name
+        "2A50"  // PnP ID: proveedor y producto (no es número de serie)
     ]
 
     override init() {
@@ -131,7 +132,7 @@ final class FirmwareLabBluetooth: NSObject, ObservableObject {
     // Exportación de texto: se hace en el teléfono, no en el firmware.
     var exportedReport: String {
         let header = [
-            "Moto Firmware Lab 0.1.0",
+            "Moto Firmware Lab 0.1.1",
             "Creado: \(ISO8601DateFormatter().string(from: Date()))",
             "Modo: lectura GATT estándar y enumeración de servicios",
             "Bluetooth: \(bluetoothStatus)",
@@ -226,7 +227,11 @@ final class FirmwareLabBluetooth: NSObject, ObservableObject {
         let characteristicUUID = characteristic.uuid.uuidString.uppercased()
         let info = serviceUUID == "180A" && knownInfoUUIDs.contains(characteristicUUID)
         let battery = serviceUUID == "180F" && characteristicUUID == "2A19"
-        guard info || battery else { return }
+        // Fast Pair Model ID es público y de sólo lectura según Google.
+        // Nunca se toca 1234-1237: incluyen mecanismos de emparejamiento.
+        let fastPairModel = serviceUUID == "FE2C" &&
+            characteristicUUID == "FE2C1233-8366-4814-8EB0-01DE32100BEA"
+        guard info || battery || fastPairModel else { return }
         peripheral.readValue(for: characteristic)
         note("READ estándar solicitada: \(serviceUUID)/\(characteristicUUID)")
     }
@@ -333,6 +338,18 @@ extension FirmwareLabBluetooth: CBPeripheralDelegate {
         let formatted: String
         if s == "180F" && c == "2A19", let level = data.first {
             formatted = "\(Int(level))%"
+        } else if s == "180A" && c == "2A50" && data.count == 7 {
+            let bytes = Array(data)
+            let vendorSource = bytes[0]
+            let vendor = UInt16(bytes[1]) | (UInt16(bytes[2]) << 8)
+            let product = UInt16(bytes[3]) | (UInt16(bytes[4]) << 8)
+            let version = UInt16(bytes[5]) | (UInt16(bytes[6]) << 8)
+            formatted = String(format: "PnP: fuente=%u, vendor=0x%04X, producto=0x%04X, versión=0x%04X",
+                               Int(vendorSource), Int(vendor), Int(product), Int(version))
+        } else if s == "FE2C" && c == "FE2C1233-8366-4814-8EB0-01DE32100BEA" {
+            formatted = "Fast Pair Model ID: 0x" + data.map {
+                String(format: "%02X", $0)
+            }.joined()
         } else {
             let value = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
