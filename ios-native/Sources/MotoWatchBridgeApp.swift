@@ -38,6 +38,11 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
 
 @main
 struct MotoWatchBridgeApp: App {
+    init() {
+        // Anunciar acción a Atajos sin crear automatizaciones por el usuario.
+        SpotifyWatchAppShortcuts.updateAppShortcutParameters()
+    }
+
     @UIApplicationDelegateAdaptor(MotoAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var appScenePhase
     @AppStorage("motowatch.appearance") private var appearanceRawValue = AppAppearance.automatic.rawValue

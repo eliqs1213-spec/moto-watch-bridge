@@ -468,6 +468,54 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         forceWatchMusicRecovery()
     }
 
+    // Acción explícita invocada por Atajos. No intenta mantener iOS despierto.
+    // Sólo confirma éxito si llega una NUEVA observación de Spotify durante
+    // esta ejecución; no interpreta el caché anterior como una lectura actual.
+    @MainActor
+    func resyncFromShortcuts() async -> String {
+        let watch = WatchBLEManager.shared
+        let mode = UIApplication.shared.applicationState == .active ? "primer-plano" : "segundo-plano"
+        watch.record("ATAJOS-SPOTIFY", "Inicio de App Intent; modo=\(mode); BLE=\(watch.isConnected)")
+        guard controlEnabled else {
+            watch.record("ATAJOS-SPOTIFY", "Omitido: controles Spotify desactivados")
+            return "iWatch: activá primero los controles Spotify."
+        }
+        guard watch.isConnected else {
+            watch.record("ATAJOS-SPOTIFY", "Omitido: el reloj no está conectado a iWatch")
+            return "iWatch: reloj desconectado. No se envió música."
+        }
+        guard SecureTokenStorage.load() != nil else {
+            watch.record("ATAJOS-SPOTIFY", "Omitido: Web API sin autorización")
+            return "iWatch: autorizá Spotify en la aplicación antes de usar el Atajo."
+        }
+        let started = Date()
+        manualResyncUntil = started.addingTimeInterval(20)
+        MusicSyncEngine.shared.cancelAutomaticVerificationForManualResync()
+        watch.record("ATAJOS-SPOTIFY", "Solicitando estado actual; SDK y Web sin prioridad fija")
+        if UIApplication.shared.applicationState == .active,
+           SpotifyAppRemoteBridge.shared.isConnected {
+            SpotifyAppRemoteBridge.shared.requestCurrentPlayerState(fallbackToWeb: true)
+        }
+        await refreshPlaybackInfo(force: true)
+
+        let confirmed = SpotifyShortcutSyncPolicy.hasNewObservation(
+            startedAt: started, acceptedAt: lastAcceptedMetadataAt)
+        guard confirmed else {
+            // No dejar la petición manual activa tras GET omitido/expirado.
+            manualResyncUntil = nil
+            watch.record("ATAJOS-SPOTIFY",
+                         "Sin datos nuevos confirmados; no se informa éxito; modo=\(mode)")
+            return "iWatch: no se confirmó una lectura nueva de Spotify. Revisá el registro ATAJOS-SPOTIFY."
+        }
+        // MusicSyncEngine ya recibió la lectura y solicitó paquetes BLE.
+        // No sabemos si la pantalla física del reloj la presentó.
+        let title = String((lastMusicSnapshot?.title ?? "canción").prefix(70))
+        let source = metadataSource
+        watch.record("ATAJOS-SPOTIFY",
+                     "Lectura confirmada: \(title); origen=\(source); modo=\(mode); pantalla no verificada")
+        return "iWatch: \(title) verificada con \(source). Envío al reloj solicitado; pantalla no verificada."
+    }
+
     private func consumeManualResyncRequest() -> Bool {
         guard let expiry = manualResyncUntil else { return false }
         manualResyncUntil = nil
@@ -481,10 +529,10 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
         if SpotifyAppRemoteBridge.shared.isConnected {
             SpotifyAppRemoteBridge.shared.requestCurrentPlayerState(fallbackToWeb: true)
         }
-        if !SpotifyAppRemoteBridge.shared.isConnected {
-            Task { await refreshPlaybackInfo(force: true) }
-        }
-        record("Recuperación musical: SDK prioritario, Web API de respaldo")
+        // Siempre permitir que Web valide el SDK; el árbitro protege
+        // contra respuestas HTTP anteriores a una observación más reciente.
+        Task { await refreshPlaybackInfo(force: true) }
+        record("Recuperación musical: SDK + Web API con arbitraje temporal")
     }
 
     // Una conexión reanudada es evidencia suficiente para probar el HTTP

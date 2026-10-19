@@ -33,6 +33,11 @@ jobs:
           cat ios-native/Sources/SpotifyPlaybackContinuityPolicy.swift ios-native/Sources/SpotifyCommandQueuePolicy.swift ios-native/Tests/SpotifyContinuityChecks.swift > "$RUNNER_TEMP/spotify-continuity-checks.swift"
           swift "$RUNNER_TEMP/spotify-continuity-checks.swift"
 
+      - name: Verificar diagnóstico de Atajos sin datos obsoletos
+        run: |
+          cat ios-native/Sources/SpotifyShortcutSyncPolicy.swift ios-native/Tests/SpotifyShortcutSyncChecks.swift > "$RUNNER_TEMP/spotify-shortcuts-checks.swift"
+          swift "$RUNNER_TEMP/spotify-shortcuts-checks.swift"
+
       - name: Validar árbitro mixto de metadatos Spotify
         run: |
           cat ios-native/Sources/SpotifyMetadataArbiter.swift ios-native/Tests/SpotifyMetadataArbiterChecks.swift > "$RUNNER_TEMP/spotify-arbiter-checks.swift"
