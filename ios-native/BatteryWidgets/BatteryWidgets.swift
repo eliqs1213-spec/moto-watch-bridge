@@ -51,81 +51,27 @@ struct DiagnosticWidgetView: View {
 
 // Batería REAL de Moto Watch Fit, recibida de la aplicación vía ActivityKit.
 // No requiere UserDefaults(suiteName:) ni App Groups.
-// Botones App Intents: iOS ejecuta el control en la app anfitriona.
-struct MotoMusicActivityControls: View {
-    let playing: Bool
-
-    var body: some View {
-        if #available(iOS 17.0, *) {
-            HStack(spacing: 18) {
-                Button(intent: WatchMusicLiveIntent(action: "previous")) {
-                    Image(systemName: "backward.end.fill")
-                        .font(.system(size: 19, weight: .semibold))
-                        .frame(width: 44, height: 42)
-                }
-                .accessibilityLabel("Canción anterior")
-
-                Button(intent: WatchMusicLiveIntent(action: "toggle")) {
-                    Image(systemName: playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 23, weight: .semibold))
-                        .frame(width: 54, height: 42)
-                }
-                .accessibilityLabel(playing ? "Pausar Spotify" : "Reanudar Spotify")
-
-                Button(intent: WatchMusicLiveIntent(action: "next")) {
-                    Image(systemName: "forward.end.fill")
-                        .font(.system(size: 19, weight: .semibold))
-                        .frame(width: 44, height: 42)
-                }
-                .accessibilityLabel("Siguiente canción")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-        } else {
-            Text("Abrí iWatch para controlar Spotify")
-                .font(.caption)
-        }
-    }
-}
-
 struct MotoBatteryLiveWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MotoBatteryActivityAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 12) {
-                    Text("MW")
-                        .font(.system(size: 14, weight: .heavy, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(7)
-                        .background(Color.indigo, in: RoundedRectangle(cornerRadius: 8))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("iWatch · Moto Watch Fit").font(.headline)
-                        Text(context.state.percentage >= 0
-                             ? "Batería del reloj · Motorola 10/01"
-                             : "Esperando primera lectura de batería")
-                            .font(.caption)
-                    }
-                    Spacer(minLength: 0)
-                    Text(context.state.percentage >= 0 ? "\(context.state.percentage)%" : "—")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .monospacedDigit()
+            HStack(spacing: 12) {
+                Text("MW")
+                    .font(.system(size: 14, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(7)
+                    .background(Color.indigo, in: RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("iWatch · Moto Watch Fit")
+                        .font(.headline)
+                    Text(context.state.percentage >= 0
+                         ? "Batería del reloj · Motorola 10/01"
+                         : "Esperando primera lectura de batería")
+                        .font(.caption)
                 }
-                if let song = context.state.songTitle, !song.isEmpty {
-                    Divider().overlay(Color.white.opacity(0.25))
-                    HStack(spacing: 8) {
-                        Image(systemName: context.state.isPlaying == false
-                              ? "pause.circle.fill" : "music.note")
-                            .foregroundStyle(.green)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(song).font(.subheadline.bold()).lineLimit(1)
-                            Text(context.state.artist ?? "Spotify").font(.caption).lineLimit(1)
-                                .foregroundStyle(.white.opacity(0.76))
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    MotoMusicActivityControls(playing: context.state.isPlaying ?? true)
-                        .frame(maxWidth: .infinity)
-                }
+                Spacer(minLength: 0)
+                Text(context.state.percentage >= 0 ? "\(context.state.percentage)%" : "—")
+                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .monospacedDigit()
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -135,54 +81,24 @@ struct MotoBatteryLiveWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label("iWatch", systemImage: "music.note")
-                        .font(.caption.bold())
-                        .foregroundStyle(.white)
+                    Text("iWatch").font(.headline)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(context.state.percentage >= 0 ? "\(context.state.percentage)%" : "—")
                         .font(.title3.bold()).monospacedDigit()
-                        .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    if let song = context.state.songTitle, !song.isEmpty {
-                        VStack(alignment: .center, spacing: 6) {
-                            Text(song)
-                                .font(.system(size: 16, weight: .semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                            Text(context.state.artist ?? "Spotify")
-                                .font(.caption)
-                                .lineLimit(1)
-                                .foregroundStyle(.white.opacity(0.72))
-                            MotoMusicActivityControls(playing: context.state.isPlaying ?? true)
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                    } else {
-                        Text("Moto Watch Fit · Batería Motorola 10/01")
-                            .font(.caption)
-                            .foregroundStyle(.white)
-                    }
+                    Text("Moto Watch Fit · Batería Motorola 10/01")
+                        .font(.caption)
                 }
             } compactLeading: {
-                Text(context.state.songTitle == nil ? "MW" : "♪")
-                    .font(.system(size: 12, weight: .heavy))
+                Text("MW").font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(.white)
             } compactTrailing: {
-                if let song = context.state.songTitle, !song.isEmpty {
-                    Text(song)
-                        .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .foregroundStyle(.white)
-                } else {
-                    Text(context.state.percentage >= 0 ? "\(context.state.percentage)%" : "—")
-                        .font(.caption.bold()).monospacedDigit()
-                }
+                Text(context.state.percentage >= 0 ? "\(context.state.percentage)%" : "—")
+                    .font(.caption.bold()).monospacedDigit()
             } minimal: {
-                Text(context.state.songTitle == nil ? "MW" : "♪")
-                    .font(.system(size: 12, weight: .heavy))
+                Text("MW").font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(.white)
             }
         }
