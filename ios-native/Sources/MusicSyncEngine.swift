@@ -31,6 +31,7 @@ final class MusicSyncEngine: ObservableObject {
         lastSubmittedSignature = nil
         lastAnnouncedAt = .distantPast
         status = "Auto Sync en espera"
+        BatteryLiveActivityManager.shared.updateMusic(nil)
     }
 
     // No se reenvía el caché a ciegas: esta petición solo se satisface
@@ -72,6 +73,9 @@ final class MusicSyncEngine: ObservableObject {
                      manual: Bool = false, recoveredFromIdle: Bool = false) {
         let watch = WatchBLEManager.shared
         if manual { cancelAutomaticVerificationForManualResync() }
+        // La isla debe actualizarse aunque el BLE no esté conectado.
+        // El reloj sigue recibiendo el envío solamente si está conectado.
+        BatteryLiveActivityManager.shared.updateMusic(snapshot)
         guard watch.isConnected else {
             status = "Auto Sync esperando Bluetooth"
             return
