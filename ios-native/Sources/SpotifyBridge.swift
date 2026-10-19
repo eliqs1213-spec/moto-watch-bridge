@@ -558,8 +558,8 @@ final class SpotifyBridge: NSObject, ObservableObject, ASWebAuthenticationPresen
                                            recoveredFromIdle: wasIdle)
     }
 
-    // Sugiere sólo UN sondeo adicional dentro de una ventana finita al bloquear.
-    // Usa duración/posición observadas sin inferir el nombre del tema siguiente.
+    // Estima el instante de transición dentro de la ventana finita al bloquear.
+    // La política distribuye tres GET como máximo, sin inventar el tema siguiente.
     func plannedNaturalChangeProbeOffset(now: Date = Date()) -> UInt64? {
         guard let snapshot = lastMusicSnapshot,
               let measuredAt = lastAcceptedMetadataAt else { return nil }
