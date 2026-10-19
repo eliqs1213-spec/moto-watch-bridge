@@ -17,6 +17,8 @@ final class MusicBackgroundExperiment: ObservableObject {
     private var isFetching = false
     private var lastAttemptAt = Date.distantPast
     private var backgroundEnteredAt: Date?
+    private var plannedExitProbes = 0
+    private var attemptedExitProbes = 0
     // Auditoría acotada: contabiliza todas las notificaciones auténticas F8F0
     // mientras dura una prueba, sin guardar payloads ni saturar el registro.
     private var backgroundBLECounts: [String: Int] = [:]
@@ -78,6 +80,8 @@ final class MusicBackgroundExperiment: ObservableObject {
         epoch &+= 1
         let currentEpoch = epoch
         backgroundEnteredAt = Date()
+        plannedExitProbes = 0
+        attemptedExitProbes = 0
         backgroundBLECounts.removeAll()
         backgroundBLETotal = 0
         backgroundBLEProbeEligible = 0
@@ -117,8 +121,11 @@ final class MusicBackgroundExperiment: ObservableObject {
             let predicted = SpotifyBridge.shared.plannedNaturalChangeProbeOffset()
             let offsets = MusicBackgroundExperimentPolicy.exitProbeOffsets(
                 naturalChangeOffset: predicted)
+            self.plannedExitProbes = offsets.count
+            let forecast = predicted.map { "cambio natural previsto a +\($0)s" } ??
+                "sin predicción fiable; intervalos de respaldo"
             WatchBLEManager.shared.record("BG-EXPERIMENTO",
-                "Consultas de salida planificadas: \(offsets); estimación no garantiza ejecución")
+                "Plan \(forecast); consultas de salida=\(offsets); iOS puede suspenderlas")
             var previous: UInt64 = 0
             for (index, second) in offsets.enumerated() {
                 let delay = second - previous
@@ -143,11 +150,12 @@ final class MusicBackgroundExperiment: ObservableObject {
                 // Si iOS termina el proceso al pasar a background,
                 // persistir evidencia ANTES de iniciar la consulta Web.
                 WatchBLEManager.shared.flushLog()
+                self.attemptedExitProbes += 1
                 await self.fetchNow(trigger: "bloqueo \(index+1)/\(offsets.count)")
             }
             self.finishBackgroundTask()
             WatchBLEManager.shared.record("BG-EXPERIMENTO",
-                "Ventana inicial finalizada o suspendida; sin ejecución periódica garantizada")
+                "Ventana inicial terminada: intentos=\(self.attemptedExitProbes)/\(offsets.count); sin consultas periódicas garantizadas")
         }
     }
 
@@ -161,6 +169,8 @@ final class MusicBackgroundExperiment: ObservableObject {
         finishBackgroundTask()
         let elapsed = backgroundEnteredAt.map { Int(Date().timeIntervalSince($0)) } ?? 0
         status = "Volvió al primer plano tras ~\(elapsed) s; revisá registro BG-EXPERIMENTO"
+        WatchBLEManager.shared.record("BG-EXPERIMENTO",
+            "Resumen al desbloquear: intentos de ventana=\(attemptedExitProbes)/\(plannedExitProbes); los no ejecutados no prueban la causa exacta de suspensión")
         let frameTypes = backgroundBLECounts.sorted { $0.key < $1.key }
             .map { "\($0.key)=\($0.value)" }.joined(separator: ", ")
         let lastFrameSecond = lastBackgroundBLEAt.map {
