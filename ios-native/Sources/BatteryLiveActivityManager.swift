@@ -7,6 +7,7 @@ import ActivityKit
 final class BatteryLiveActivityManager: ObservableObject {
     static let shared = BatteryLiveActivityManager()
     @Published private(set) var status = "Todavía no iniciada"
+    private var latestMusic: WatchMusicSnapshot?
 
     private init() {}
 
@@ -36,10 +37,16 @@ final class BatteryLiveActivityManager: ObservableObject {
                 await item.end(nil, dismissalPolicy: .immediate)
             }
         }
+        let previous = Activity<MotoBatteryActivityAttributes>.activities.first?.content.state
+        let currentSong = latestMusic
         let content = ActivityContent(
             state: MotoBatteryActivityAttributes.ContentState(
-                percentage: percentage ?? -1,
-                updatedAt: Date().timeIntervalSince1970
+                percentage: percentage ?? previous?.percentage ?? -1,
+                updatedAt: Date().timeIntervalSince1970,
+                songTitle: currentSong.map { String($0.title.prefix(80)) } ?? previous?.songTitle,
+                artist: currentSong.map { String($0.artist.prefix(70)) } ?? previous?.artist,
+                isPlaying: currentSong?.isPlaying ?? previous?.isPlaying,
+                musicUpdatedAt: currentSong != nil ? Date().timeIntervalSince1970 : previous?.musicUpdatedAt
             ),
             staleDate: Date().addingTimeInterval(60 * 45)
         )
@@ -64,15 +71,46 @@ final class BatteryLiveActivityManager: ObservableObject {
         Task { @MainActor in
             let current = Activity<MotoBatteryActivityAttributes>.activities
             guard !current.isEmpty else { return }
-            let content = ActivityContent(
-                state: MotoBatteryActivityAttributes.ContentState(
-                    percentage: percentage,
-                    updatedAt: Date().timeIntervalSince1970
-                ),
-                staleDate: Date().addingTimeInterval(60 * 45)
-            )
-            for item in current { await item.update(content) }
+            for item in current {
+                // No borrar la canción al recibir una nueva lectura Motorola.
+                let previous = item.content.state
+                let content = ActivityContent(
+                    state: MotoBatteryActivityAttributes.ContentState(
+                        percentage: percentage,
+                        updatedAt: Date().timeIntervalSince1970,
+                        songTitle: previous.songTitle,
+                        artist: previous.artist,
+                        isPlaying: previous.isPlaying,
+                        musicUpdatedAt: previous.musicUpdatedAt
+                    ),
+                    staleDate: Date().addingTimeInterval(60 * 45)
+                )
+                await item.update(content)
+            }
             self.status = "ActivityKit recibió batería \(percentage)% · WidgetKit no verificado"
+        }
+    }
+
+    // Se alimenta ÚNICAMENTE con snapshots que SpotifyBridge/MusicSyncEngine
+    // ya aceptaron. Cuando iOS suspende iWatch no se finge cambio natural.
+    func updateMusic(_ snapshot: WatchMusicSnapshot?) {
+        Task { @MainActor in
+            self.latestMusic = snapshot
+            for item in Activity<MotoBatteryActivityAttributes>.activities {
+                let previous = item.content.state
+                let content = ActivityContent(
+                    state: MotoBatteryActivityAttributes.ContentState(
+                        percentage: previous.percentage,
+                        updatedAt: previous.updatedAt,
+                        songTitle: snapshot.map { String($0.title.prefix(80)) },
+                        artist: snapshot.map { String($0.artist.prefix(70)) },
+                        isPlaying: snapshot?.isPlaying,
+                        musicUpdatedAt: snapshot.map { _ in Date().timeIntervalSince1970 }
+                    ),
+                    staleDate: Date().addingTimeInterval(60 * 45)
+                )
+                await item.update(content)
+            }
         }
     }
 
