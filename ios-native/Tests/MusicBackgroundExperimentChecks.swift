@@ -79,12 +79,28 @@ requireTrial(MusicBackgroundExperimentPolicy.naturalChangeOffset(
     measuredAgo: 0, playing: true) == nil,
     "No mantener timers adicionales más allá de la ventana acotada")
 requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
-    naturalChangeOffset: 5) == [0,5,9,18],
-    "Un único sondeo adicional cerca de transición natural")
+    naturalChangeOffset: 5) == [0,5,9],
+    "Concentrar las tres consultas en torno al final previsto a los 5s")
 requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
-    naturalChangeOffset: 10) == [0,9,18],
-    "Evitar solicitudes casi duplicadas cerca de la consulta 9 s")
+    naturalChangeOffset: 10) == [0,10,14],
+    "La consulta de verificación debe seguir al cambio, no precederlo")
+requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
+    naturalChangeOffset: 1) == [0,3,7],
+    "Separar consultas cuando la canción está a punto de terminar")
+requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
+    naturalChangeOffset: 20) == [0,20,23],
+    "No exceder el límite finito de 23s")
+requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
+    naturalChangeOffset: 21) == [0,9,18],
+    "Sin suficiente tiempo para comprobar después del final usar fallback")
 requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
     naturalChangeOffset: nil) == [0,9,18],
     "Sin pista vigente preservar ventana original")
+requireTrial(MusicBackgroundExperimentPolicy.naturalChangeOffset(
+    progressMs: 160_000, durationMs: 180_000,
+    measuredAgo: 0, playing: true) == nil,
+    "No agendar una predicción sin margen para dos lecturas Web")
+requireTrial(MusicBackgroundExperimentPolicy.exitProbeOffsets(
+    naturalChangeOffset: 5).count == 3,
+    "No aumentar el número de consultas al modificar los tiempos")
 print("Background music trial policy checks passed: real BLE, finite window, safety and natural transitions")
