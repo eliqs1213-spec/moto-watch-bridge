@@ -8,6 +8,37 @@ enum MusicBackgroundExperimentPolicy {
     static let bleCooldownSeconds: TimeInterval = 35
     static let foregroundExitOffsets: [UInt64] = [0, 9, 18]
 
+    // Los sondeos siguen siendo FINITOS y no habilitan ejecución suspendida.
+    // Si conocemos el final previsto, concentramos las mismas tres lecturas
+    // en el inicio y después del cambio, incluyendo una segunda comprobación
+    // por posible retraso en la información de Spotify Web API.
+    static func naturalChangeOffset(progressMs: Int?, durationMs: Int?,
+                                    measuredAgo: TimeInterval, playing: Bool) -> UInt64? {
+        guard playing, let progressMs, let durationMs,
+              durationMs > 0, progressMs >= 0, progressMs <= durationMs,
+              measuredAgo.isFinite, measuredAgo >= 0 else { return nil }
+        let secondsUntilEnd = Double(durationMs - progressMs) / 1000 - measuredAgo
+        guard secondsUntilEnd > 0, secondsUntilEnd < 20 else { return nil }
+        let probeSecond = UInt64(max(1, ceil(secondsUntilEnd + 1)))
+        // Necesitamos margen para volver a consultar en la ventana ~30s de iOS.
+        return probeSecond <= 20 ? probeSecond : nil
+    }
+
+    static func exitProbeOffsets(naturalChangeOffset: UInt64?) -> [UInt64] {
+        guard let naturalChangeOffset,
+              naturalChangeOffset > 0, naturalChangeOffset <= 20 else {
+            // Sin progreso/duración fiables no adivinamos el cambio.
+            return foregroundExitOffsets
+        }
+        // No añadir un cuarto GET. Priorizar el momento que realmente interesa:
+        // 1) foto inicial, 2) fin previsto (+1s ya incluido en la estimación),
+        // 3) reintento tras 3–4s por propagación del nuevo estado Web.
+        // Nunca planificar más allá de 23s; iOS puede cortar incluso antes.
+        let nearEnd = max(3, naturalChangeOffset)
+        let confirmation = min(23, nearEnd + 4)
+        return [0, nearEnd, confirmation]
+    }
+
     static func canProbeFromBLE(enabled: Bool, inBackground: Bool,
                                 watchReady: Bool, spotifyEnabled: Bool,
                                 isMusicCommand: Bool, isBusy: Bool,

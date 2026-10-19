@@ -55,8 +55,11 @@ struct MotoBatteryLiveWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MotoBatteryActivityAttributes.self) { context in
             HStack(spacing: 12) {
-                Image(systemName: "applewatch")
-                    .font(.title2)
+                Text("MW")
+                    .font(.system(size: 14, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(7)
+                    .background(Color.indigo, in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("iWatch · Moto Watch Fit")
                         .font(.headline)
@@ -72,6 +75,7 @@ struct MotoBatteryLiveWidget: Widget {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
+            .foregroundStyle(.white)
             .activityBackgroundTint(Color.black.opacity(0.92))
             .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
@@ -88,12 +92,14 @@ struct MotoBatteryLiveWidget: Widget {
                         .font(.caption)
                 }
             } compactLeading: {
-                Image(systemName: "applewatch")
+                Text("MW").font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white)
             } compactTrailing: {
                 Text(context.state.percentage >= 0 ? "\(context.state.percentage)%" : "—")
                     .font(.caption.bold()).monospacedDigit()
             } minimal: {
-                Image(systemName: "applewatch")
+                Text("MW").font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(.white)
             }
         }
     }

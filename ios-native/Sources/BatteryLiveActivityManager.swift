@@ -2,9 +2,8 @@ import Foundation
 import Combine
 import ActivityKit
 
-// Live Activity de batería: alternativa a App Groups en instalaciones con Sideloadly.
-// Es visible en la pantalla bloqueada y en la Dynamic Island, si iOS permite
-// Live Activities para iWatch y la extensión WidgetKit queda instalada.
+// ActivityKit sólo confirma el registro de una actividad, NO que WidgetKit
+// esté ejecutando una extensión correctamente firmada.
 final class BatteryLiveActivityManager: ObservableObject {
     static let shared = BatteryLiveActivityManager()
     @Published private(set) var status = "Todavía no iniciada"
@@ -13,34 +12,51 @@ final class BatteryLiveActivityManager: ObservableObject {
 
     func start(percentage: Int?) {
         Task { @MainActor in
-            guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-                self.status = "iOS tiene desactivadas las Actividades en vivo para esta app"
-                return
+            await self.prepareActivity(percentage: percentage, recreate: false)
+        }
+    }
+
+    // Recuperación controlada de una cápsula sin contenido. Si el ejecutable
+    // del widget sigue rechazado por CODESIGNING, esto NO repara la firma.
+    func restart(percentage: Int?) {
+        Task { @MainActor in
+            await self.prepareActivity(percentage: percentage, recreate: true)
+        }
+    }
+
+    @MainActor
+    private func prepareActivity(percentage: Int?, recreate: Bool) async {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            status = "Actividades en vivo desactivadas en los ajustes de iOS"
+            return
+        }
+        if recreate {
+            status = "Finalizando actividad anterior para nueva prueba…"
+            for item in Activity<MotoBatteryActivityAttributes>.activities {
+                await item.end(nil, dismissalPolicy: .immediate)
             }
-            let percent = percentage ?? -1
-            let content = ActivityContent(
-                state: MotoBatteryActivityAttributes.ContentState(
-                    percentage: percent,
-                    updatedAt: Date().timeIntervalSince1970
-                ),
-                staleDate: Date().addingTimeInterval(60 * 45)
+        }
+        let content = ActivityContent(
+            state: MotoBatteryActivityAttributes.ContentState(
+                percentage: percentage ?? -1,
+                updatedAt: Date().timeIntervalSince1970
+            ),
+            staleDate: Date().addingTimeInterval(60 * 45)
+        )
+        if !recreate, let existing = Activity<MotoBatteryActivityAttributes>.activities.first {
+            await existing.update(content)
+            status = "Actividad registrada (\(String(existing.id.prefix(8)))) · revisá si muestra contenido"
+            return
+        }
+        do {
+            let activity = try Activity<MotoBatteryActivityAttributes>.request(
+                attributes: MotoBatteryActivityAttributes(watchName: "Moto Watch Fit"),
+                content: content,
+                pushType: nil
             )
-            // Evitar duplicados tras cerrar y volver a abrir iWatch.
-            if let existing = Activity<MotoBatteryActivityAttributes>.activities.first {
-                await existing.update(content)
-                self.status = "Batería en pantalla bloqueada · actualizada"
-                return
-            }
-            do {
-                _ = try Activity<MotoBatteryActivityAttributes>.request(
-                    attributes: MotoBatteryActivityAttributes(watchName: "Moto Watch Fit"),
-                    content: content,
-                    pushType: nil
-                )
-                self.status = "Actividad en vivo iniciada · bloqueá el iPhone"
-            } catch {
-                self.status = "No pudo iniciarse: " + error.localizedDescription
-            }
+            status = "ActivityKit: \(String(describing: activity.activityState)) · ID \(String(activity.id.prefix(8))) · render sin verificar"
+        } catch {
+            status = "Error al iniciar Actividad en vivo: " + error.localizedDescription
         }
     }
 
@@ -56,7 +72,7 @@ final class BatteryLiveActivityManager: ObservableObject {
                 staleDate: Date().addingTimeInterval(60 * 45)
             )
             for item in current { await item.update(content) }
-            self.status = "Batería actualizada: \(percentage)% (Motorola 10/01)"
+            self.status = "ActivityKit recibió batería \(percentage)% · WidgetKit no verificado"
         }
     }
 

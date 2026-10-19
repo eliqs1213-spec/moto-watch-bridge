@@ -33,6 +33,11 @@ jobs:
           cat ios-native/Sources/SpotifyPlaybackContinuityPolicy.swift ios-native/Sources/SpotifyCommandQueuePolicy.swift ios-native/Tests/SpotifyContinuityChecks.swift > "$RUNNER_TEMP/spotify-continuity-checks.swift"
           swift "$RUNNER_TEMP/spotify-continuity-checks.swift"
 
+      - name: Validar árbitro mixto de metadatos Spotify
+        run: |
+          cat ios-native/Sources/SpotifyMetadataArbiter.swift ios-native/Tests/SpotifyMetadataArbiterChecks.swift > "$RUNNER_TEMP/spotify-arbiter-checks.swift"
+          swift "$RUNNER_TEMP/spotify-arbiter-checks.swift"
+
       - name: Verificar reconexión segura Spotify iOS SDK
         run: |
           cat ios-native/Sources/SpotifySDKReconnectPolicy.swift ios-native/Tests/SpotifySDKReconnectChecks.swift > "$RUNNER_TEMP/spotify-sdk-reconnect-checks.swift"
@@ -108,6 +113,20 @@ jobs:
           unzip -Z1 "$GITHUB_WORKSPACE/MotoWatchNativeProbe-sideload-prepared.ipa" | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/MotoBatteryWidgets'
           ls -lh "$GITHUB_WORKSPACE/MotoWatchNativeProbe-sideload-prepared.ipa"
 
+      - name: Comprobar firma AD-HOC tras empaquetado (antes de Sideloadly)
+        run: |
+          set -euo pipefail
+          TEMP_DIR="$RUNNER_TEMP/verify-sideload"
+          mkdir -p "$TEMP_DIR"
+          unzip -q "$GITHUB_WORKSPACE/MotoWatchNativeProbe-sideload-prepared.ipa" -d "$TEMP_DIR"
+          APP="$TEMP_DIR/Payload/MotoWatchNativeProbe.app"
+          EXT="$APP/PlugIns/MotoBatteryWidgets.appex"
+          test -x "$EXT/MotoBatteryWidgets"
+          /usr/bin/codesign --verify --strict --verbose=2 "$EXT"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+          test "$(/usr/bin/plutil -extract NSSupportsLiveActivities raw -o - "$APP/Info.plist")" = "true"
+          test "$(/usr/bin/plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$EXT/Info.plist")" = "com.apple.widgetkit-extension"
+          echo "APP y WidgetKit íntegros al salir de CI. Sideloadly debe re-firmar AMBOS con el mismo equipo."
       - name: Publicar IPA preparado para ser re-firmado con Sideloadly
         uses: actions/upload-artifact@v4
         with:
