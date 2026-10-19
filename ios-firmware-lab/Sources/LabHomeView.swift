@@ -64,6 +64,16 @@ struct LabHomeView: View {
                     }
                 }
 
+                Section("Detección de perfiles") {
+                    let uuids = Set(lab.services.map { $0.uuid.uppercased() })
+                    LabeledContent("HID BLE (1812)", value: uuids.contains("1812") ? "Presente" : "No descubierto")
+                    LabeledContent("Google Fast Pair (FE2C)", value: uuids.contains("FE2C") ? "Presente" : "No descubierto")
+                    LabeledContent("Servicio Motorola", value: uuids.contains("FC9DF9F0-4899-11EE-BE56-0242AC120002") ? "Presente" : "No descubierto")
+                    Text("No descubrir HID BLE no descarta otros modos de Bluetooth ni confirma compatibilidad HID.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Servicios y características GATT (\(lab.services.count))") {
                     if lab.services.isEmpty {
                         Text("Seleccioná un dispositivo para enumerar sus servicios.")
@@ -105,7 +115,7 @@ struct LabHomeView: View {
                 }
 
                 Section("Alcance de esta versión") {
-                    Text("No descarga firmware, no solicita modo de actualización, no ejecuta OTA, no lee información propietaria y no envía comandos a características GATT. Los servicios privados solo se enumeran.")
+                    Text("No descarga firmware, no solicita modo de actualización y no ejecuta OTA. Lee únicamente información estándar, PnP ID y el Model ID público de Google Fast Pair; los demás servicios propietarios solo se enumeran.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
