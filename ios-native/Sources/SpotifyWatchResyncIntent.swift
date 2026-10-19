@@ -19,17 +19,3 @@ struct SpotifyWatchResyncIntent: AppIntent {
     }
 }
 
-@available(iOS 16.2, *)
-struct SpotifyWatchAppShortcuts: AppShortcutsProvider {
-    static var appShortcuts: [AppShortcut] {
-        AppShortcut(
-            intent: SpotifyWatchResyncIntent(),
-            phrases: [
-                "Sincronizar Spotify con \(.applicationName)",
-                "Actualizar la música en \(.applicationName)"
-            ],
-            shortTitle: "Sincronizar Spotify",
-            systemImageName: "arrow.clockwise"
-        )
-    }
-}

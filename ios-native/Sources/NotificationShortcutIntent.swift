@@ -33,12 +33,22 @@ struct SendWatchNotificationIntent: AppIntent {
 }
 
 struct IWatchNotificationShortcuts: AppShortcutsProvider {
+    @AppShortcutsBuilder
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: SendWatchNotificationIntent(),
             phrases: ["Enviar notificación a \(.applicationName)"],
             shortTitle: "Notificar reloj",
             systemImageName: "bell.badge"
+        )
+        AppShortcut(
+            intent: SpotifyWatchResyncIntent(),
+            phrases: [
+                "Sincronizar Spotify con \(.applicationName)",
+                "Actualizar la música en \(.applicationName)"
+            ],
+            shortTitle: "Sincronizar Spotify",
+            systemImageName: "arrow.clockwise"
         )
     }
 }

@@ -40,7 +40,7 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
 struct MotoWatchBridgeApp: App {
     init() {
         // Anunciar acción a Atajos sin crear automatizaciones por el usuario.
-        SpotifyWatchAppShortcuts.updateAppShortcutParameters()
+        IWatchNotificationShortcuts.updateAppShortcutParameters()
     }
 
     @UIApplicationDelegateAdaptor(MotoAppDelegate.self) private var appDelegate
