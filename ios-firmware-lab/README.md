@@ -2,12 +2,14 @@
 
 Aplicación **independiente** de iWatch para examinar de manera observacional el Bluetooth del Moto Watch Fit. Usa un **bundle ID diferente**: `org.motowatchbridge.firmwarelab`.
 
-## Funciones (v0.1.1)
+## Funciones (v0.1.2)
 - Escaneo BLE y selección explícita del dispositivo.
 - Recuperación de periféricos conectados que exponen el UUID Motorola conocido.
 - Enumeración de servicios, características y propiedades GATT.
 - Lectura limitada a los campos públicos y estándar de Device Information Service (0x180A): modelo, firmware, hardware, software, fabricante y PnP ID 0x2A50, y Battery Level 0x180F/0x2A19.
 - Lectura del Google Fast Pair Model ID público FE2C1233; no se inicia el emparejamiento ni se escriben claves.
+- Datos de publicidad BLE: Company ID de Manufacturer Data y tamaños de datos anunciados, sin volcar posibles identificadores personales de Manufacturer Data.
+- Vista hexadecimal de PnP ID y del ID Fast Pair, incluyendo longitud real para investigar valores no estándar.
 - Registro y exportación mediante la hoja de compartir de iOS.
 - **Sin ninguna escritura a GATT, suscripción a notificaciones propietarias, comandos OTA, instalación de firmware ni cambio de modo del reloj**.
 

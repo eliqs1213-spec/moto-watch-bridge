@@ -10,6 +10,10 @@ struct ObservedPeripheral: Identifiable {
     var name: String
     var rssi: Int?
     var advertisedServices: [String]
+    var manufacturerID: String? = nil
+    var manufacturerDataSize: Int? = nil
+    var advertisedServiceData: [String] = []
+    var advertisedConnectable: Bool? = nil
 }
 
 struct ObservedCharacteristic: Identifiable {
@@ -132,7 +136,7 @@ final class FirmwareLabBluetooth: NSObject, ObservableObject {
     // Exportación de texto: se hace en el teléfono, no en el firmware.
     var exportedReport: String {
         let header = [
-            "Moto Firmware Lab 0.1.1",
+            "Moto Firmware Lab 0.1.2",
             "Creado: \(ISO8601DateFormatter().string(from: Date()))",
             "Modo: lectura GATT estándar y enumeración de servicios",
             "Bluetooth: \(bluetoothStatus)",
@@ -140,9 +144,20 @@ final class FirmwareLabBluetooth: NSObject, ObservableObject {
             "Dispositivo: \(selectedDeviceName ?? "No seleccionado")",
             "AVISO: los identificadores de periférico son UUID locales de CoreBluetooth, no direcciones MAC.",
             "",
-            "=== Servicios GATT ==="
+            "=== Publicidad BLE (si fue observada durante el escaneo) ==="
+
         ]
         var sections = header
+        for peripheral in devices {
+            sections.append("Dispositivo: \(peripheral.name)")
+            sections.append("  Fabricante en publicidad: \(peripheral.manufacturerID ?? "no anunciado")")
+            sections.append("  Tamaño Manufacturer Data: \(peripheral.manufacturerDataSize.map { String($0) } ?? "desconocido") bytes")
+            sections.append("  Conectable: \(peripheral.advertisedConnectable.map { String($0) } ?? "no anunciado")")
+            sections.append("  UUID anunciadas: \(peripheral.advertisedServices.joined(separator: ", "))")
+            sections.append("  Service Data: \(peripheral.advertisedServiceData.joined(separator: ", "))")
+        }
+        sections.append("")
+        sections.append("=== Servicios GATT ===")
         for service in services {
             sections.append("Servicio \(service.uuid) | primario=\(service.primary)")
             for characteristic in service.characteristics {
@@ -165,16 +180,27 @@ final class FirmwareLabBluetooth: NSObject, ObservableObject {
         }
     }
 
-    private func upsertDevice(id: UUID, name: String, rssi: Int?, advertisedServices: [String]) {
+    private func upsertDevice(id: UUID, name: String, rssi: Int?, advertisedServices: [String],
+                              manufacturerID: String? = nil, manufacturerDataSize: Int? = nil,
+                              advertisedServiceData: [String] = [],
+                              connectable: Bool? = nil) {
         if let index = devices.firstIndex(where: { $0.id == id }) {
             devices[index].name = name
             if let rssi { devices[index].rssi = rssi }
             if !advertisedServices.isEmpty {
                 devices[index].advertisedServices = advertisedServices
             }
+            if let manufacturerID { devices[index].manufacturerID = manufacturerID }
+            if let manufacturerDataSize { devices[index].manufacturerDataSize = manufacturerDataSize }
+            if !advertisedServiceData.isEmpty { devices[index].advertisedServiceData = advertisedServiceData }
+            if let connectable { devices[index].advertisedConnectable = connectable }
         } else if devices.count < 100 {
             devices.append(ObservedPeripheral(id: id, name: name,
-                                              rssi: rssi, advertisedServices: advertisedServices))
+                                              rssi: rssi, advertisedServices: advertisedServices,
+                                              manufacturerID: manufacturerID,
+                                              manufacturerDataSize: manufacturerDataSize,
+                                              advertisedServiceData: advertisedServiceData,
+                                              advertisedConnectable: connectable))
         }
         devices.sort {
             let a = $0.name.localizedCaseInsensitiveContains("moto") ||
@@ -258,9 +284,27 @@ extension FirmwareLabBluetooth: CBCentralManagerDelegate {
             ?? peripheral.name ?? "BLE sin nombre"
         let listed = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? [])
             .map(\.uuidString)
+        let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
+        let companyID: String? = {
+            guard let manufacturerData, manufacturerData.count >= 2 else { return nil }
+            let bytes = Array(manufacturerData.prefix(2))
+            let id = UInt16(bytes[0]) | (UInt16(bytes[1]) << 8)
+            return String(format: "Bluetooth Company ID 0x%04X", Int(id))
+        }()
+        let serviceData = advertisementData[CBAdvertisementDataServiceDataKey]
+            as? [CBUUID: Data] ?? [:]
+        let serviceSummary = serviceData.map {
+            "\($0.key.uuidString):\($0.value.count) bytes"
+        }.sorted()
+        let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
         peripherals[peripheral.identifier] = peripheral
         upsertDevice(id: peripheral.identifier, name: name,
-                     rssi: RSSI.intValue, advertisedServices: listed)
+                     rssi: RSSI.intValue, advertisedServices: listed,
+                     manufacturerID: companyID,
+                     manufacturerDataSize: manufacturerData?.count,
+                     advertisedServiceData: serviceSummary,
+                     connectable: connectable)
+        note("ADV \(name): fabricante=\(companyID ?? "no anunciado"); manufacturerDataBytes=\(manufacturerData?.count ?? 0); serviceData=\(serviceSummary.joined(separator: ", "))")
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -344,12 +388,16 @@ extension FirmwareLabBluetooth: CBPeripheralDelegate {
             let vendor = UInt16(bytes[1]) | (UInt16(bytes[2]) << 8)
             let product = UInt16(bytes[3]) | (UInt16(bytes[4]) << 8)
             let version = UInt16(bytes[5]) | (UInt16(bytes[6]) << 8)
+            let raw = bytes.map { String(format: "%02X", $0) }.joined(separator: " ")
             formatted = String(format: "PnP: fuente=%u, vendor=0x%04X, producto=0x%04X, versión=0x%04X",
                                Int(vendorSource), Int(vendor), Int(product), Int(version))
+                + " | raw(7 bytes)=" + raw
         } else if s == "FE2C" && c == "FE2C1233-8366-4814-8EB0-01DE32100BEA" {
+            let raw = data.map { String(format: "%02X", $0) }.joined(separator: " ")
             formatted = "Fast Pair Model ID: 0x" + data.map {
                 String(format: "%02X", $0)
-            }.joined()
+            }.joined() + " | raw(\(data.count) bytes)=" + raw
+                + (data.count == 3 ? "" : " | longitud distinta del uint24 estándar")
         } else {
             let value = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)

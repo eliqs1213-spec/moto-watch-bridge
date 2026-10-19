@@ -53,8 +53,23 @@ struct LabHomeView: View {
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
+                                if let company = device.manufacturerID {
+                                    Text("Manufacturer Data: " + company)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let dataSize = device.manufacturerDataSize {
+                                    Text("Publicidad de fabricante: \(dataSize) bytes")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
                                 if !device.advertisedServices.isEmpty {
                                     Text("Advertidos: " + device.advertisedServices.joined(separator: ", "))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if !device.advertisedServiceData.isEmpty {
+                                    Text("Service Data: " + device.advertisedServiceData.joined(separator: ", "))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }

@@ -23,8 +23,8 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: Moto Firmware Lab
-        CFBundleShortVersionString: '0.1.1'
-        CFBundleVersion: '2'
+        CFBundleShortVersionString: '0.1.2'
+        CFBundleVersion: '3'
         NSBluetoothAlwaysUsageDescription: 'Moto Firmware Lab explora servicios Bluetooth y consulta información estándar del reloj. No escribe firmware ni envía comandos OTA.'
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
