@@ -435,6 +435,23 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
+                    GroupBox("Bluetooth Motorola · inspección de F8F2") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(watch.motorolaCharacteristicsStatus)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                            Button {
+                                watch.inspectMotorolaCharacteristics()
+                            } label: {
+                                Label("Inspeccionar características", systemImage: "antenna.radiowaves.left.and.right")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(!watch.isConnected)
+                            Text("Solo descubre UUID y permisos. No lee, no se suscribe y no escribe en F8F2. La presencia de F8F2 tampoco demuestra soporte HID.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+
                     GroupBox("Comandos detectados") {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(watch.lastCommand).font(.title3.bold())
