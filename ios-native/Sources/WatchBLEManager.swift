@@ -26,6 +26,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     @Published private(set) var batteryStatus = "Sin lectura"
     @Published private(set) var musicSyncStatus = "Sin sincronizar"
     @Published private(set) var weatherSyncStatus = "Clima aún no enviado al reloj"
+    @Published private(set) var motorolaCharacteristicsStatus = "Todavía no se inspeccionaron las características Motorola"
 
     private let serviceUUID = CBUUID(string: MotoProtocol.service)
     private let notifyUUID = CBUUID(string: MotoProtocol.notifications)
@@ -112,6 +113,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsWeather = false
         currentMusicStage = nil
         weatherSyncStatus = "Envío de clima interrumpido por desconexión"
+        motorolaCharacteristicsStatus = "Pendiente de descubrimiento en la nueva conexión"
         latestMusicContents = nil
         deferredManualMusic = nil
         musicDiagnosticPacketsLeft = 0
@@ -399,6 +401,17 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
     }
 
+    // Una lectura de la tabla de características, sin readValue, notify adicional ni writeValue.
+    func inspectMotorolaCharacteristics() {
+        guard isConnected, let device = peripheral,
+              let motorola = device.services?.first(where: { $0.uuid == serviceUUID }) else {
+            motorolaCharacteristicsStatus = "Conectá el reloj primero"
+            return
+        }
+        motorolaCharacteristicsStatus = "Inspeccionando características por GATT…"
+        device.discoverCharacteristics(nil, for: motorola)
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error = error {
             record("ERROR", "Servicios: \(error.localizedDescription)")
@@ -411,7 +424,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                WatchBLECapabilityProbe.summarize(
                 serviceUUIDs: services.map { $0.uuid.uuidString }))
         if let motorola = services.first(where: { $0.uuid == serviceUUID }) {
-            peripheral.discoverCharacteristics([notifyUUID, txUUID], for: motorola)
+            // Descubrimiento pasivo: también permite detectar la F8F2 vista en el firmware.
+            // No se modifica ninguna suscripción ni se escriben características desconocidas.
+            peripheral.discoverCharacteristics(nil, for: motorola)
         } else {
             record("ERROR", "Servicio Motorola F9F0 no encontrado")
         }
@@ -421,10 +436,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
                     error: Error?) {
         if let error = error {
+            motorolaCharacteristicsStatus = "Error de descubrimiento: \(error.localizedDescription)"
             record("ERROR", "Características: \(error.localizedDescription)")
             return
         }
         guard service.uuid == serviceUUID else { return }
+        let found = (service.characteristics ?? []).map {
+            WatchBLECapabilityProbe.CharacteristicInfo(
+                uuid: $0.uuid.uuidString, properties: UInt($0.properties.rawValue))
+        }
+        let summary = WatchBLECapabilityProbe.summarizeMotorolaCharacteristics(found)
+        motorolaCharacteristicsStatus = summary
+        record("BLE-CARACTERISTICAS", summary)
         writeCharacteristic = service.characteristics?.first(where: { $0.uuid == txUUID })
         guard let tx = writeCharacteristic, tx.properties.contains(.write) else {
             isConnected = false
