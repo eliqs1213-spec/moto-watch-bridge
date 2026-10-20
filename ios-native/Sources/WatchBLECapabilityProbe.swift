@@ -41,7 +41,7 @@ enum WatchBLECapabilityProbe {
             let id = "FC9D" + suffix + "-4899-11EE-BE56-0242AC120002"
             let hits = entries.filter { $0.id == id }
             guard !hits.isEmpty else { return "\(suffix)=ausente" }
-            return "\(suffix)=presente [\(hits.map(\.properties).joined(separator: ","))]"
+            return "\(suffix)=presente [\(hits.map { $0.properties }.joined(separator: ","))]"
         }
         let listed = entries.map { "\($0.id)[\($0.properties)]" }.sorted().joined(separator: ";")
         return "Características Motorola=\(entries.count); "
