@@ -48,6 +48,11 @@ jobs:
           cat ios-native/Sources/WatchWeatherForecast.swift ios-native/Tests/WatchWeatherForecastChecks.swift > "$RUNNER_TEMP/weather-checks.swift"
           swift "$RUNNER_TEMP/weather-checks.swift"
 
+      - name: Validar trama de clima Motorola antes de compilar iOS
+        run: |
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchWeatherForecast.swift ios-native/Sources/WatchWeatherProtocol.swift ios-native/Tests/WatchWeatherProtocolChecks.swift > "$RUNNER_TEMP/weather-ble-checks.swift"
+          swift "$RUNNER_TEMP/weather-ble-checks.swift"
+
       - name: Verificar señales 23/0A y 2A/05 sin escribir BLE
         run: |
           cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchEnvironmentalProtocol.swift ios-native/Tests/WatchEnvironmentalChecks.swift > "$RUNNER_TEMP/environment-checks.swift"
