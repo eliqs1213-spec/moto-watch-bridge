@@ -401,6 +401,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         let services = peripheral.services ?? []
+        // Diagnóstico pasivo de servicios BLE tras cada conexión/reconexión.
+        // La ausencia de HID por GATT NO demuestra ausencia de Classic HID/AVRCP.
+        record("BLE-CAPACIDADES",
+               WatchBLECapabilityProbe.summarize(
+                serviceUUIDs: services.map { $0.uuid.uuidString }))
         if let motorola = services.first(where: { $0.uuid == serviceUUID }) {
             peripheral.discoverCharacteristics([notifyUUID, txUUID], for: motorola)
         } else {
