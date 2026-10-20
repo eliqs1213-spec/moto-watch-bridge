@@ -38,6 +38,11 @@ jobs:
           cat ios-native/Sources/MotoAccessoryBridgeKit.swift ios-native/Tests/MotoAccessoryBridgeChecks.swift > "$RUNNER_TEMP/accessory-bridge-checks.swift"
           swift "$RUNNER_TEMP/accessory-bridge-checks.swift"
 
+      - name: Diagnosticar capacidad HID y control multimedia BLE sin escribir al reloj
+        run: |
+          cat ios-native/Sources/WatchBLECapabilityProbe.swift ios-native/Tests/WatchBLECapabilityChecks.swift > "$RUNNER_TEMP/ble-capability-checks.swift"
+          swift "$RUNNER_TEMP/ble-capability-checks.swift"
+
       - name: Verificar diagnóstico de Atajos sin datos obsoletos
         run: |
           cat ios-native/Sources/SpotifyShortcutSyncPolicy.swift ios-native/Tests/SpotifyShortcutSyncChecks.swift > "$RUNNER_TEMP/spotify-shortcuts-checks.swift"
