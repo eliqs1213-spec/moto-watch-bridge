@@ -25,6 +25,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     @Published private(set) var batteryPercentage: Int? = nil
     @Published private(set) var batteryStatus = "Sin lectura"
     @Published private(set) var musicSyncStatus = "Sin sincronizar"
+    @Published private(set) var weatherSyncStatus = "Clima aún no enviado al reloj"
 
     private let serviceUUID = CBUUID(string: MotoProtocol.service)
     private let notifyUUID = CBUUID(string: MotoProtocol.notifications)
@@ -56,6 +57,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWriteIsHealth = false
     private var currentWriteIsBattery = false
     private var currentWriteIsNotification = false
+    private var currentWriteIsWeather = false
     private var currentMusicStage: String? = nil
     // Coalescer sólo mientras el par ANUNCIO/ESTADO todavía está activo.
     private var latestMusicContents: String?
@@ -107,7 +109,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         batteryRefresh?.cancel(); batteryRefresh = nil
         musicNotBefore = .distantPast
         currentWriteIsNotification = false
+        currentWriteIsWeather = false
         currentMusicStage = nil
+        weatherSyncStatus = "Envío de clima interrumpido por desconexión"
         latestMusicContents = nil
         deferredManualMusic = nil
         musicDiagnosticPacketsLeft = 0
@@ -766,6 +770,40 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         flushMusicQueue()
     }
 
+    // Prueba manual de 23/01. Sin envío automático, ni modificación de firmware.
+    @discardableResult
+    func sendWeatherExperimental(_ snapshot: WatchWeatherSnapshot) -> Bool {
+        guard UIApplication.shared.applicationState == .active,
+              isConnected, let peripheral = peripheral, writeCharacteristic != nil else {
+            weatherSyncStatus = "Conectá el reloj con iWatch visible"
+            return false
+        }
+        guard !currentWriteIsWeather, !musicQueue.contains(where: { $0.kind == .weather }) else {
+            weatherSyncStatus = "Ya hay un envío del clima en curso"
+            return false
+        }
+        do {
+            let frame = try WatchWeatherProtocol.encode(snapshot)
+            let mtu = peripheral.maximumWriteValueLength(for: .withResponse)
+            let parts = WatchWeatherProtocol.fragments(frame, maximum: mtu)
+            guard !parts.isEmpty, parts.count <= 50 else {
+                weatherSyncStatus = "MTU insuficiente o trama demasiado grande"
+                return false
+            }
+            for part in parts {
+                musicQueue.append(PendingMusicWrite(packet: part, delayAfter: 0, kind: .weather))
+            }
+            weatherSyncStatus = "Enviando clima: \(parts.count) fragmentos"
+            record("CLIMA-BLE", "Prueba 23/01: \(frame.count) bytes en \(parts.count) fragmentos (MTU \(mtu))")
+            flushMusicQueue()
+            return true
+        } catch {
+            weatherSyncStatus = "No se pudo preparar el clima; actualizá el pronóstico"
+            record("CLIMA-BLE", "Codificación rechazada: \(error)")
+            return false
+        }
+    }
+
     // Envío de avisos propios o recibidos por una automatización de Atajos iOS 27.
     // No se guardan remitente ni mensaje en el log, por privacidad.
     @discardableResult
@@ -943,6 +981,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsHealth = next.kind == .health
         currentWriteIsBattery = next.kind == .battery
         currentWriteIsNotification = next.kind == .notification
+        currentWriteIsWeather = next.kind == .weather
         currentMusicStage = next.kind == .music ? next.musicStage : nil
         musicAfterDelay = next.delayAfter
         if next.kind == .music && musicDiagnosticPacketsLeft > 0 {
@@ -954,7 +993,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 record("MUSICA-DIAG", "Captura puntual expirada antes del siguiente paquete")
             }
         }
-        record("BLE-TX", "F8F1: \(next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
+        record("BLE-TX", "F8F1: \(next.kind == .weather ? "CLIMA" : next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
         writeSequence += 1
         let sequence = writeSequence
         let connectionID = readyConnectionID
@@ -990,12 +1029,19 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsBattery = false
         let isNotice = currentWriteIsNotification
         currentWriteIsNotification = false
+        let isWeather = currentWriteIsWeather
+        currentWriteIsWeather = false
         let completedMusicStage = currentMusicStage
         currentMusicStage = nil
         if let error = error {
             if isNotice {
                 notificationStatus = "Falló la escritura del aviso; no se reenvía para evitar duplicados"
                 record("NOTIFICACION", notificationStatus)
+            }
+            else if isWeather {
+                weatherSyncStatus = "Error de escritura del clima; no se reintenta automáticamente"
+                musicQueue.removeAll { $0.kind == .weather }
+                record("CLIMA-BLE", "Escritura fallida: \(error.localizedDescription)")
             }
             else if isBattery { batteryStatus = "Error de consulta Motorola" }
             else if isSleep {
@@ -1035,6 +1081,10 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         let delay = musicAfterDelay
         if isNotice { notificationStatus = "Aviso escrito por Bluetooth; visualización no confirmada" }
+        if isWeather && !musicQueue.contains(where: { $0.kind == .weather }) {
+            weatherSyncStatus = "23/01 transmitido por BLE; verificá la pantalla del reloj"
+            record("CLIMA-BLE", "Todos los fragmentos confirmados por iOS; pantalla NO verificada")
+        }
         if !isNotice && !isBattery && !isHealth && !isVitals && !isSleep {
             musicNotBefore = Date().addingTimeInterval(delay)
             if let completedMusicStage = completedMusicStage {
