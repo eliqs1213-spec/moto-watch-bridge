@@ -163,7 +163,21 @@ struct WatchHomeView: View {
             .buttonStyle(.bordered)
             .disabled(weather.isLoading)
             Text(weather.status).font(.caption).foregroundStyle(.secondary)
-            Text("Con tu permiso se envían coordenadas redondeadas a Open-Meteo. El pronóstico aún NO se transmite al Moto Watch Fit.")
+            Button {
+                if let fresh = weather.snapshot { _ = watch.sendWeatherExperimental(fresh) }
+            } label: {
+                Label("Enviar prueba al Moto Watch (23/01)", systemImage: "arrow.up.to.line")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .disabled(weather.isLoading || !watch.isConnected ||
+                weather.snapshot == nil ||
+                abs(weather.snapshot?.fetchedAt.timeIntervalSinceNow ?? 1_000_000) >= 1800)
+            Text(watch.weatherSyncStatus).font(.caption.bold())
+            Text("Prueba experimental: el reloj podría ignorar el paquete. No modifica el firmware. El origen es Open-Meteo, no AccuWeather; revisá temperatura e iconos en el reloj.")
+                .font(.caption2).foregroundStyle(.orange)
+            Text("Con tu permiso se comparten coordenadas aproximadas solo al consultar el clima. El envío Bluetooth es manual.")
                 .font(.caption2).foregroundStyle(.secondary)
             Link("Datos meteorológicos: Open-Meteo",
                  destination: URL(string: "https://open-meteo.com/")!).font(.caption2)
