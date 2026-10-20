@@ -43,6 +43,16 @@ jobs:
           cat ios-native/Sources/WatchBLECapabilityProbe.swift ios-native/Tests/WatchBLECapabilityChecks.swift > "$RUNNER_TEMP/ble-capability-checks.swift"
           swift "$RUNNER_TEMP/ble-capability-checks.swift"
 
+      - name: Validar clima iOS de seis días y veinticuatro horas
+        run: |
+          cat ios-native/Sources/WatchWeatherForecast.swift ios-native/Tests/WatchWeatherForecastChecks.swift > "$RUNNER_TEMP/weather-checks.swift"
+          swift "$RUNNER_TEMP/weather-checks.swift"
+
+      - name: Verificar señales 23/0A y 2A/05 sin escribir BLE
+        run: |
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchEnvironmentalProtocol.swift ios-native/Tests/WatchEnvironmentalChecks.swift > "$RUNNER_TEMP/environment-checks.swift"
+          swift "$RUNNER_TEMP/environment-checks.swift"
+
       - name: Verificar diagnóstico de Atajos sin datos obsoletos
         run: |
           cat ios-native/Sources/SpotifyShortcutSyncPolicy.swift ios-native/Tests/SpotifyShortcutSyncChecks.swift > "$RUNNER_TEMP/spotify-shortcuts-checks.swift"

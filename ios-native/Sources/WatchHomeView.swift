@@ -10,6 +10,7 @@ struct WatchHomeView: View {
     @StateObject private var remote = SpotifyAppRemoteBridge.shared
     @StateObject private var health = WatchHealthStore.shared
     @StateObject private var sync = HealthDashboardSync.shared
+    @StateObject private var weather = WatchWeatherService.shared
     @Environment(\.scenePhase) private var scenePhase
     let openWatch: () -> Void
     let openHealth: () -> Void
@@ -27,6 +28,7 @@ struct WatchHomeView: View {
                     watchCard
                     statusGrid
                     spotifyPanel
+                    weatherPanel
                     measurementPanel
                     recommendationPanel
                     Text("Carátula ilustrativa: la identificación del tema instalado sigue pendiente.")
@@ -121,6 +123,50 @@ struct WatchHomeView: View {
             .font(.caption.bold()).buttonStyle(.bordered)
             Text("La sincronización se gestiona desde Reloj; SDK y Web API se arbitran sin prioridad fija.")
                 .font(.caption2).foregroundStyle(.secondary)
+        }
+        .padding(16).background(Color(uiColor: .secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private var weatherPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Clima del iPhone", systemImage: "cloud.sun.fill").font(.headline)
+            if let current = weather.snapshot {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("\(Int(current.temperatureCelsius.rounded())) °C").font(.title.bold())
+                    Text(current.summary).font(.subheadline)
+                }
+                Text("Humedad \(current.humidityPercent)% · Viento \(Int(current.windKmh.rounded())) km/h")
+                    .font(.caption).foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array(current.days.enumerated()), id: \.offset) { _, day in
+                            VStack(spacing: 4) {
+                                Text(String(day.localDate.suffix(5))).font(.caption2)
+                                Text("\(Int(day.highCelsius.rounded()))° / \(Int(day.lowCelsius.rounded()))°")
+                                    .font(.caption.bold())
+                            }
+                            .padding(8)
+                            .background(Color(uiColor: .tertiarySystemGroupedBackground),
+                                        in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+            }
+            Button {
+                weather.requestWeather()
+            } label: {
+                Label(weather.isLoading ? "Consultando pronóstico…" : "Consultar clima del iPhone",
+                      systemImage: "arrow.clockwise")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(weather.isLoading)
+            Text(weather.status).font(.caption).foregroundStyle(.secondary)
+            Text("Con tu permiso se envían coordenadas redondeadas a Open-Meteo. El pronóstico aún NO se transmite al Moto Watch Fit.")
+                .font(.caption2).foregroundStyle(.secondary)
+            Link("Datos meteorológicos: Open-Meteo",
+                 destination: URL(string: "https://open-meteo.com/")!).font(.caption2)
         }
         .padding(16).background(Color(uiColor: .secondarySystemGroupedBackground),
                                 in: RoundedRectangle(cornerRadius: 20))

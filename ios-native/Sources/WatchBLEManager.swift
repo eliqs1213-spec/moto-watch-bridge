@@ -511,6 +511,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
+        if let signal = WatchEnvironmentalProtocol.identify(data) {
+            record("MOTO-ENTORNO", signal.diagnostic)
+        }
         // Diagnóstico pasivo: SOLO aprovecha callbacks F8F0 reales de iOS;
         // no inventa notificaciones ni consultas periódicas al reloj.
         MusicBackgroundExperiment.shared.didReceiveRealBLEFrame(data)

@@ -43,3 +43,9 @@ Mantener intactos:
 4. Mantener ANCS/HID y firmware en investigación separada.
 
 No subir APK, capturas HCI completas, ubicaciones precisas ni mensajes reales al repositorio.
+
+## Build 883: clima iPhone + diagnóstico ambiental
+- Open-Meteo: descarga sólo tras toque del usuario y autorización de ubicación, con coordenadas redondeadas a dos decimales. 6 días, 24 horas, unidad Celsius; sin sincronización automática.
+- Clima visible en Inicio (iPhone); todavía NO se envía el pronóstico `23/01` al reloj. Hace falta validar codificación, fragmentación y unidades con un paquete completo real.
+- `23/0A` y `2A/05` se etiquetan pasivamente como `MOTO-ENTORNO`, con validación CRC. La app oficial refleja `23/0A` y responde `2A/05` con `08 01`: no se asume que pidan clima/GPS.
+- Mantener Spotify, batería, notificaciones y diagnóstico HID intactos. CI verifica el parser y el reconocimiento de señales.
