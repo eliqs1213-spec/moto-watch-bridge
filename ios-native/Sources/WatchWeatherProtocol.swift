@@ -48,6 +48,8 @@ enum WatchWeatherProtocol {
     static func encode(_ snapshot: WatchWeatherSnapshot) throws -> Data {
         guard snapshot.hours.count == 24, snapshot.days.count == 6,
               let tz = TimeZone(identifier: snapshot.timezone),
+              snapshot.windKmh.isFinite, snapshot.windKmh >= 0,
+              snapshot.apparentTemperatureCelsius.isFinite,
               abs(snapshot.fetchedAt.timeIntervalSinceNow) < 1800 else {
             throw EncodingError.invalidSnapshot
         }
@@ -58,14 +60,27 @@ enum WatchWeatherProtocol {
         city += num(10, Int64(icon(snapshot.code)))
         city += num(11, temp(snapshot.temperatureCelsius))
         city += num(12, 1)
+        // El reloj muestra mph: convertir antes de enviar para evitar un valor engañoso.
+        city += num(13, Int64((snapshot.windKmh / 1.609344).rounded()))
+        city += num(14, temp(snapshot.apparentTemperatureCelsius))
         city += num(22, Int64(snapshot.humidityPercent))
         city += string(23, snapshot.summary)
+        // Captura Motorola: campos 24/25 = temperatura máxima/mínima actuales.
+        city += num(24, temp(snapshot.days[0].highCelsius))
+        city += num(25, temp(snapshot.days[0].lowCelsius))
         city += num(40, 1)
         for day in snapshot.days {
-            guard let date = timestamp(day.localDate, tz: tz) else { throw EncodingError.invalidSnapshot }
+            guard let date = timestamp(day.localDate, tz: tz),
+                  let sunrise = timestamp(day.sunriseLocalTime, tz: tz),
+                  let sunset = timestamp(day.sunsetLocalTime, tz: tz),
+                  sunrise < sunset,
+                  day.sunriseLocalTime.hasPrefix(day.localDate),
+                  day.sunsetLocalTime.hasPrefix(day.localDate) else { throw EncodingError.invalidSnapshot }
+            // Motorola DailyWeather campos #6/#7: amanecer y atardecer en epoch ms.
             let dayBytes = num(1, Int64(icon(day.code))) + num(2, Int64(icon(day.code)))
                 + num(3, temp(day.highCelsius)) + num(4, temp(day.lowCelsius))
-                + num(5, date) + string(8, OpenMeteoWeatherForecast.condition(day.code))
+                + num(5, date) + num(6, sunrise) + num(7, sunset)
+                + string(8, OpenMeteoWeatherForecast.condition(day.code))
             city += field(20, dayBytes)
         }
         for hour in snapshot.hours {

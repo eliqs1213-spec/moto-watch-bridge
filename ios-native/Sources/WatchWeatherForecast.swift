@@ -8,6 +8,8 @@ struct WatchWeatherHour: Equatable {
 }
 struct WatchWeatherDay: Equatable {
     let localDate: String
+    let sunriseLocalTime: String
+    let sunsetLocalTime: String
     let lowCelsius: Double
     let highCelsius: Double
     let code: Int
@@ -15,6 +17,7 @@ struct WatchWeatherDay: Equatable {
 struct WatchWeatherSnapshot: Equatable {
     let city: String
     let temperatureCelsius: Double
+    let apparentTemperatureCelsius: Double
     let humidityPercent: Int
     let windKmh: Double
     let code: Int
@@ -35,6 +38,7 @@ enum OpenMeteoWeatherForecast {
     struct Current: Decodable {
         let time: String
         let temperature_2m: Double
+        let apparent_temperature: Double
         let relative_humidity_2m: Int
         let wind_speed_10m: Double
         let weather_code: Int
@@ -50,6 +54,8 @@ enum OpenMeteoWeatherForecast {
         let temperature_2m_min: [Double]
         let temperature_2m_max: [Double]
         let weather_code: [Int]
+        let sunrise: [String]
+        let sunset: [String]
     }
     enum ForecastError: LocalizedError {
         case invalidCoordinate, incompleteForecast
@@ -71,9 +77,9 @@ enum OpenMeteoWeatherForecast {
         url.queryItems = [
             URLQueryItem(name: "latitude", value: String(format: "%.2f", latitude)),
             URLQueryItem(name: "longitude", value: String(format: "%.2f", longitude)),
-            URLQueryItem(name: "current", value: "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"),
+            URLQueryItem(name: "current", value: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m"),
             URLQueryItem(name: "hourly", value: "temperature_2m,weather_code,precipitation_probability"),
-            URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,weather_code"),
+            URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset"),
             URLQueryItem(name: "timezone", value: "auto"),
             URLQueryItem(name: "forecast_days", value: "6"),
             URLQueryItem(name: "temperature_unit", value: "celsius"),
@@ -90,11 +96,13 @@ enum OpenMeteoWeatherForecast {
               daily.time.count >= 6,
               daily.temperature_2m_min.count >= 6, daily.temperature_2m_max.count >= 6,
               daily.weather_code.count >= 6,
+              daily.sunrise.count >= 6, daily.sunset.count >= 6,
               hourly.time.count == hourly.temperature_2m.count,
               hourly.time.count == hourly.weather_code.count,
               hourly.time.count == hourly.precipitation_probability.count,
               source.current.temperature_2m.isFinite,
-              source.current.wind_speed_10m.isFinite,
+              source.current.apparent_temperature.isFinite,
+              source.current.wind_speed_10m.isFinite, source.current.wind_speed_10m >= 0,
               (0...100).contains(source.current.relative_humidity_2m) else {
             throw ForecastError.incompleteForecast
         }
@@ -112,6 +120,8 @@ enum OpenMeteoWeatherForecast {
         }
         let days = (0..<6).map {
             WatchWeatherDay(localDate: daily.time[$0],
+                            sunriseLocalTime: daily.sunrise[$0],
+                            sunsetLocalTime: daily.sunset[$0],
                             lowCelsius: daily.temperature_2m_min[$0],
                             highCelsius: daily.temperature_2m_max[$0],
                             code: daily.weather_code[$0])
@@ -121,9 +131,21 @@ enum OpenMeteoWeatherForecast {
             throw ForecastError.incompleteForecast
         }
         return WatchWeatherSnapshot(city: city, temperatureCelsius: source.current.temperature_2m,
+            apparentTemperatureCelsius: source.current.apparent_temperature,
             humidityPercent: source.current.relative_humidity_2m,
             windKmh: source.current.wind_speed_10m, code: source.current.weather_code,
             timezone: source.timezone, hours: hours, days: days, fetchedAt: date)
+    }
+
+    static func cityLabel(locality: String?, province: String?) -> String {
+        let city = locality?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let area = province?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !city.isEmpty && !area.isEmpty && city.localizedCaseInsensitiveCompare(area) != .orderedSame {
+            return "\(city) - \(area)"
+        }
+        if !city.isEmpty { return city }
+        if !area.isEmpty { return area }
+        return "Ubicación sin identificar"
     }
 
     static func condition(_ code: Int) -> String {

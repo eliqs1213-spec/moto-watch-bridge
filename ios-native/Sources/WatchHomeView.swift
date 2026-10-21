@@ -132,6 +132,7 @@ struct WatchHomeView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Clima del iPhone", systemImage: "cloud.sun.fill").font(.headline)
             if let current = weather.snapshot {
+                Text(current.city).font(.caption.bold()).foregroundStyle(.secondary)
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text("\(Int(current.temperatureCelsius.rounded())) °C").font(.title.bold())
                     Text(current.summary).font(.subheadline)

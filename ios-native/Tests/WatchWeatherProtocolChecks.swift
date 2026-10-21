@@ -10,7 +10,9 @@ formatter.timeZone = TimeZone(identifier: "America/Argentina/Cordoba")
 formatter.dateFormat = "yyyy-MM-dd"
 let days = (0..<6).map { i -> WatchWeatherDay in
     let d = Calendar(identifier: .gregorian).date(byAdding: .day, value: i, to: base)!
-    return WatchWeatherDay(localDate: formatter.string(from: d), lowCelsius: 12, highCelsius: 25, code: 2)
+    let local = formatter.string(from: d)
+    return WatchWeatherDay(localDate: local, sunriseLocalTime: local + "T06:30",
+                           sunsetLocalTime: local + "T19:15", lowCelsius: 12, highCelsius: 25, code: 2)
 }
 formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
 let hours = (0..<24).map { i -> WatchWeatherHour in
@@ -18,7 +20,8 @@ let hours = (0..<24).map { i -> WatchWeatherHour in
     return WatchWeatherHour(localTime: formatter.string(from: d), temperatureCelsius: 23,
                             code: 2, rainChance: 15)
 }
-let s = WatchWeatherSnapshot(city: "Prueba", temperatureCelsius: 23, humidityPercent: 45,
+let s = WatchWeatherSnapshot(city: "Villa Allende - Córdoba", temperatureCelsius: 23,
+    apparentTemperatureCelsius: 21, humidityPercent: 45,
     windKmh: 12, code: 2, timezone: "America/Argentina/Cordoba",
     hours: hours, days: days, fetchedAt: base)
 let frame = try WatchWeatherProtocol.encode(s)
@@ -66,6 +69,33 @@ expectWeatherBLE(hasBytes([0x58, 0x17], within: b),
     "temperatura 23°C en protobuf; no Fahrenheit 73°F")
 expectWeatherBLE(hasBytes([0x18, 0x19, 0x20, 0x0C], within: b),
     "máxima 25°C y mínima 12°C del pronóstico diario")
+expectWeatherBLE(hasBytes([0xC0, 0x01, 0x19, 0xC8, 0x01, 0x0C], within: b),
+    "máxima/mínima actuales en campos #24/#25")
+expectWeatherBLE(hasBytes([0x68, 0x07, 0x70, 0x15], within: b),
+    "viento 12 km/h convertido a 7 mph y sensación de 21°C")
+expectWeatherBLE(hasBytes(Array("Villa Allende - Córdoba".utf8), within: b),
+    "nombre de localidad en trama")
+func testVarint(_ value: UInt64) -> [UInt8] {
+    var result: [UInt8] = []; var n = value
+    repeat {
+        var c = UInt8(n & 127); n >>= 7
+        if n != 0 { c |= 128 }
+        result.append(c)
+    } while n != 0
+    return result
+}
+let solarFormatter = DateFormatter()
+solarFormatter.locale = Locale(identifier: "en_US_POSIX")
+solarFormatter.timeZone = TimeZone(identifier: s.timezone)
+solarFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+let sunriseDate = solarFormatter.date(from: days[0].sunriseLocalTime)!
+let sunsetDate = solarFormatter.date(from: days[0].sunsetLocalTime)!
+let sunriseMs = UInt64(sunriseDate.timeIntervalSince1970 * 1000)
+let sunsetMs = UInt64(sunsetDate.timeIntervalSince1970 * 1000)
+expectWeatherBLE(hasBytes([0x30] + testVarint(sunriseMs), within: b),
+    "DailyWeather campo #6 = amanecer")
+expectWeatherBLE(hasBytes([0x38] + testVarint(sunsetMs), within: b),
+    "DailyWeather campo #7 = atardecer")
 let chunks = WatchWeatherProtocol.fragments(frame, maximum: 120)
 expectWeatherBLE(chunks.count > 1, "fragmentación")
 expectWeatherBLE(chunks.allSatisfy { $0.count <= 120 }, "MTU máximo")
@@ -93,6 +123,7 @@ expectWeatherBLE(Data(candidate.flatMap { $0 }) == reproduced,
 var expired = s
 // Struct con propiedades let: crear otro snapshot vencido
 let old = WatchWeatherSnapshot(city:s.city,temperatureCelsius:s.temperatureCelsius,
+ apparentTemperatureCelsius:s.apparentTemperatureCelsius,
  humidityPercent:s.humidityPercent,windKmh:s.windKmh,code:s.code,timezone:s.timezone,
  hours:s.hours,days:s.days,fetchedAt:Date().addingTimeInterval(-3600))
 do { _ = try WatchWeatherProtocol.encode(old); fatalError("Pronóstico viejo aceptado") }

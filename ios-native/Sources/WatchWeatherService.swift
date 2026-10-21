@@ -74,14 +74,21 @@ final class WatchWeatherService: NSObject, ObservableObject, CLLocationManagerDe
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                     throw OpenMeteoWeatherForecast.ForecastError.incompleteForecast
                 }
-                let value = try OpenMeteoWeatherForecast.decode(data, city: "Ubicación actual")
+                // Apple resuelve la localidad real; no se usa un nombre fijo.
+                let places = try? await CLGeocoder().reverseGeocodeLocation(latest,
+                    preferredLocale: Locale(identifier: "es_AR"))
+                let place = places?.first
+                let label = OpenMeteoWeatherForecast.cityLabel(
+                    locality: place?.locality ?? place?.subAdministrativeArea,
+                    province: place?.administrativeArea)
+                let value = try OpenMeteoWeatherForecast.decode(data, city: label)
                 guard MotoAccessoryBridgeKit.weather(city: value.city,
                          temperatureCelsius: value.temperatureCelsius,
                          condition: value.summary) != nil else {
                     throw OpenMeteoWeatherForecast.ForecastError.incompleteForecast
                 }
                 snapshot = value
-                status = "Clima del iPhone actualizado; todavía no enviado al reloj"
+                status = "Clima actualizado para \(value.city); todavía no enviado al reloj"
                 WatchBLEManager.shared.record("CLIMA-IOS", "Pronóstico válido: 6 días, 24 horas. Sin envío BLE.")
             } catch {
                 status = "No se pudo consultar el pronóstico: \(error.localizedDescription)"
