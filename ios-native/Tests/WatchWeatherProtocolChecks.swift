@@ -27,6 +27,19 @@ expectWeatherBLE(b[0] == 0xAA && b[4] == 0x23 && b[5] == 0x01, "cabecera 23/01")
 expectWeatherBLE(Int(b[1]) + (Int(b[2]) << 8) + 4 == b.count, "longitud")
 expectWeatherBLE(MotoProtocol.crc16Xmodem(b.dropLast(2)) ==
     UInt16(b[b.count-2]) | (UInt16(b[b.count-1]) << 8), "CRC")
+// Contrastado con Motorola MotoWeather.AttendCity: #9 unitTemp, #11 temp.
+func hasBytes(_ sequence: [UInt8], within bytes: [UInt8]) -> Bool {
+    guard !sequence.isEmpty, bytes.count >= sequence.count else { return false }
+    return (0...(bytes.count - sequence.count)).contains { start in
+        Array(bytes[start..<(start + sequence.count)]) == sequence
+    }
+}
+expectWeatherBLE(hasBytes([0x48, 0x01, 0x50], within: b),
+    "AttendCity marca Celsius antes de weatherId")
+expectWeatherBLE(hasBytes([0x58, 0x17], within: b),
+    "temperatura 23°C en protobuf; no Fahrenheit 73°F")
+expectWeatherBLE(hasBytes([0x18, 0x19, 0x20, 0x0C], within: b),
+    "máxima 25°C y mínima 12°C del pronóstico diario")
 let chunks = WatchWeatherProtocol.fragments(frame, maximum: 120)
 expectWeatherBLE(chunks.count > 1, "fragmentación")
 expectWeatherBLE(chunks.allSatisfy { $0.count <= 120 }, "MTU máximo")
