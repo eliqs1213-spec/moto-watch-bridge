@@ -71,8 +71,11 @@ expectWeatherBLE(hasBytes([0x18, 0x19, 0x20, 0x0C], within: b),
     "máxima 25°C y mínima 12°C del pronóstico diario")
 expectWeatherBLE(hasBytes([0xC0, 0x01, 0x19, 0xC8, 0x01, 0x0C], within: b),
     "máxima/mínima actuales en campos #24/#25")
-expectWeatherBLE(hasBytes([0x68, 0x07, 0x70, 0x15], within: b),
-    "viento 12 km/h convertido a 7 mph y sensación de 21°C")
+// El protocolo real de Motorola define #13 como AQI y #45 como wind_speed.
+expectWeatherBLE(hasBytes([0x70, 0x15, 0xE8, 0x02, 0x07], within: b),
+    "sensación térmica 21°C y viento actual #45 = 7 mph (12 km/h)")
+expectWeatherBLE(!hasBytes([0x68, 0x07, 0x70, 0x15], within: b),
+    "no enviar viento en campo AQI #13")
 expectWeatherBLE(hasBytes(Array("Villa Allende - Córdoba".utf8), within: b),
     "nombre de localidad en trama")
 func testVarint(_ value: UInt64) -> [UInt8] {
