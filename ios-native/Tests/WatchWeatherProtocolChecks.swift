@@ -31,6 +31,26 @@ let chunks = WatchWeatherProtocol.fragments(frame, maximum: 120)
 expectWeatherBLE(chunks.count > 1, "fragmentación")
 expectWeatherBLE(chunks.allSatisfy { $0.count <= 120 }, "MTU máximo")
 expectWeatherBLE(Data(chunks.flatMap { $0 }) == frame, "reensamblado sin pérdidas")
+// Caso real de la 885: MTU informado=512, primera escritura de 512 rechazada.
+// Nueva prueba: segmentos ATT conservadores, sin cambiar ni perder bytes.
+expectWeatherBLE(WatchWeatherProtocol.conservativeWriteLimit(reportedMaximum: 512) == 20,
+                 "un máximo de 512 no obliga al reloj a aceptar 512")
+expectWeatherBLE(WatchWeatherProtocol.conservativeWriteLimit(reportedMaximum: 20) == 20,
+                 "enlace con longitud ATT de 20")
+expectWeatherBLE(WatchWeatherProtocol.conservativeWriteLimit(reportedMaximum: 19) == nil,
+                 "no iniciar si iOS no admite 20 bytes")
+let safe = WatchWeatherProtocol.fragments(frame, maximum:
+    WatchWeatherProtocol.conservativeWriteLimit(reportedMaximum: 512)!)
+expectWeatherBLE(safe.count > 2 && safe.allSatisfy { (1...20).contains($0.count) },
+                 "ninguna escritura de clima excede 20 bytes")
+expectWeatherBLE(Data(safe.flatMap { $0 }) == frame,
+                 "trama 23/01, CRC y orden conservados")
+let reproduced = Data(repeating: 0x42, count: 945)
+let candidate = WatchWeatherProtocol.fragments(reproduced, maximum: 20)
+expectWeatherBLE(candidate.count == 48, "945 bytes se transmiten en 48 fragmentos")
+expectWeatherBLE(Data(candidate.flatMap { $0 }) == reproduced,
+                 "reensamblado 945 bytes exacto")
+
 var expired = s
 // Struct con propiedades let: crear otro snapshot vencido
 let old = WatchWeatherSnapshot(city:s.city,temperatureCelsius:s.temperatureCelsius,
