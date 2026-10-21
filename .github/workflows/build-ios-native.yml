@@ -53,6 +53,11 @@ jobs:
           cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchWeatherForecast.swift ios-native/Sources/WatchWeatherProtocol.swift ios-native/Tests/WatchWeatherProtocolChecks.swift > "$RUNNER_TEMP/weather-ble-checks.swift"
           swift "$RUNNER_TEMP/weather-ble-checks.swift"
 
+      - name: Validar Celsius Motorola 23/04 y lectura 23/05
+        run: |
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchWeatherUnitProtocol.swift ios-native/Tests/WatchWeatherUnitChecks.swift > "$RUNNER_TEMP/weather-unit-checks.swift"
+          swift "$RUNNER_TEMP/weather-unit-checks.swift"
+
       - name: Verificar señales 23/0A y 2A/05 sin escribir BLE
         run: |
           cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchEnvironmentalProtocol.swift ios-native/Tests/WatchEnvironmentalChecks.swift > "$RUNNER_TEMP/environment-checks.swift"
