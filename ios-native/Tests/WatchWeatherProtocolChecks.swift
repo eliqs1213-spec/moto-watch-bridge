@@ -23,8 +23,34 @@ let s = WatchWeatherSnapshot(city: "Prueba", temperatureCelsius: 23, humidityPer
     hours: hours, days: days, fetchedAt: base)
 let frame = try WatchWeatherProtocol.encode(s)
 let b = Array(frame)
-expectWeatherBLE(b[0] == 0xAA && b[4] == 0x23 && b[5] == 0x01, "cabecera 23/01")
-expectWeatherBLE(Int(b[1]) + (Int(b[2]) << 8) + 4 == b.count, "longitud")
+// Capturas originales de Motorola: AA + longitud varint + 00 00 + 23 01.
+// No confundir con LE16 de los comandos cortos.
+func parseMotoWeatherHeader(_ bytes: [UInt8]) -> (length: Int, commandOffset: Int)? {
+    guard bytes.first == 0xAA else { return nil }
+    var length = 0
+    var shift = 0
+    var index = 1
+    while index < bytes.count && shift <= 21 {
+        let byte = Int(bytes[index])
+        length |= (byte & 0x7F) << shift
+        index += 1
+        if (byte & 0x80) == 0 {
+            guard index + 2 < bytes.count,
+                  bytes[index] == 0, bytes[index + 1] == 0 else { return nil }
+            return (length, index + 2)
+        }
+        shift += 7
+    }
+    return nil
+}
+guard let header = parseMotoWeatherHeader(b) else {
+    fatalError("Weather BLE: encabezado varint inválido")
+}
+expectWeatherBLE(b[header.commandOffset] == 0x23 && b[header.commandOffset + 1] == 0x01,
+    "cabecera 23/01 después del prefijo variable")
+expectWeatherBLE(header.length + header.commandOffset == b.count, "longitud varint exacta")
+expectWeatherBLE(b[1] & 0x80 != 0 && b[2] & 0x80 == 0,
+    "paquetes meteorológicos de prueba >127 usan varint de dos bytes")
 expectWeatherBLE(MotoProtocol.crc16Xmodem(b.dropLast(2)) ==
     UInt16(b[b.count-2]) | (UInt16(b[b.count-1]) << 8), "CRC")
 // Contrastado con Motorola MotoWeather.AttendCity: #9 unitTemp, #11 temp.
