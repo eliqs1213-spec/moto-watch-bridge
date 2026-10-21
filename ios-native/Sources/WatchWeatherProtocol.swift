@@ -1,7 +1,7 @@
 import Foundation
 
 // Generador de prueba manual del mensaje meteorológico Motorola 23/01.
-// No está validada todavía la interpretación de unidades ni los códigos de iconos.
+// Celsius ya se codifica explícitamente; los códigos de iconos siguen experimentales.
 enum WatchWeatherProtocol {
     enum EncodingError: Error { case invalidSnapshot, oversizedFrame }
     private static func vint(_ value: UInt64) -> [UInt8] {
@@ -79,7 +79,10 @@ enum WatchWeatherProtocol {
         let body: [UInt8] = [0x23, 0x01] + payload
         let n = body.count + 2
         guard n < 65536 else { throw EncodingError.oversizedFrame }
-        let header: [UInt8] = [0xaa, UInt8(n & 255), UInt8(n >> 8), 0] + body
+        // La captura oficial Android usa longitud protobuf/LEB128, NO un LE16 fijo.
+        // Para mensajes grandes el encabezado pasa a AA [varint] 00 00 23 01.
+        // n cuenta el grupo, subcomando, payload y los 2 bytes del CRC.
+        let header: [UInt8] = [0xAA] + vint(UInt64(n)) + [0x00, 0x00] + body
         let crc = MotoProtocol.crc16Xmodem(header[...])
         return Data(header + [UInt8(crc & 255), UInt8(crc >> 8)])
     }
