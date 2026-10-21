@@ -28,6 +28,32 @@ private enum FaceAccent: String, CaseIterable, Identifiable {
     }
 }
 
+// La foto elegida permanece únicamente en el almacenamiento local de iWatch.
+// No se comparte hasta que el usuario decide exportarla.
+private enum FacePhotoStorage {
+    static var url: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("FaceStudio", isDirectory: true)
+            .appendingPathComponent("background.jpg")
+    }
+    static func read() -> UIImage? {
+        UIImage(contentsOfFile: url.path)
+    }
+    static func save(_ image: UIImage) throws {
+        guard let bytes = image.jpegData(compressionQuality: 0.91) else {
+            throw CocoaError(.fileWriteInapplicableStringEncoding)
+        }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try bytes.write(to: url, options: .atomic)
+    }
+    static func remove() throws {
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+}
+
 private struct FaceExport: Identifiable {
     let id = UUID()
     let url: URL
@@ -169,12 +195,11 @@ struct WatchFaceStudioView: View {
     @ObservedObject private var weather = WatchWeatherService.shared
     @State private var chosenPhoto: PhotosPickerItem?
     @State private var photo: UIImage?
-    @State private var layout: FaceLayout = .grande
-    @State private var accent: FaceAccent = .celeste
-    @State private var weatherExample = false
+    @AppStorage("iwatch.face.layout.v1") private var layout: FaceLayout = .grande
+    @AppStorage("iwatch.face.accent.v1") private var accent: FaceAccent = .celeste
+    @AppStorage("iwatch.face.weatherExample.v1") private var weatherExample = false
     @State private var shareFile: FaceExport?
     @State private var errorMessage: String?
-    @State private var isPicking = false
 
     var body: some View {
         ScrollView {
@@ -209,8 +234,13 @@ struct WatchFaceStudioView: View {
                         .buttonStyle(.borderedProminent)
                         if photo != nil {
                             Button("Quitar foto") {
-                                photo = nil
-                                chosenPhoto = nil
+                                do {
+                                    try FacePhotoStorage.remove()
+                                    photo = nil
+                                    chosenPhoto = nil
+                                } catch {
+                                    errorMessage = "No se pudo quitar la foto guardada."
+                                }
                             }
                             .buttonStyle(.bordered)
                         }
@@ -283,6 +313,9 @@ struct WatchFaceStudioView: View {
                 Button("Listo") { dismiss() }
             }
         }
+        .onAppear {
+            if photo == nil { photo = FacePhotoStorage.read() }
+        }
         .onChange(of: chosenPhoto) { item in
             guard let item else { return }
             Task {
@@ -303,12 +336,13 @@ struct WatchFaceStudioView: View {
                                                      y: (900 - size.height) / 2,
                                                      width: size.width, height: size.height))
                         }
+                        try FacePhotoStorage.save(scaled)
                         photo = scaled
                     } else {
                         errorMessage = "No se pudo abrir la imagen elegida."
                     }
                 } catch {
-                    errorMessage = "No se pudo cargar la fotografía."
+                    errorMessage = "No se pudo cargar o guardar la fotografía."
                 }
             }
         }
