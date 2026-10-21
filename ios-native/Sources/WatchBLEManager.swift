@@ -26,6 +26,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     @Published private(set) var batteryStatus = "Sin lectura"
     @Published private(set) var musicSyncStatus = "Sin sincronizar"
     @Published private(set) var weatherSyncStatus = "Clima aún no enviado al reloj"
+    @Published private(set) var weatherUnitStatus = "Unidad del reloj sin consultar"
     @Published private(set) var motorolaCharacteristicsStatus = "Todavía no se inspeccionaron las características Motorola"
 
     private let serviceUUID = CBUUID(string: MotoProtocol.service)
@@ -59,6 +60,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWriteIsBattery = false
     private var currentWriteIsNotification = false
     private var currentWriteIsWeather = false
+    private var currentWriteIsWeatherUnit = false
+    private var currentWeatherUnitAction: String? = nil
     private var weatherTotalFragments = 0
     private var weatherConfirmedFragments = 0
     private var currentMusicStage: String? = nil
@@ -113,6 +116,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         musicNotBefore = .distantPast
         currentWriteIsNotification = false
         currentWriteIsWeather = false
+        currentWriteIsWeatherUnit = false
+        currentWeatherUnitAction = nil
+        weatherUnitStatus = "Unidad del reloj sin consultar en esta conexión"
         weatherTotalFragments = 0
         weatherConfirmedFragments = 0
         currentMusicStage = nil
@@ -542,6 +548,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
+        if let unit = WatchWeatherUnitProtocol.unitFromGetResponse(data) {
+            weatherUnitStatus = "El reloj informa: \(unit.label)"
+            record("CLIMA-UNIDAD", "Respuesta Motorola 23/05 verificada: \(unit.label)")
+            return
+        }
         if let signal = WatchEnvironmentalProtocol.identify(data) {
             record("MOTO-ENTORNO", signal.diagnostic)
         }
@@ -797,6 +808,42 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         flushMusicQueue()
     }
 
+    // La APK oficial Motorola Moto Watch manda WeatherUnitInfo por 23/04
+    // y lo consulta por 23/05. Solo se envía tras pulsación explícita.
+    private func queueWeatherUnitCommand(_ packet: Data, action: String) -> Bool {
+        guard UIApplication.shared.applicationState == .active,
+              isConnected, let device = peripheral,
+              let tx = writeCharacteristic, tx.properties.contains(.write) else {
+            weatherUnitStatus = "Conectá el reloj y dejá iWatch abierta"
+            return false
+        }
+        guard !currentWriteIsWeather, !currentWriteIsWeatherUnit,
+              !musicQueue.contains(where: { $0.kind == .weather || $0.kind == .weatherUnit }) else {
+            weatherUnitStatus = "Terminá primero la transferencia de clima o la consulta anterior"
+            return false
+        }
+        guard packet.count <= device.maximumWriteValueLength(for: .withResponse) else {
+            weatherUnitStatus = "F8F1 no permite escribir este comando"
+            return false
+        }
+        weatherUnitStatus = "Enviando comando de unidad: \(action)"
+        record("CLIMA-UNIDAD", "Acción manual \(action): \(MotoProtocol.hex(packet))")
+        musicQueue.append(PendingMusicWrite(packet: packet,
+            delayAfter: 0, kind: .weatherUnit, musicStage: action))
+        flushMusicQueue()
+        return true
+    }
+
+    @discardableResult
+    func applyCelsiusExperimental() -> Bool {
+        queueWeatherUnitCommand(WatchWeatherUnitProtocol.set(.celsius), action: "SET_CELSIUS")
+    }
+
+    @discardableResult
+    func readWeatherUnitExperimental() -> Bool {
+        queueWeatherUnitCommand(WatchWeatherUnitProtocol.get(), action: "GET_UNIT")
+    }
+
     // Prueba manual de 23/01. Sin envío automático, ni modificación de firmware.
     @discardableResult
     func sendWeatherExperimental(_ snapshot: WatchWeatherSnapshot) -> Bool {
@@ -1017,6 +1064,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsBattery = next.kind == .battery
         currentWriteIsNotification = next.kind == .notification
         currentWriteIsWeather = next.kind == .weather
+        currentWriteIsWeatherUnit = next.kind == .weatherUnit
+        currentWeatherUnitAction = next.kind == .weatherUnit ? next.musicStage : nil
         currentMusicStage = next.kind == .music ? next.musicStage : nil
         musicAfterDelay = next.delayAfter
         if next.kind == .music && musicDiagnosticPacketsLeft > 0 {
@@ -1028,7 +1077,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 record("MUSICA-DIAG", "Captura puntual expirada antes del siguiente paquete")
             }
         }
-        record("BLE-TX", "F8F1: \(next.kind == .weather ? "CLIMA" : next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
+        record("BLE-TX", "F8F1: \(next.kind == .weather ? "CLIMA" : next.kind == .weatherUnit ? "CLIMA-UNIDAD" : next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
         writeSequence += 1
         let sequence = writeSequence
         let connectionID = readyConnectionID
@@ -1066,12 +1115,21 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsNotification = false
         let isWeather = currentWriteIsWeather
         currentWriteIsWeather = false
+        let isWeatherUnit = currentWriteIsWeatherUnit
+        currentWriteIsWeatherUnit = false
+        let unitAction = currentWeatherUnitAction
+        currentWeatherUnitAction = nil
         let completedMusicStage = currentMusicStage
         currentMusicStage = nil
         if let error = error {
             if isNotice {
                 notificationStatus = "Falló la escritura del aviso; no se reenvía para evitar duplicados"
                 record("NOTIFICACION", notificationStatus)
+            }
+            else if isWeatherUnit {
+                weatherUnitStatus = "El reloj rechazó la escritura de unidad (sin reintento)"
+                musicQueue.removeAll { $0.kind == .weatherUnit }
+                record("CLIMA-UNIDAD", "ATT rechazó \(unitAction ?? "acción"): \(error.localizedDescription)")
             }
             else if isWeather {
                 weatherSyncStatus = "Clima rechazado en fragmento \(weatherConfirmedFragments + 1)/\(weatherTotalFragments); no se reintenta"
@@ -1118,6 +1176,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         let delay = musicAfterDelay
         if isNotice { notificationStatus = "Aviso escrito por Bluetooth; visualización no confirmada" }
+        if isWeatherUnit {
+            if unitAction == "SET_CELSIUS" {
+                weatherUnitStatus = "Celsius enviado por BLE; verificando mediante 23/05…"
+                record("CLIMA-UNIDAD", "SET 23/04 aceptado por ATT; no demuestra que el reloj cambió a °C")
+                // Leer el valor por el comando oficial de Motorola, sin reenvíos automáticos.
+                musicQueue.append(PendingMusicWrite(packet: WatchWeatherUnitProtocol.get(),
+                    delayAfter: 0, kind: .weatherUnit, musicStage: "GET_UNIT"))
+            } else if unitAction == "GET_UNIT" {
+                weatherUnitStatus = "23/05 consultado; esperando respuesta del reloj"
+                record("CLIMA-UNIDAD", "GET 23/05 escrito; esperando valor de la respuesta F8F0")
+            }
+        }
         if isWeather {
             weatherConfirmedFragments += 1
             let completed = weatherConfirmedFragments
