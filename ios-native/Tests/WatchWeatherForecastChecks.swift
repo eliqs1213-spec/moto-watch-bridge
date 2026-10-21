@@ -7,9 +7,9 @@ let url = try OpenMeteoWeatherForecast.requestURL(latitude: -31.416, longitude: 
 let params = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
 checkWeather(params.first(where: {$0.name == "latitude"})?.value == "-31.42", "ubicación aproximada")
 checkWeather(params.first(where: {$0.name == "forecast_days"})?.value == "6", "seis días")
-checkWeather(params.first(where: {$0.name == "daily"})?.value.contains("sunrise,sunset") == true,
+checkWeather(params.first(where: {$0.name == "daily"})?.value?.contains("sunrise,sunset") == true,
              "solicitud de amanecer/atardecer")
-checkWeather(params.first(where: {$0.name == "current"})?.value.contains("apparent_temperature") == true,
+checkWeather(params.first(where: {$0.name == "current"})?.value?.contains("apparent_temperature") == true,
              "solicitud de temperatura aparente")
 do {
     _ = try OpenMeteoWeatherForecast.requestURL(latitude: 100, longitude: 0)
