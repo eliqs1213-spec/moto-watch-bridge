@@ -59,11 +59,12 @@ public static class MotoClassicServices {
         error = BluetoothEnumerateInstalledServices(IntPtr.Zero, ref d, ref count, null);
         if (error != 0 && error != 234) throw new Exception("Enumerate count error Win32 " + error);
         if (count == 0) return new string[0];
-        var values = new Guid[count];
+        int n = checked((int)count);
+        var values = new Guid[n];
         error = BluetoothEnumerateInstalledServices(IntPtr.Zero, ref d, ref count, values);
         if (error != 0) throw new Exception("Enumerate list error Win32 " + error);
-        string[] output = new string[count];
-        for (int i=0; i<count; i++) output[i] = values[i].ToString("D").ToUpperInvariant();
+        string[] output = new string[n];
+        for (int i=0; i<n; i++) output[i] = values[i].ToString("D").ToUpperInvariant();
         return output;
     }
 }
