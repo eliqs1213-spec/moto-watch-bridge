@@ -34,7 +34,9 @@ enum WatchWeatherProtocol {
         default: return 7
         }
     }
-    private static func temp(_ c: Double) -> Int64 { Int64((c * 1.8 + 32).rounded()) }
+    // El reloj informó Celsius por 23/05 y el modelo AttendCity oficial
+    // contiene unitTemp (campo 9). Enviar temperaturas coherentes en °C.
+    private static func temp(_ c: Double) -> Int64 { Int64(c.rounded()) }
     private static func timestamp(_ value: String, tz: TimeZone) -> Int64? {
         let fmt = DateFormatter()
         fmt.locale = Locale(identifier: "en_US_POSIX")
@@ -52,6 +54,7 @@ enum WatchWeatherProtocol {
         var city = string(1, "iWatch-local")
         city += string(2, snapshot.city)
         city += string(8, tz.abbreviation() ?? "GMT")
+        city += num(9, 1)  // AttendCity.unitTemp: 1 = Celsius (verificado por 23/05)
         city += num(10, Int64(icon(snapshot.code)))
         city += num(11, temp(snapshot.temperatureCelsius))
         city += num(12, 1)
