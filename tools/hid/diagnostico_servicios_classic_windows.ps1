@@ -49,6 +49,15 @@ public static class MotoClassicServices {
     public static extern UInt32 BluetoothEnumerateInstalledServices(
         IntPtr hRadio, ref DeviceInfo info, ref UInt32 count,
         [Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex=2)] Guid[] services);
+    public static string ReadState(string address) {
+        var d = new DeviceInfo();
+        d.dwSize = (UInt32)Marshal.SizeOf(typeof(DeviceInfo));
+        d.Address = Convert.ToUInt64(address, 16);
+        UInt32 error = BluetoothGetDeviceInfo(IntPtr.Zero, ref d);
+        if (error != 0) throw new Exception("BluetoothGetDeviceInfo error Win32 " + error);
+        return "Classic Windows: conectado=" + d.fConnected
+            + "; recordado=" + d.fRemembered + "; autenticado=" + d.fAuthenticated;
+    }
     public static string[] Read(string address) {
         var d = new DeviceInfo();
         d.dwSize = (UInt32)Marshal.SizeOf(typeof(DeviceInfo));
@@ -71,6 +80,7 @@ public static class MotoClassicServices {
 '@
 try {
     Add-Type -TypeDefinition $source -ErrorAction Stop
+    Write-Host ([MotoClassicServices]::ReadState($addresses[0]))
     $services = @([MotoClassicServices]::Read($addresses[0]))
     Write-Host ('Dispositivo Classic encontrado: ' + $devices[0].FriendlyName)
     Write-Host ('Servicios habilitados en Windows: ' + $services.Count)
