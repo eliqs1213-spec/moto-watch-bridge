@@ -175,7 +175,7 @@ struct WatchHomeView: View {
                 weather.snapshot == nil ||
                 abs(weather.snapshot?.fetchedAt.timeIntervalSinceNow ?? 1_000_000) >= 1800)
             Text(watch.weatherSyncStatus).font(.caption.bold())
-            Text("Prueba experimental: el reloj podría ignorar el paquete. No modifica el firmware. El origen es Open-Meteo, no AccuWeather; revisá temperatura e iconos en el reloj.")
+            Text("Prueba experimental: envío BLE en fragmentos de máximo 20 bytes con confirmación y sin reintentos. El reloj podría ignorar el paquete. Origen: Open-Meteo (no AccuWeather); revisá la pantalla.")
                 .font(.caption2).foregroundStyle(.orange)
             Text("Con tu permiso se comparten coordenadas aproximadas solo al consultar el clima. El envío Bluetooth es manual.")
                 .font(.caption2).foregroundStyle(.secondary)
