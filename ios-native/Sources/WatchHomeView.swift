@@ -15,6 +15,7 @@ struct WatchHomeView: View {
     let openWatch: () -> Void
     let openHealth: () -> Void
     @State private var showMeasurements = false
+    @State private var showFaceStudio = false
 
     var body: some View {
         NavigationStack {
@@ -41,6 +42,11 @@ struct WatchHomeView: View {
         .sheet(isPresented: $showMeasurements) {
             GuidedWatchReadingView(openHealth: openHealth)
                 .environmentObject(watch)
+        }
+        .sheet(isPresented: $showFaceStudio) {
+            NavigationStack {
+                WatchFaceStudioView()
+            }
         }
         .onAppear { recoverForeground() }
         .onChange(of: scenePhase) { phase in
@@ -75,6 +81,12 @@ struct WatchHomeView: View {
                     Label("Administrar reloj", systemImage: "chevron.right")
                 }
                 .font(.caption.bold()).buttonStyle(.bordered).tint(.orange)
+                Button {
+                    showFaceStudio = true
+                } label: {
+                    Label("Personalizar esfera", systemImage: "paintbrush.pointed.fill")
+                }
+                .font(.caption.bold()).buttonStyle(.bordered)
             }
             Spacer(minLength: 0)
         }
