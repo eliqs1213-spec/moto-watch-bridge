@@ -163,6 +163,33 @@ struct WatchHomeView: View {
             .buttonStyle(.bordered)
             .disabled(weather.isLoading)
             Text(weather.status).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Unidad de temperatura del reloj").font(.subheadline.bold())
+                Text("Celsius (°C) · configuración manual basada en la app Motorola")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button {
+                        _ = watch.applyCelsiusExperimental()
+                    } label: {
+                        Label("Aplicar °C al Moto Watch", systemImage: "thermometer.medium")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button {
+                        _ = watch.readWeatherUnitExperimental()
+                    } label: {
+                        Label("Consultar unidad", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .disabled(!watch.isConnected)
+                Text(watch.weatherUnitStatus).font(.caption)
+                Text("Comandos 23/04 y 23/05 derivados de la app oficial. Solo al pulsar; iWatch no confirmará °C hasta recibir una respuesta válida del reloj.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .padding(10)
+            .background(Color(uiColor: .tertiarySystemGroupedBackground),
+                        in: RoundedRectangle(cornerRadius: 12))
+
             Button {
                 if let fresh = weather.snapshot { _ = watch.sendWeatherExperimental(fresh) }
             } label: {
