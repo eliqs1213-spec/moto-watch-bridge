@@ -64,6 +64,15 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWeatherUnitAction: String? = nil
     private var weatherTotalFragments = 0
     private var weatherConfirmedFragments = 0
+    // El reloj confirma la unidad por 23/05, nunca se infiere de un ACK ATT.
+    private var verifiedTemperatureUnit: WatchTemperatureUnit? = nil
+    private var lastWeatherUnitProbeAt = Date.distantPast
+    private var attemptedCelsiusCorrection = false
+    private var lastWeatherDeliveredAt = Date.distantPast
+    private var lastWeatherDeliveredConnectionID = -1
+    var weatherDeliveredThisConnection: Bool {
+        isConnected && lastWeatherDeliveredConnectionID == readyConnectionID
+    }
     private var currentMusicStage: String? = nil
     // Coalescer sólo mientras el par ANUNCIO/ESTADO todavía está activo.
     private var latestMusicContents: String?
@@ -118,7 +127,10 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsWeather = false
         currentWriteIsWeatherUnit = false
         currentWeatherUnitAction = nil
-        weatherUnitStatus = "Unidad del reloj sin consultar en esta conexión"
+        verifiedTemperatureUnit = nil
+        attemptedCelsiusCorrection = false
+        lastWeatherUnitProbeAt = .distantPast
+        weatherUnitStatus = "Consultando °C automáticamente al conectar"
         weatherTotalFragments = 0
         weatherConfirmedFragments = 0
         currentMusicStage = nil
@@ -519,6 +531,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             WatchConnectionAlerts.shared.sendConnectedAlert(
                 watchName: self.watchName, percentage: nil)
         }
+        // Sin consulta geográfica en segundo plano: se reanudará al abrir iWatch.
+        if UIApplication.shared.applicationState == .active {
+            probeWeatherUnitAutomaticallyIfNeeded()
+            Task { @MainActor in WatchWeatherService.shared.automaticRefreshIfNeeded(reason: "reconexión Bluetooth") }
+        }
         Task { await SpotifyBridge.shared.recoverAfterWatchReady() }
     }
 
@@ -549,8 +566,23 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
         if let unit = WatchWeatherUnitProtocol.unitFromGetResponse(data) {
-            weatherUnitStatus = "El reloj informa: \(unit.label)"
+            verifiedTemperatureUnit = unit
             record("CLIMA-UNIDAD", "Respuesta Motorola 23/05 verificada: \(unit.label)")
+            if unit == .fahrenheit {
+                if !attemptedCelsiusCorrection {
+                    attemptedCelsiusCorrection = true
+                    weatherUnitStatus = "El reloj informa °F; aplicando °C automáticamente…"
+                    musicQueue.append(PendingMusicWrite(packet: WatchWeatherUnitProtocol.set(.celsius),
+                        delayAfter: 0, kind: .weatherUnit, musicStage: "AUTO_SET_CELSIUS"))
+                    flushMusicQueue()
+                } else {
+                    weatherUnitStatus = "El reloj sigue en °F tras la corrección; sin reintentos automáticos"
+                    record("CLIMA-UNIDAD", "Corrección de Celsius no confirmada; evitar bucle")
+                }
+            } else {
+                weatherUnitStatus = "Celsius (°C) confirmado automáticamente por el reloj"
+                Task { @MainActor in WatchWeatherService.shared.synchronizeAvailableForecast() }
+            }
             return
         }
         if let signal = WatchEnvironmentalProtocol.identify(data) {
@@ -808,8 +840,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         flushMusicQueue()
     }
 
-    // La APK oficial Motorola Moto Watch manda WeatherUnitInfo por 23/04
-    // y lo consulta por 23/05. Solo se envía tras pulsación explícita.
+    // La APK Motorola consulta la unidad por 23/05. Se hace automáticamente
+    // al conectar, y se cambia por 23/04 únicamente si el reloj indica °F.
     private func queueWeatherUnitCommand(_ packet: Data, action: String) -> Bool {
         guard UIApplication.shared.applicationState == .active,
               isConnected, let device = peripheral,
@@ -827,24 +859,37 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return false
         }
         weatherUnitStatus = "Enviando comando de unidad: \(action)"
-        record("CLIMA-UNIDAD", "Acción manual \(action): \(MotoProtocol.hex(packet))")
+        record("CLIMA-UNIDAD", "Acción automática \(action): \(MotoProtocol.hex(packet))")
         musicQueue.append(PendingMusicWrite(packet: packet,
             delayAfter: 0, kind: .weatherUnit, musicStage: action))
         flushMusicQueue()
         return true
     }
 
-    @discardableResult
-    func applyCelsiusExperimental() -> Bool {
-        queueWeatherUnitCommand(WatchWeatherUnitProtocol.set(.celsius), action: "SET_CELSIUS")
+    func probeWeatherUnitAutomaticallyIfNeeded() {
+        guard UIApplication.shared.applicationState == .active, isConnected,
+              verifiedTemperatureUnit == nil,
+              Date().timeIntervalSince(lastWeatherUnitProbeAt) >= 600 else { return }
+        if queueWeatherUnitCommand(WatchWeatherUnitProtocol.get(), action: "AUTO_GET_UNIT") {
+            lastWeatherUnitProbeAt = Date()
+        }
     }
 
+    // No repetir paquetes dentro de una misma hora/conexión. La unidad debe
+    // haber sido realmente confirmada antes de enviar temperaturas Celsius.
     @discardableResult
-    func readWeatherUnitExperimental() -> Bool {
-        queueWeatherUnitCommand(WatchWeatherUnitProtocol.get(), action: "GET_UNIT")
+    func synchronizeWeatherAutomatically(_ snapshot: WatchWeatherSnapshot) -> Bool {
+        guard verifiedTemperatureUnit == .celsius, isConnected,
+              UIApplication.shared.applicationState == .active,
+              abs(Date().timeIntervalSince(snapshot.fetchedAt)) < 1800 else { return false }
+        if weatherDeliveredThisConnection &&
+           Date().timeIntervalSince(lastWeatherDeliveredAt) < 3600 { return false }
+        if currentWriteIsWeather || musicQueue.contains(where: { $0.kind == .weather }) { return false }
+        return sendWeatherExperimental(snapshot)
     }
 
-    // Prueba manual de 23/01. Sin envío automático, ni modificación de firmware.
+    // Envío de 23/01 ya verificado en la pantalla real del reloj. Conservamos
+    // transportes BLE de 20 bytes y confirmación ATT por fragmento.
     @discardableResult
     func sendWeatherExperimental(_ snapshot: WatchWeatherSnapshot) -> Bool {
         guard UIApplication.shared.applicationState == .active,
@@ -1177,15 +1222,17 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         let delay = musicAfterDelay
         if isNotice { notificationStatus = "Aviso escrito por Bluetooth; visualización no confirmada" }
         if isWeatherUnit {
-            if unitAction == "SET_CELSIUS" {
+            if unitAction == "SET_CELSIUS" || unitAction == "AUTO_SET_CELSIUS" {
                 weatherUnitStatus = "Celsius enviado por BLE; verificando mediante 23/05…"
                 record("CLIMA-UNIDAD", "SET 23/04 aceptado por ATT; no demuestra que el reloj cambió a °C")
                 // Leer el valor por el comando oficial de Motorola, sin reenvíos automáticos.
                 musicQueue.append(PendingMusicWrite(packet: WatchWeatherUnitProtocol.get(),
                     delayAfter: 0, kind: .weatherUnit, musicStage: "GET_UNIT"))
-            } else if unitAction == "GET_UNIT" {
-                weatherUnitStatus = "23/05 consultado; esperando respuesta del reloj"
-                record("CLIMA-UNIDAD", "GET 23/05 escrito; esperando valor de la respuesta F8F0")
+            } else if unitAction == "GET_UNIT" || unitAction == "AUTO_GET_UNIT" {
+                if verifiedTemperatureUnit == nil {
+                    weatherUnitStatus = "Consultando unidad; esperando respuesta 23/05"
+                }
+                record("CLIMA-UNIDAD", "GET 23/05 escrito; esperando respuesta en F8F0")
             }
         }
         if isWeather {
@@ -1197,8 +1244,10 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 record("CLIMA-BLE", "Progreso ATT: \(completed)/\(total) escrituras aceptadas por iOS")
             }
             if completed == total {
-                weatherSyncStatus = "23/01 transmitido por BLE; verificá la pantalla del reloj"
-                record("CLIMA-BLE", "Todos los fragmentos confirmados por iOS; pantalla NO verificada")
+                lastWeatherDeliveredAt = Date()
+                lastWeatherDeliveredConnectionID = readyConnectionID
+                weatherSyncStatus = "Clima actualizado por Bluetooth · \(Date().formatted(date: .omitted, time: .shortened))"
+                record("CLIMA-BLE", "Todos los fragmentos confirmados; clima transmitido al reloj")
                 weatherTotalFragments = 0
                 weatherConfirmedFragments = 0
             }

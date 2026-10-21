@@ -17,9 +17,47 @@ final class WatchWeatherService: NSObject, ObservableObject, CLLocationManagerDe
         location.desiredAccuracy = kCLLocationAccuracyKilometer
     }
 
-    // Nunca se solicita ubicación ni se inicia HTTP sin pulsar el botón.
+    // Frecuencia objetivo: 1 hora mientras iWatch esté activa y conectada.
+    // Si iOS suspende la app, no se promete ejecución puntual en segundo plano.
+    private var lastAutomaticAttemptAt = Date.distantPast
+
+    func automaticRefreshIfNeeded(reason: String) {
+        guard UIApplication.shared.applicationState == .active,
+              WatchBLEManager.shared.isConnected, !isLoading,
+              location.authorizationStatus == .authorizedAlways ||
+                location.authorizationStatus == .authorizedWhenInUse else { return }
+
+        WatchBLEManager.shared.probeWeatherUnitAutomaticallyIfNeeded()
+        let now = Date()
+        if let value = snapshot {
+            _ = WatchBLEManager.shared.synchronizeWeatherAutomatically(value)
+            if !WatchWeatherAutoPolicy.shouldFetch(
+                fetchedAt: value.fetchedAt, deliveredInConnection:
+                    WatchBLEManager.shared.weatherDeliveredThisConnection, now: now) { return }
+        }
+        guard WatchWeatherAutoPolicy.canRetry(lastAttempt: lastAutomaticAttemptAt, now: now) else { return }
+        lastAutomaticAttemptAt = now
+        WatchBLEManager.shared.record("CLIMA-AUTO", "Actualización solicitada: \(reason)")
+        beginWeatherRequest(automatic: true)
+    }
+
+    func synchronizeAvailableForecast() {
+        guard UIApplication.shared.applicationState == .active else { return }
+        if let value = snapshot {
+            _ = WatchBLEManager.shared.synchronizeWeatherAutomatically(value)
+        }
+        automaticRefreshIfNeeded(reason: "unidad °C verificada")
+    }
+
+    // Botón para conceder el permiso inicial o actualizar inmediatamente.
     func requestWeather() {
+        beginWeatherRequest(automatic: false)
+    }
+
+    private func beginWeatherRequest(automatic: Bool) {
         guard !isLoading else { return }
+        guard !automatic || UIApplication.shared.applicationState == .active else { return }
+        if automatic && location.authorizationStatus == .notDetermined { return }
         isLoading = true
         switch location.authorizationStatus {
         case .notDetermined:
@@ -88,8 +126,9 @@ final class WatchWeatherService: NSObject, ObservableObject, CLLocationManagerDe
                     throw OpenMeteoWeatherForecast.ForecastError.incompleteForecast
                 }
                 snapshot = value
-                status = "Clima actualizado para \(value.city); todavía no enviado al reloj"
-                WatchBLEManager.shared.record("CLIMA-IOS", "Pronóstico válido: 6 días, 24 horas. Sin envío BLE.")
+                status = "Pronóstico actualizado para \(value.city) · sincronización automática"
+                WatchBLEManager.shared.record("CLIMA-IOS", "Pronóstico válido: 6 días, 24 horas. Sincronización automática habilitada.")
+                _ = WatchBLEManager.shared.synchronizeWeatherAutomatically(value)
             } catch {
                 status = "No se pudo consultar el pronóstico: \(error.localizedDescription)"
                 WatchBLEManager.shared.record("CLIMA-IOS", "Consulta fallida: \(type(of: error))")

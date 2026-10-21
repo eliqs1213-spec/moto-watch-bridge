@@ -157,55 +157,21 @@ struct WatchHomeView: View {
             Button {
                 weather.requestWeather()
             } label: {
-                Label(weather.isLoading ? "Consultando pronóstico…" : "Consultar clima del iPhone",
+                Label(weather.isLoading ? "Consultando pronóstico…" : "Actualizar ahora",
                       systemImage: "arrow.clockwise")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .disabled(weather.isLoading)
             Text(weather.status).font(.caption).foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Unidad de temperatura del reloj").font(.subheadline.bold())
-                Text("Celsius (°C) · configuración manual basada en la app Motorola")
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button {
-                        _ = watch.applyCelsiusExperimental()
-                    } label: {
-                        Label("Aplicar °C al Moto Watch", systemImage: "thermometer.medium")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button {
-                        _ = watch.readWeatherUnitExperimental()
-                    } label: {
-                        Label("Consultar unidad", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .disabled(!watch.isConnected)
-                Text(watch.weatherUnitStatus).font(.caption)
-                Text("Comandos 23/04 y 23/05 derivados de la app oficial. Solo al pulsar; iWatch no confirmará °C hasta recibir una respuesta válida del reloj.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            .padding(10)
-            .background(Color(uiColor: .tertiarySystemGroupedBackground),
-                        in: RoundedRectangle(cornerRadius: 12))
-
-            Button {
-                if let fresh = weather.snapshot { _ = watch.sendWeatherExperimental(fresh) }
-            } label: {
-                Label("Enviar prueba al Moto Watch (23/01)", systemImage: "arrow.up.to.line")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.orange)
-            .disabled(weather.isLoading || !watch.isConnected ||
-                weather.snapshot == nil ||
-                abs(weather.snapshot?.fetchedAt.timeIntervalSinceNow ?? 1_000_000) >= 1800)
+            Label("Unidad automática: " + watch.weatherUnitStatus,
+                  systemImage: "thermometer.medium")
+                .font(.caption).foregroundStyle(.secondary)
             Text(watch.weatherSyncStatus).font(.caption.bold())
-            Text("Prueba experimental: pronóstico 23/01 con Celsius en ciudad y temperaturas, en fragmentos BLE de máximo 20 bytes. La confirmación BLE no garantiza que el reloj muestre clima. Origen: Open-Meteo.")
-                .font(.caption2).foregroundStyle(.orange)
-            Text("Con tu permiso se comparten coordenadas aproximadas solo al consultar el clima. El envío Bluetooth es manual.")
+            Text("Actualización automática cada 60 minutos mientras iWatch esté activa, y al reconectar si los datos están vencidos. iOS puede suspender la app en segundo plano.")
+                .font(.caption2).foregroundStyle(.secondary)
+            Text("Con permiso de ubicación, iWatch comparte coordenadas aproximadas con Open-Meteo al actualizarse; el envío al reloj es automático.")
+                .font(.caption2).foregroundStyle(.secondary)
                 .font(.caption2).foregroundStyle(.secondary)
             Link("Datos meteorológicos: Open-Meteo",
                  destination: URL(string: "https://open-meteo.com/")!).font(.caption2)

@@ -32,7 +32,10 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         SpotifyLockMetadataHandoff.shared.didBecomeActive()
         SpotifyAppRemoteBridge.shared.applicationDidBecomeActive()
         SpotifyBridge.shared.resetTransientWebFailureAfterResume()
-        Task { @MainActor in await SpotifyBridge.shared.verifyCurrentMetadataForWatch() }
+        Task { @MainActor in
+            await SpotifyBridge.shared.verifyCurrentMetadataForWatch()
+            WatchWeatherService.shared.automaticRefreshIfNeeded(reason: "aplicación activa")
+        }
     }
 }
 
@@ -97,6 +100,11 @@ struct MotoWatchBridgeApp: App {
                 .task {
                     while !Task.isCancelled {
                         await SpotifyBridge.shared.verifyCurrentMetadataForWatch()
+                        await MainActor.run {
+                            // Revisión ligera: sólo consulta GPS/Internet si la hora
+                            // está vencida, hay permiso y el reloj está conectado.
+                            WatchWeatherService.shared.automaticRefreshIfNeeded(reason: "control periódico")
+                        }
                         do { try await Task.sleep(nanoseconds: 7_000_000_000) }
                         catch { break }
                     }

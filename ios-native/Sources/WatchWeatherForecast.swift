@@ -28,6 +28,20 @@ struct WatchWeatherSnapshot: Equatable {
     var summary: String { OpenMeteoWeatherForecast.condition(code) }
 }
 
+enum WatchWeatherAutoPolicy {
+    static let forecastInterval: TimeInterval = 3600
+    static let transportFreshness: TimeInterval = 1800
+    static let failureRetry: TimeInterval = 600
+
+    static func shouldFetch(fetchedAt: Date, deliveredInConnection: Bool, now: Date) -> Bool {
+        let age = now.timeIntervalSince(fetchedAt)
+        return age >= (deliveredInConnection ? forecastInterval : transportFreshness)
+    }
+    static func canRetry(lastAttempt: Date, now: Date) -> Bool {
+        now.timeIntervalSince(lastAttempt) >= failureRetry
+    }
+}
+
 enum OpenMeteoWeatherForecast {
     struct Response: Decodable {
         let timezone: String

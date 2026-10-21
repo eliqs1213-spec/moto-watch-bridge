@@ -35,4 +35,16 @@ checkWeather(OpenMeteoWeatherForecast.cityLabel(locality:"Villa Allende", provin
 checkWeather(snapshot.hours.count == 24, "24 horas")
 checkWeather(snapshot.hours.first?.localTime == "2026-10-20T12:00", "hora actual")
 checkWeather(snapshot.summary == "Parcialmente nublado", "código meteorológico")
-print("WeatherForecast: 6 días / 24 horas y URL aproximada: OK")
+let tick = Date()
+checkWeather(!WatchWeatherAutoPolicy.shouldFetch(
+    fetchedAt: tick.addingTimeInterval(-3500), deliveredInConnection: true, now: tick),
+    "sin repetir la descarga en una hora activa")
+checkWeather(WatchWeatherAutoPolicy.shouldFetch(
+    fetchedAt: tick.addingTimeInterval(-3601), deliveredInConnection: true, now: tick),
+    "consulta tras cumplir 60 min")
+checkWeather(WatchWeatherAutoPolicy.shouldFetch(
+    fetchedAt: tick.addingTimeInterval(-1801), deliveredInConnection: false, now: tick),
+    "reconexión exige pronóstico transmitible menor a 30 min")
+checkWeather(!WatchWeatherAutoPolicy.canRetry(lastAttempt: tick.addingTimeInterval(-599), now: tick),
+    "se limita reintento de error a 10 min")
+print("WeatherForecast: 6 días / 24 horas, actualización automática, localidad y URL aproximada: OK")
