@@ -80,6 +80,15 @@ enum WatchWeatherProtocol {
         let crc = MotoProtocol.crc16Xmodem(header[...])
         return Data(header + [UInt8(crc & 255), UInt8(crc >> 8)])
     }
+    // En una prueba real CoreBluetooth informó 512 bytes, pero el reloj rechazó
+    // esa escritura con "Writing is not permitted". Otros comandos de 8-20
+    // bytes sí funcionaron. Limitamos SOLO el clima a 20 bytes por escritura,
+    // con confirmación ATT por fragmento. No supone que el firmware rearme la trama.
+    static func conservativeWriteLimit(reportedMaximum: Int) -> Int? {
+        guard reportedMaximum >= 20 else { return nil }
+        return min(20, reportedMaximum)
+    }
+
     static func fragments(_ frame: Data, maximum: Int) -> [Data] {
         guard maximum >= 20 else { return [] }
         return stride(from: 0, to: frame.count, by: maximum).map {
