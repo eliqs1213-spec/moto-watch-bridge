@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import CoreLocation
+import UIKit
 
 @MainActor
 final class WatchWeatherService: NSObject, ObservableObject, CLLocationManagerDelegate {
