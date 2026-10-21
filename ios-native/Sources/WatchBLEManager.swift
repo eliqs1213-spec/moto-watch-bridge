@@ -59,6 +59,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWriteIsBattery = false
     private var currentWriteIsNotification = false
     private var currentWriteIsWeather = false
+    private var weatherTotalFragments = 0
+    private var weatherConfirmedFragments = 0
     private var currentMusicStage: String? = nil
     // Coalescer sólo mientras el par ANUNCIO/ESTADO todavía está activo.
     private var latestMusicContents: String?
@@ -111,6 +113,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         musicNotBefore = .distantPast
         currentWriteIsNotification = false
         currentWriteIsWeather = false
+        weatherTotalFragments = 0
+        weatherConfirmedFragments = 0
         currentMusicStage = nil
         weatherSyncStatus = "Envío de clima interrumpido por desconexión"
         motorolaCharacteristicsStatus = "Pendiente de descubrimiento en la nueva conexión"
@@ -797,7 +801,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     @discardableResult
     func sendWeatherExperimental(_ snapshot: WatchWeatherSnapshot) -> Bool {
         guard UIApplication.shared.applicationState == .active,
-              isConnected, let peripheral = peripheral, writeCharacteristic != nil else {
+              isConnected, let peripheral = peripheral,
+              let tx = writeCharacteristic, tx.properties.contains(.write) else {
             weatherSyncStatus = "Conectá el reloj con iWatch visible"
             return false
         }
@@ -807,17 +812,24 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         do {
             let frame = try WatchWeatherProtocol.encode(snapshot)
-            let mtu = peripheral.maximumWriteValueLength(for: .withResponse)
-            let parts = WatchWeatherProtocol.fragments(frame, maximum: mtu)
-            guard !parts.isEmpty, parts.count <= 50 else {
-                weatherSyncStatus = "MTU insuficiente o trama demasiado grande"
+            let reportedLimit = peripheral.maximumWriteValueLength(for: .withResponse)
+            guard let size = WatchWeatherProtocol.conservativeWriteLimit(reportedMaximum: reportedLimit) else {
+                weatherSyncStatus = "La conexión no permite fragmentos de 20 bytes"
+                record("CLIMA-BLE", "Sin límite seguro de escritura (máximo informado \(reportedLimit))")
                 return false
             }
+            let parts = WatchWeatherProtocol.fragments(frame, maximum: size)
+            guard !parts.isEmpty, parts.count <= 100 else {
+                weatherSyncStatus = "Pronóstico demasiado grande para la prueba limitada"
+                return false
+            }
+            weatherTotalFragments = parts.count
+            weatherConfirmedFragments = 0
             for part in parts {
                 musicQueue.append(PendingMusicWrite(packet: part, delayAfter: 0, kind: .weather))
             }
-            weatherSyncStatus = "Enviando clima: \(parts.count) fragmentos"
-            record("CLIMA-BLE", "Prueba 23/01: \(frame.count) bytes en \(parts.count) fragmentos (MTU \(mtu))")
+            weatherSyncStatus = "Enviando clima: 0/\(parts.count) fragmentos"
+            record("CLIMA-BLE", "Prueba 23/01: \(frame.count) bytes, \(parts.count) fragmentos de máximo \(size) bytes (máximo iOS \(reportedLimit)); sin reintentos")
             flushMusicQueue()
             return true
         } catch {
@@ -1062,9 +1074,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 record("NOTIFICACION", notificationStatus)
             }
             else if isWeather {
-                weatherSyncStatus = "Error de escritura del clima; no se reintenta automáticamente"
+                weatherSyncStatus = "Clima rechazado en fragmento \(weatherConfirmedFragments + 1)/\(weatherTotalFragments); no se reintenta"
                 musicQueue.removeAll { $0.kind == .weather }
-                record("CLIMA-BLE", "Escritura fallida: \(error.localizedDescription)")
+                record("CLIMA-BLE", "Escritura fallida en \(weatherConfirmedFragments + 1)/\(weatherTotalFragments): \(error.localizedDescription)")
+                weatherTotalFragments = 0
+                weatherConfirmedFragments = 0
             }
             else if isBattery { batteryStatus = "Error de consulta Motorola" }
             else if isSleep {
@@ -1104,9 +1118,20 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         let delay = musicAfterDelay
         if isNotice { notificationStatus = "Aviso escrito por Bluetooth; visualización no confirmada" }
-        if isWeather && !musicQueue.contains(where: { $0.kind == .weather }) {
-            weatherSyncStatus = "23/01 transmitido por BLE; verificá la pantalla del reloj"
-            record("CLIMA-BLE", "Todos los fragmentos confirmados por iOS; pantalla NO verificada")
+        if isWeather {
+            weatherConfirmedFragments += 1
+            let completed = weatherConfirmedFragments
+            let total = weatherTotalFragments
+            weatherSyncStatus = "Clima BLE: \(completed)/\(total) fragmentos confirmados"
+            if completed == 1 || completed % 8 == 0 || completed == total {
+                record("CLIMA-BLE", "Progreso ATT: \(completed)/\(total) escrituras aceptadas por iOS")
+            }
+            if completed == total {
+                weatherSyncStatus = "23/01 transmitido por BLE; verificá la pantalla del reloj"
+                record("CLIMA-BLE", "Todos los fragmentos confirmados por iOS; pantalla NO verificada")
+                weatherTotalFragments = 0
+                weatherConfirmedFragments = 0
+            }
         }
         if !isNotice && !isBattery && !isHealth && !isVitals && !isSleep {
             musicNotBefore = Date().addingTimeInterval(delay)
