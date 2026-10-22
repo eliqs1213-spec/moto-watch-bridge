@@ -901,20 +901,10 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         fileLEProbeWaiting = true
         fileLEProbeSequence += 1
-        let sequence = fileLEProbeSequence
-        let connection = readyConnectionID
         fileLEProbeStatus = "Negociando FileTransmission 20/05 por LE (sin foto)…"
         record("ESFERA-LE", "Prueba de negociación FILE/TRANSMISSION por GATT F8F1")
         musicQueue.append(PendingMusicWrite(packet: MotoFileLEProbe.request(), delayAfter: 0, kind: .fileLEProbe))
         flushMusicQueue()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
-            guard let self = self, self.fileLEProbeWaiting,
-                  self.fileLEProbeSequence == sequence,
-                  self.readyConnectionID == connection else { return }
-            self.fileLEProbeWaiting = false
-            self.fileLEProbeStatus = "Sin respuesta 20/05 por LE en 12 s. La app oficial requiere SPP/Classic."
-            self.record("ESFERA-LE", "Handshake LE sin respuesta: no enviar bloques")
-        }
         return true
     }
 
@@ -1344,6 +1334,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         if isFileLEProbe && fileLEProbeWaiting {
             fileLEProbeStatus = "20/05 escrito por LE; esperando respuesta del reloj"
+            // El tiempo empieza tras el ACK de escritura, no cuando el
+            // paquete se encoló detrás de notificaciones, clima o Spotify.
+            let sequence = fileLEProbeSequence
+            let connection = readyConnectionID
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+                guard let self = self, self.fileLEProbeWaiting,
+                      self.fileLEProbeSequence == sequence,
+                      self.readyConnectionID == connection else { return }
+                self.fileLEProbeWaiting = false
+                self.fileLEProbeStatus = "Sin respuesta 20/05 por LE tras 12 s; posiblemente requiere SPP/Classic"
+                self.record("ESFERA-LE", "Negociación LE sin respuesta; no iniciar transferencia")
+            }
         }
         if isWeatherUnit {
             if unitAction == "SET_CELSIUS" || unitAction == "AUTO_SET_CELSIUS" {
