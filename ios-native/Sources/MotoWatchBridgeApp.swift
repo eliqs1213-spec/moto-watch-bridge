@@ -32,6 +32,11 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         SpotifyLockMetadataHandoff.shared.didBecomeActive()
         SpotifyAppRemoteBridge.shared.applicationDidBecomeActive()
         SpotifyBridge.shared.resetTransientWebFailureAfterResume()
+        if WatchBLEManager.shared.isConnected {
+            BatteryLiveActivityManager.shared.start(
+                percentage: WatchBLEManager.shared.batteryPercentage
+            )
+        }
         Task { @MainActor in
             await SpotifyBridge.shared.verifyCurrentMetadataForWatch()
             WatchWeatherService.shared.automaticRefreshIfNeeded(reason: "aplicación activa")
@@ -124,7 +129,6 @@ struct ContentView: View {
     @StateObject private var musicAutoSync = MusicSyncEngine.shared
     @EnvironmentObject private var finder: PhoneFinder
     @StateObject private var batteryLive = BatteryLiveActivityManager.shared
-    @State private var widgetInstallReport = WidgetExtensionDiagnostics.report()
     @StateObject private var backgroundExperiment = MusicBackgroundExperiment.shared
     @StateObject private var connectionAlerts = WatchConnectionAlerts.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -302,53 +306,16 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    settingsSection("Pantalla de bloqueo", subtitle: "Widgets y Actividades en vivo", symbol: "rectangle.on.rectangle")
-                    GroupBox("Diagnóstico de extensión WidgetKit instalada") {
+                    settingsSection("Pantalla de bloqueo", subtitle: "Widget y Actividad en vivo", symbol: "rectangle.on.rectangle")
+                    GroupBox("Sincronización automática") {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Si el widget iWatch no aparece en la galería o la Dynamic Island queda negra, inspeccioná la extensión efectivamente instalada en el iPhone.")
+                            Label(batteryLive.status, systemImage: "bolt.horizontal.circle")
+                                .font(.subheadline.bold())
+                            Text("La Actividad en vivo se inicia automáticamente al conectar el Moto Watch Fit y se actualiza con cada lectura real de batería. Si iOS tiene desactivadas las Actividades en vivo, habilitalas desde Ajustes del iPhone.")
                                 .font(.caption).foregroundStyle(.secondary)
-                            HStack {
-                                Button("Comprobar extensión") {
-                                    widgetInstallReport = WidgetExtensionDiagnostics.report()
-                                    watch.record("WIDGET-DIAG", "Inspección local del bundle instalada; revisar informe copiado para los detalles")
-                                }.buttonStyle(.borderedProminent)
-                                Button("Copiar diagnóstico") {
-                                    UIPasteboard.general.string = widgetInstallReport
-                                }.buttonStyle(.bordered)
-                            }
-                            Text(widgetInstallReport)
-                                .font(.caption2.monospaced())
-                                .textSelection(.enabled)
-                            Text("La presencia de MotoBatteryWidgets.appex y un ID coherente NO certifica que iOS haya registrado la extensión ni que Sideloadly la haya firmado correctamente. La app no puede consultar el catálogo interno de WidgetKit.")
+                            Text("El widget solicita una actualización al recibir una lectura y también tiene renovación periódica; iOS decide cuándo mostrar los cambios.")
                                 .font(.caption).foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    GroupBox("Pantalla de bloqueo · Widget experimental") {
-                        VStack(alignment: .leading, spacing: 9) {
-                            Text("Batería real por Actividad en vivo (ActivityKit), sin App Groups.")
-                                .font(.subheadline)
-                            HStack {
-                                Button("Mostrar batería en bloqueo") {
-                                    batteryLive.start(percentage: watch.batteryPercentage)
-                                    watch.refreshBattery()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                Button("Reiniciar prueba") {
-                                    batteryLive.restart(percentage: watch.batteryPercentage)
-                                    widgetInstallReport = WidgetExtensionDiagnostics.report()
-                                }.buttonStyle(.bordered)
-                                Button("Detener") { batteryLive.stop() }
-                                    .buttonStyle(.bordered)
-                            }
-                            Text(batteryLive.status)
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("Bloqueá el iPhone y buscá la actividad debajo de las notificaciones o en la Dynamic Island. Es diferente al widget fijo debajo del reloj. Las actividades en vivo caducan según iOS y las lecturas solo se actualizan cuando iWatch logra comunicarse con el reloj.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("Si la Dynamic Island queda como una barra negra vacía, comprobá si el widget «iWatch · Prueba» aparece en la galería. Si tampoco aparece, priorizar la firma de MotoBatteryWidgets.appex; Reiniciar prueba no corrige CODESIGNING. Buscá un informe MotoBatteryWidgets en Datos de análisis y compartí su causa de terminación.")
-                                .font(.caption).foregroundStyle(.orange)
-                            Text("Widget circular/rectangular «iWatch · Prueba»: solo muestra iWatch OK. Sirve para comprobar si Sideloadly registró la extensión; NO muestra una batería inventada.")
+                            Text("Por restricciones de iOS, la app no puede agregar el widget a la pantalla de bloqueo por sí sola: hay que añadirlo una vez desde la galería. El widget actual muestra la hora de actualización, no la batería real; compartir ese dato con la extensión requiere un canal de datos adicional.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
