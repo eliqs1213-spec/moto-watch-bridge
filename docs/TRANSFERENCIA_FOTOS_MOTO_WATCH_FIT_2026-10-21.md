@@ -41,3 +41,15 @@ Captura única, acotada y local, desde la aplicación oficial Moto Watch en el M
 - Se creó un analizador offline de bugreport que solo emite conteos/tamaños de grupos Motorola 21/22/26 y actividad SPP, sin direcciones ni datos de usuario. Un resumen de conteos por sí solo no basta para reconstruir paquetes completos: después de confirmar el canal hará falta revisar la captura original de forma privada.
 ### Estado de la aplicación
 - La build 894 permite comprobar el catálogo 26/01. **No hay una instalación de fotos desde iWatch comprobada todavía**. No habilitar un botón de aplicar que únicamente seleccione una esfera antigua o reporte éxito tras un ACK ATT.
+
+## Prueba Bluetooth LE controlada — iWatch 0.8.4.55 (895)
+
+La versión experimental agrega **Inicio → Personalizar esfera → Probar envío de fotos por LE**, pero la acción es **solo la primera negociación** (no transfiere ninguna fotografía ni cambia una esfera). Motivo:
+
+- La descompilación propia de la APK Moto Watch 2.1.0.017 confirmó `FileSender.sendFile()` → `BandProxy.isRequirePending()` → **`BandProxy.requestSpp()`** antes de `getTransmission()`. Esto prueba que la ruta usada por la app Android solicita SPP/Classic, aunque no excluye que el firmware acepte negociación por LE.
+- `ServiceId.FILE = 0x20`, `FileCommand.TRANSMISSION = 0x05`. En `FileSender.getTransmission()`, `MotoFt.FileTransmission {file_protocol_version=1, max_data_size=1024}` se envía como `20/05` con envoltorio Motorola `AA` y CRC16-XMODEM.
+- El paquete BLE mide **13 bytes**; iWatch lo escribe por F8F1, verifica ACK ATT y espera **12 segundos desde el ACK** una respuesta `20/05` por F8F0. Una respuesta solo se considera prueba de negociación si longitud/CRC y campos de versión/tamaño son válidos. No se considera transferencia ni instalación.
+- Una prueba fallida **no** desencadena envíos de `FtSend`, `FtChunk`, `AddAlbumWatchFace`, ni comandos OTA. Sin reintentos automáticos. Las otras funciones permanecen operativas.
+- Protocolo reconstruido en `band/moto_ft.proto`: `FtSend` (task ID, URI, filename, tamaño, MD5), `FtChunk` (ID, contenido, offset/índice/CRC según versión), `FtComplete` y `FileTransmission`. Se requiere respuesta real del reloj y captura de subida oficial para implementar la secuencia restante.
+- **Interpretación:** respuesta positiva por LE permite investigar la etapa siguiente; silencio/rechazo es evidencia contra esa ruta, no prueba lógica de imposibilidad. Un ACK ATT **no** significa que el firmware haya admitido negociación.
+- Tests sintéticos para framing, CRC, respuesta válida/inválida añadidos a GitHub Actions, build 895.
