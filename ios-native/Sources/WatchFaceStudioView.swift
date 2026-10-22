@@ -314,6 +314,18 @@ struct WatchFaceStudioView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Text("Consulta segura de lectura: identifica el catálogo, no envía todavía una fotografía.")
                         .font(.caption2).foregroundStyle(.secondary)
+                    Button {
+                        _ = watch.probePhotoTransferOverLE()
+                    } label: {
+                        Label("Probar envío de fotos por LE", systemImage: "antenna.radiowaves.left.and.right")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!watch.isConnected)
+                    Text(watch.fileLEProbeStatus)
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Primera etapa: prueba el canal 20/05 de transferencia por LE, sin mandar todavía bytes de imagen. Solo después de una respuesta válida intentaremos un archivo; el canal oficial usa SPP.")
+                        .font(.caption2).foregroundStyle(.secondary)
                     Text("Para usarlo hoy, exportá el fondo y cargalo como foto de esfera desde la app Motorola en un Android. El archivo de vista previa, con números dibujados, no es una esfera animada.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
