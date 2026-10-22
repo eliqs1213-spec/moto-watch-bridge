@@ -12,6 +12,7 @@ final class BatteryLiveActivityManager: ObservableObject {
     private init() {}
 
     func start(percentage: Int?) {
+        WidgetCenter.shared.reloadTimelines(ofKind: "iWatchDiagnosticStage7")
         Task { @MainActor in
             await self.prepareActivity(percentage: percentage, recreate: false)
         }
