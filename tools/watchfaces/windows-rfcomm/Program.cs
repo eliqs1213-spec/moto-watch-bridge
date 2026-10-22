@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
+using Windows.Devices.Bluetooth.Rfcomm;
 using Windows.Devices.Enumeration;
 using Windows.Foundation;
 using Windows.Storage.Streams;
@@ -144,6 +145,8 @@ internal static class Program
                 var bytes = new byte[reader.UnconsumedBufferLength];
                 reader.ReadBytes(bytes);
                 Console.WriteLine("BLE RX F8F0: " + Hex(bytes));
+                if (IsOpenSppReply(bytes))
+                    Console.WriteLine("Respuesta correlacionada 12/19 recibida (OperateBt type=4). La semantica de type=4 aun no esta confirmada; no se asume exito.");
             };
             rx.ValueChanged += handler;
             var mode = rx.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify)
@@ -214,14 +217,28 @@ internal static class Program
         try
         {
             var response = await device.GetRfcommServicesAsync(BluetoothCacheMode.Uncached);
-            Console.WriteLine("SDP " + phase + ": " + response.Error +
+            Console.WriteLine("SDP " + phase + " general: " + response.Error +
                               "; servicios anunciados=" + response.Services.Count);
             foreach (var svc in response.Services)
             {
-                Console.WriteLine("  RFCOMM UUID: " + svc.ServiceId.Uuid.ToString("D"));
+                Console.WriteLine("  RFCOMM UUID general: " + svc.ServiceId.Uuid.ToString("D"));
                 svc.Dispose();
             }
-            return response.Services.Count;
+
+            // La APK oficial reutiliza FC9DF9F0 como UUID de su servicio SPP.
+            // Consultarlo explícitamente por SDP aunque la lista general esté vacía.
+            var targetId = RfcommServiceId.FromUuid(MotorolaGattService);
+            var target = await device.GetRfcommServicesForIdAsync(
+                targetId, BluetoothCacheMode.Uncached);
+            Console.WriteLine("SDP " + phase + " UUID Motorola FC9DF9F0: " + target.Error +
+                              "; servicios coincidentes=" + target.Services.Count);
+            foreach (var svc in target.Services)
+            {
+                Console.WriteLine("  RFCOMM UUID objetivo: " + svc.ServiceId.Uuid.ToString("D") +
+                                  "; canal=" + svc.ConnectionServiceName);
+                svc.Dispose();
+            }
+            return response.Services.Count + target.Services.Count;
         }
         catch (Exception e)
         {
@@ -229,6 +246,17 @@ internal static class Program
                               ", HRESULT=0x" + e.HResult.ToString("X8"));
             return null;
         }
+    }
+
+    private static bool IsOpenSppReply(byte[] bytes)
+    {
+        if (bytes.Length != 10 || bytes[0] != 0xAA ||
+            bytes[1] != 0x06 || bytes[2] != 0x00 ||
+            bytes[4] != 0x12 || bytes[5] != 0x19 ||
+            bytes[6] != 0x08 || bytes[7] != 0x04)
+            return false;
+        ushort expected = (ushort)(bytes[^2] | (bytes[^1] << 8));
+        return Crc16Xmodem(bytes.Take(bytes.Length - 2).ToArray()) == expected;
     }
 
     private static byte[] BuildOpenSppRequest()
