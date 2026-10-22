@@ -79,17 +79,39 @@ internal static class Program
         }
         Console.WriteLine("Dispositivo BLE: " + ble.Name);
 
-        var serviceResult = await ble.GetGattServicesForUuidAsync(
-            MotorolaGattService, BluetoothCacheMode.Uncached);
-        if (serviceResult.Status != GattCommunicationStatus.Success ||
-            serviceResult.Services.Count == 0)
+        // Enumerar servicios completos permite distinguir entre un enlace GATT
+        // inaccesible y un servicio Motorola que no aparece en el dispositivo.
+        var serviceResult = await ble.GetGattServicesAsync(BluetoothCacheMode.Uncached);
+        if (serviceResult.Status == GattCommunicationStatus.Unreachable)
         {
-            Console.WriteLine("No se pudo abrir el servicio GATT Motorola: " + serviceResult.Status);
+            Console.WriteLine("GATT inaccesible en el primer intento; reintentando una vez...");
+            await Task.Delay(1500);
+            serviceResult = await ble.GetGattServicesAsync(BluetoothCacheMode.Uncached);
+        }
+        if (serviceResult.Status != GattCommunicationStatus.Success)
+        {
+            Console.WriteLine("No se pudo enumerar GATT: " + serviceResult.Status);
             Console.WriteLine("No se envio el comando.");
+            Console.WriteLine("Prueba a apagar temporalmente Bluetooth desde Ajustes en el iPhone y el Edge 60 (no solo cerrar las apps),");
+            Console.WriteLine("manteniendo Bluetooth en Windows, y vuelve a ejecutar. No desemparejes el reloj.");
             return 1;
         }
 
-        var service = serviceResult.Services[0];
+        Console.WriteLine("Servicios GATT encontrados: " + serviceResult.Services.Count);
+        foreach (var discovered in serviceResult.Services)
+            Console.WriteLine("  GATT UUID: " + discovered.Uuid.ToString("D"));
+
+        var service = serviceResult.Services.FirstOrDefault(
+            candidate => candidate.ServiceId.Uuid == MotorolaGattService);
+        foreach (var discovered in serviceResult.Services)
+        {
+            if (!ReferenceEquals(discovered, service)) discovered.Dispose();
+        }
+        if (service is null)
+        {
+            Console.WriteLine("No aparece el servicio Motorola FC9DF9F0. No se envio el comando.");
+            return 1;
+        }
         var txResult = await service.GetCharacteristicsForUuidAsync(
             MotorolaWrite, BluetoothCacheMode.Uncached);
         if (txResult.Status != GattCommunicationStatus.Success ||
