@@ -1,32 +1,57 @@
-# Diagnóstico de conexión para temas dinámicos (Windows)
+# Diagnóstico para instalar temas dinámicos en Windows
 
-El objetivo del proyecto es instalar **esferas dinámicas del Moto Watch Fit XT2541-1**: hora real, clima, pasos, indicadores de salud y recursos gráficos independientes. **Todavía no es un instalador**.
+El objetivo es instalar **esferas dinámicas completas del Moto Watch Fit XT2541-1**: hora, recursos gráficos, clima, pasos/actividad e indicadores. Esta carpeta contiene diagnósticos; **todavía no es un instalador de temas**.
 
-La aplicación Moto Watch oficial utiliza el protocolo de archivos `MotoFt` por Bluetooth Classic/SPP, y las dos pruebas LE de iWatch (895/896) no devolvieron respuesta válida. El diagnóstico anterior de Windows mediante `BluetoothEnumerateInstalledServices` mostró **0 servicios instalados localmente**. Esta herramienta hace una prueba distinta: consulta el SDP **remoto y sin caché** mediante la API pública de Microsoft.
+## Qué sabemos
 
-## Uso
+- La APK oficial Moto Watch 2.1.0.017 enruta el servicio de archivos `ServiceId.FILE=0x20` por SPP/Classic.
+- Dos pruebas de iWatch enviando `20/05` por GATT no recibieron respuesta de negociación.
+- La consulta SDP remota desde Windows devolvió `Success` y **0 servicios RFCOMM** en el estado actual.
+- La descompilación de la APK aporta una nueva pista: antes de conectar el socket RFCOMM, el flujo `FileSender.sendFile → BandProxy.requestSpp → SppManager.requestSpp` llama a `BandProxy.openSppRemote(true)`. Eso envía por GATT `GeneralSetting.OPEN_SPP` (SID `0x12`, CID `0x19`) con `MotoSetting.OperateBt.type=1`, para solicitar que se abra el canal Classic.
 
-Requiere Windows 10/11 y .NET SDK 8 instalado desde https://dotnet.microsoft.com/download/dotnet/8.0 .
+Por eso el programa ahora tiene dos modos.
 
-En PowerShell, desde la raíz del repositorio:
+## Requisitos
+
+- Windows 10/11 con Bluetooth LE y Classic.
+- .NET SDK 8: https://dotnet.microsoft.com/download/dotnet/8.0
+- Moto Watch Fit emparejado en Windows.
+
+## Modo A — solo lectura
+
+Desde PowerShell en la raíz del repositorio:
 
 ```powershell
 dotnet run --project tools/watchfaces/windows-rfcomm/RfcommProbe.csproj
 ```
 
-Debe haber un Moto Watch Fit ya emparejado en Windows. Idealmente, cerrá la aplicación Moto Watch del teléfono mientras hacés el diagnóstico, para evitar que otra sesión Classic utilice el canal. **No elimines el emparejamiento** ni cambies la configuración del reloj por este test.
+Consulta los servicios RFCOMM remotos sin enviar comandos.
 
-Resultados esperados:
-- **Servicios RFCOMM anunciados:** se confirma un servicio Classic accesible por SDP en ese estado. Hace falta identificar si corresponde a MotoFt y las restricciones de acceso.
-- **Cero servicios:** no hay servicio anunciado a Windows en esa condición. No basta para afirmar que es imposible; quizá Motorola lo active al iniciar una transferencia de esfera.
-- **Acceso rechazado/inconcluso:** comprobar permisos Bluetooth y estado de conexión, sin forzar dispositivos ni enviar datos.
+## Modo B — solicitar apertura de SPP
 
-No publicar DeviceId, direcciones MAC, bugreport completo ni fotografías personales. La herramienta oculta la información identificatoria.
+```powershell
+dotnet run --project tools/watchfaces/windows-rfcomm/RfcommProbe.csproj -- --request-spp
+```
 
-## Para crear e instalar temas dinámicos
+Este modo hace lo siguiente:
+1. Consulta los servicios RFCOMM disponibles.
+2. Se conecta por BLE al servicio Motorola `FC9DF9F0-4899-11EE-BE56-0242AC120002`.
+3. Intenta habilitar notificaciones F8F0 para observar respuestas.
+4. Envía **una única solicitud** `AA 06 00 00 12 19 08 01 05 04` por F8F1 y espera dos segundos.
+5. Consulta SDP RFCOMM otra vez e informa si apareció algún servicio nuevo.
 
-Los recursos en la APK XT2541-1 incluyen `base*.json` con agujas/dígitos y `widget/*.json` (clima, anillos de actividad, pasos, salud), pero son **plantillas de la aplicación**: no hay evidencia de que simplemente copiar JSON + PNG al reloj instale una esfera. Se necesita reconstruir el empaquetado final y el protocolo MotoFt de instalación/activación.
+**Alcance de seguridad:** este comando solo pide abrir el canal SPP; no envía JPEG, no manda comandos `MotoFt` de transferencia, no instala temas y no toca firmware/OTA. Sin embargo, sí cambia temporalmente el estado de conexión Bluetooth y podría interrumpir otra conexión activa. Cerrá iWatch/Moto Watch en el teléfono y desconectá temporalmente el reloj del teléfono antes de la prueba. No elimines el emparejamiento.
 
-Plan: (1) comprobar RFCOMM con esta herramienta; (2) extraer de una captura oficial la instalación de una esfera dinámica, no OTA; (3) editor PC con validación de recursos/plantillas; (4) cargador con confirmación de archivo y esfera, sin flashear firmware.
+Un ACK de escritura ATT significa que la característica BLE aceptó la escritura, no que el reloj haya aceptado la solicitud a nivel Motorola. La salida de F8F0 y la segunda consulta SDP son diagnósticos complementarios.
 
-Esta herramienta no escribe en el dispositivo. **No usar firmware OTA ni alterar `*.res` del sistema**.
+## Autocomprobación local
+
+```powershell
+dotnet run --project tools/watchfaces/windows-rfcomm/RfcommProbe.csproj -- --self-test
+```
+
+Verifica los bytes y el CRC de la solicitud sin activar Bluetooth ni enviar nada.
+
+## Lo que falta para instalar un tema
+
+Aunque SPP se active, todavía hay que implementar y verificar la secuencia MotoFt (negociación, envío de archivo, ACK de bloques, finalización) y el protocolo de instalación de una esfera dinámica. La APK incluye recursos JSON para esferas y widgets, pero no está demostrado que copiarlos directamente al reloj sea suficiente. No utilizar el flujo OTA ni sobrescribir archivos `.res`.
