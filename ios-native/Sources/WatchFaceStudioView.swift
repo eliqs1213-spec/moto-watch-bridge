@@ -193,6 +193,7 @@ private struct FaceArtwork: View {
 struct WatchFaceStudioView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var weather = WatchWeatherService.shared
+    @ObservedObject private var watch = WatchBLEManager.shared
     @State private var chosenPhoto: PhotosPickerItem?
     @State private var photo: UIImage?
     @AppStorage("iwatch.face.layout.v1") private var layout: FaceLayout = .grande
@@ -300,6 +301,19 @@ struct WatchFaceStudioView: View {
                     }
                     .buttonStyle(.bordered)
 
+                    Divider()
+                    Button {
+                        _ = watch.queryWatchFaceCatalogReadOnly()
+                    } label: {
+                        Label("Comprobar catálogo del Moto Watch", systemImage: "checkmark.shield")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!watch.isConnected)
+                    Text(watch.watchFaceCatalogStatus)
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Consulta segura de lectura: identifica el catálogo, no envía todavía una fotografía.")
+                        .font(.caption2).foregroundStyle(.secondary)
                     Text("Para usarlo hoy, exportá el fondo y cargalo como foto de esfera desde la app Motorola en un Android. El archivo de vista previa, con números dibujados, no es una esfera animada.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
