@@ -28,6 +28,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     @Published private(set) var weatherSyncStatus = "Clima aún no enviado al reloj"
     @Published private(set) var weatherUnitStatus = "Unidad del reloj sin consultar"
     @Published private(set) var watchFaceCatalogStatus = "Catálogo sin consultar; envío de fotos pendiente"
+    @Published private(set) var fileLEProbeStatus = "Sin probar: la app Motorola utiliza SPP para archivos"
     @Published private(set) var motorolaCharacteristicsStatus = "Todavía no se inspeccionaron las características Motorola"
 
     private let serviceUUID = CBUUID(string: MotoProtocol.service)
@@ -63,6 +64,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWriteIsWeather = false
     private var currentWriteIsWeatherUnit = false
     private var currentWriteIsWatchFaceRead = false
+    private var currentWriteIsFileLEProbe = false
+    private var fileLEProbeWaiting = false
+    private var fileLEProbeSequence = 0
     private var currentWeatherUnitAction: String? = nil
     private var weatherTotalFragments = 0
     private var weatherConfirmedFragments = 0
@@ -129,6 +133,10 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsWeather = false
         currentWriteIsWeatherUnit = false
         currentWriteIsWatchFaceRead = false
+        currentWriteIsFileLEProbe = false
+        fileLEProbeWaiting = false
+        fileLEProbeSequence += 1
+        fileLEProbeStatus = "Prueba interrumpida por desconexión"
         watchFaceCatalogStatus = "Desconectado; consultá el catálogo después de reconectar"
         currentWeatherUnitAction = nil
         verifiedTemperatureUnit = nil
@@ -569,6 +577,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
+        if fileLEProbeWaiting && MotoFileLEProbe.isFileTransmissionCandidate(data) {
+            fileLEProbeWaiting = false
+            fileLEProbeSequence += 1
+            if let reply = MotoFileLEProbe.reply(data) {
+                fileLEProbeStatus = "LE respondió 20/05: protocolo \(reply.protocolVersion), bloque máximo \(reply.maxDataSize) B. Próxima etapa: probar envío de foto."
+                record("ESFERA-LE", "20/05 válido por BLE: versión \(reply.protocolVersion), max \(reply.maxDataSize) bytes; sin transferencia")
+            } else {
+                fileLEProbeStatus = "El reloj respondió 20/05, pero el paquete no pasó las comprobaciones de CRC o formato"
+                record("ESFERA-LE", "20/05 inválido recibido; no se inicia transferencia")
+            }
+            return
+        }
         // 26/01: respuesta de catálogo, no instalación de imágenes.
         let faceBytes = Array(data)
         if faceBytes.count >= 8 && faceBytes.first == 0xAA {
@@ -860,6 +880,42 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         batteryStatus = "Esperando respuesta Motorola 10/01"
         record("BATERIA", "Enviando consulta Motorola 10/01: \(MotoProtocol.hex(packet))")
         flushMusicQueue()
+    }
+
+    // Experimento explícito de negociación FileTransmission sobre F8F1 BLE.
+    // Envía solamente 20/05 (13 bytes): NO transmite JPEG/PNG, no registra
+    // álbum, no usa 26/04 y no inicia OTA. La aplicación oficial solicita SPP.
+    @discardableResult
+    func probePhotoTransferOverLE() -> Bool {
+        guard UIApplication.shared.applicationState == .active, isConnected,
+              let peripheral = peripheral, let tx = writeCharacteristic,
+              tx.properties.contains(.write),
+              MotoFileLEProbe.request().count <= peripheral.maximumWriteValueLength(for: .withResponse) else {
+            fileLEProbeStatus = "Conectá el Moto Watch Fit y dejá iWatch abierta"
+            return false
+        }
+        guard !fileLEProbeWaiting, !currentWriteIsFileLEProbe,
+              !musicQueue.contains(where: { $0.kind == .fileLEProbe }) else {
+            fileLEProbeStatus = "Ya hay una prueba de transferencia LE en curso"
+            return false
+        }
+        fileLEProbeWaiting = true
+        fileLEProbeSequence += 1
+        let sequence = fileLEProbeSequence
+        let connection = readyConnectionID
+        fileLEProbeStatus = "Negociando FileTransmission 20/05 por LE (sin foto)…"
+        record("ESFERA-LE", "Prueba de negociación FILE/TRANSMISSION por GATT F8F1")
+        musicQueue.append(PendingMusicWrite(packet: MotoFileLEProbe.request(), delayAfter: 0, kind: .fileLEProbe))
+        flushMusicQueue()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            guard let self = self, self.fileLEProbeWaiting,
+                  self.fileLEProbeSequence == sequence,
+                  self.readyConnectionID == connection else { return }
+            self.fileLEProbeWaiting = false
+            self.fileLEProbeStatus = "Sin respuesta 20/05 por LE en 12 s. La app oficial requiere SPP/Classic."
+            self.record("ESFERA-LE", "Handshake LE sin respuesta: no enviar bloques")
+        }
+        return true
     }
 
     // Lectura de catálogo 26/01, capturada y comprobada en Android.
@@ -1157,6 +1213,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsWeather = next.kind == .weather
         currentWriteIsWeatherUnit = next.kind == .weatherUnit
         currentWriteIsWatchFaceRead = next.kind == .watchFaceRead
+        currentWriteIsFileLEProbe = next.kind == .fileLEProbe
         currentWeatherUnitAction = next.kind == .weatherUnit ? next.musicStage : nil
         currentMusicStage = next.kind == .music ? next.musicStage : nil
         musicAfterDelay = next.delayAfter
@@ -1169,7 +1226,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 record("MUSICA-DIAG", "Captura puntual expirada antes del siguiente paquete")
             }
         }
-        record("BLE-TX", "F8F1: \(next.kind == .weather ? "CLIMA" : next.kind == .weatherUnit ? "CLIMA-UNIDAD" : next.kind == .watchFaceRead ? "ESFERA-CONSULTA" : next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
+        record("BLE-TX", "F8F1: \(next.kind == .weather ? "CLIMA" : next.kind == .weatherUnit ? "CLIMA-UNIDAD" : next.kind == .watchFaceRead ? "ESFERA-CONSULTA" : next.kind == .fileLEProbe ? "ESFERA-LE" : next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
         writeSequence += 1
         let sequence = writeSequence
         let connectionID = readyConnectionID
@@ -1211,6 +1268,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsWeatherUnit = false
         let isFaceRead = currentWriteIsWatchFaceRead
         currentWriteIsWatchFaceRead = false
+        let isFileLEProbe = currentWriteIsFileLEProbe
+        currentWriteIsFileLEProbe = false
         let unitAction = currentWeatherUnitAction
         currentWeatherUnitAction = nil
         let completedMusicStage = currentMusicStage
@@ -1219,6 +1278,12 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             if isNotice {
                 notificationStatus = "Falló la escritura del aviso; no se reenvía para evitar duplicados"
                 record("NOTIFICACION", notificationStatus)
+            }
+            else if isFileLEProbe {
+                fileLEProbeWaiting = false
+                fileLEProbeSequence += 1
+                fileLEProbeStatus = "F8F1 rechazó negociación de archivos por LE: \(error.localizedDescription)"
+                record("ESFERA-LE", "Error ATT 20/05, no se envía imagen")
             }
             else if isFaceRead {
                 watchFaceCatalogStatus = "Consulta 26/01 rechazada: \(error.localizedDescription)"
@@ -1276,6 +1341,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         if isNotice { notificationStatus = "Aviso escrito por Bluetooth; visualización no confirmada" }
         if isFaceRead {
             watchFaceCatalogStatus = "Consulta 26/01 escrita; esperando respuesta del reloj"
+        }
+        if isFileLEProbe && fileLEProbeWaiting {
+            fileLEProbeStatus = "20/05 escrito por LE; esperando respuesta del reloj"
         }
         if isWeatherUnit {
             if unitAction == "SET_CELSIUS" || unitAction == "AUTO_SET_CELSIUS" {
