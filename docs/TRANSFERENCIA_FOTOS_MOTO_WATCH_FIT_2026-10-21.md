@@ -70,3 +70,39 @@ En `classes4.dex` de Moto Watch 2.1.0.017, el método `BandProxy.getUUID(service
 - **Build 896** replica la solicitud `20/05` de la captura y reconoce/valida `20/85` mediante CRC, versión, campo #3 y tamaño negociado. Las pruebas de Swift incluyen los dos marcos oficiales saneados y rechazan comandos/CRC erróneos. No se envía ninguna imagen ni se altera una esfera.
 - Una segunda prueba física con 896 determinará si el reloj emite `20/85` por **GATT LE**. No extrapolar la respuesta Classic observada a LE.
 - Si el resultado vuelve a ser silencio, priorizar una captura oficial de cambio de foto y evaluación de **puente Windows/Android** para implementar el canal RFCOMM; CoreBluetooth iOS no expone SPP/RFCOMM arbitrario en aplicaciones corrientes.
+
+
+## Resultado en reloj real — build 896: sin respuesta 20/85
+
+- El usuario volvió a ejecutar **Probar envío de fotos por LE** sobre Moto Watch Fit usando la build **896**, ahora con solicitud oficial `20/05` (`max_data_size=16384`) y parser correcto de respuesta `20/85`.
+- **Resultado: «Sin respuesta por 20/85»**. Las builds 895 y 896 no han registrado negociación válida del servicio de archivos sobre **F8F1/F8F0 por BLE**.
+- No consta ACK de nivel aplicación FILE, no hubo `20/82` de aceptación de archivo, no hubo envío de fotografías ni cambios de esfera. Mantener deshabilitada la ruta de archivo LE y **no** iniciar bloques `20/04` arbitrarios.
+- Este resultado no demuestra imposibilidad matemática de otros transportes o estados, pero **la implementación oficial observada usa solicitud SPP/Classic** y la captura RFCOMM anterior muestra negociación `20/05→20/85` sobre Classic.
+
+### Nueva ruta prioritaria: puente Motorola Edge 60
+
+Objetivo del producto: **Inicio → Personalizar esfera → Enviar foto** en iWatch. Arquitectura candidata:
+
+```text
+iWatch iPhone
+   │ seleccionar y exportar fotografía JPEG / 390×450
+   │ envío autenticado y explícito por red local Wi-Fi
+   ▼
+Moto Edge 60 (aplicación auxiliar Android)
+   │ conexión Bluetooth Classic / RFCOMM autorizada
+   │ MotoFt: negociar → comenzar archivo → datos → verificar → completar
+   │ MotoWatchface: registrar foto en álbum → seleccionar esfera
+   ▼
+Moto Watch Fit
+```
+
+Precauciones:
+- La aplicación Moto Watch original ya dispone de una ruta Classic conocida, pero **se requiere captura de instalación de una FOTO**, no extrapolar el OTA de firmware.
+- Una app auxiliar Android no puede llamar libremente a interfaces Java internas de otra app firmada si no están exportadas; quizá tenga que implementar su propio cliente RFCOMM y mensajes MotoFt.
+- Confirmar emparejamiento Classic, anuncio SDP/UUID y quién inicia el RFCOMM durante **la instalación de una foto**, ya que la captura OTA no basta.
+- Compartir fotografía en red local únicamente a un dispositivo elegido con código de emparejamiento de un solo uso; no crear servidor público ni subir fotos a un backend.
+- El puente no debe tocar firmware/OTA, no debe enviar fotos ni cambiar la esfera sin acción explícita y aceptación verificable.
+- **Windows es opción secundaria:** su API pública soporta RFCOMM, pero un diagnóstico anterior del reloj emparejado listaba 0 servicios Classic disponibles. No asumir conectividad efectiva sin test.
+
+### Prueba que desbloquea el desarrollo
+Con la APK Moto Watch oficial en Motorola Edge 60, capturar HCI mientras se **instala una foto nueva como esfera**. Comparar canal L2CAP/RFCOMM, UUID/PSM, `20/05`, `20/02`, `20/04`, `20/03`, ACK `20/8x` y `AddAlbumWatchFaceRsp`. Si se encuentra un flujo reproducible, implementar un MVP Android aislado y el botón iWatch que use el puente por Wi-Fi local.
