@@ -1,0 +1,110 @@
+name: Package iWatch project archive
+
+on:
+  push:
+    branches:
+      - "archive/project-bundle-2026-10-22"
+    paths:
+      - ".github/workflows/package-project-bundle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch source branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin \
+            "refs/heads/stable/clima-0.8.4.52-build-892:refs/remotes/origin/stable/clima-0.8.4.52-build-892" \
+            "refs/heads/feature/auto-widget-live-activity-897:refs/remotes/origin/feature/auto-widget-live-activity-897" \
+            "refs/heads/feature/iwatch-ui-cleanup-accessory-bridge-0881:refs/remotes/origin/feature/iwatch-ui-cleanup-accessory-bridge-0881"
+
+      - name: Assemble complete source and investigation bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="iWatch-Project-Archive-2026-10-22"
+          mkdir -p "$ROOT/repository-snapshots/stable-clima-0.8.4.52-build-892"
+          mkdir -p "$ROOT/repository-snapshots/feature-auto-widget-live-activity-897"
+          mkdir -p "$ROOT/repository-snapshots/feature-dynamic-watchface-research"
+
+          git archive "origin/stable/clima-0.8.4.52-build-892" | tar -x -C "$ROOT/repository-snapshots/stable-clima-0.8.4.52-build-892"
+          git archive "origin/feature/auto-widget-live-activity-897" | tar -x -C "$ROOT/repository-snapshots/feature-auto-widget-live-activity-897"
+          git archive "origin/feature/iwatch-ui-cleanup-accessory-bridge-0881" | tar -x -C "$ROOT/repository-snapshots/feature-dynamic-watchface-research"
+
+          git bundle create "$ROOT/repository-history.bundle" --all
+
+          STABLE_SHA="$(git rev-parse origin/stable/clima-0.8.4.52-build-892)"
+          AUTO_SHA="$(git rev-parse origin/feature/auto-widget-live-activity-897)"
+          FACE_SHA="$(git rev-parse origin/feature/iwatch-ui-cleanup-accessory-bridge-0881)"
+
+          cat > "$ROOT/manifest.json" <<EOF
+          {
+            "created_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "repository": "https://github.com/eliqs1213-spec/moto-watch-bridge",
+            "snapshots": [
+              {"name": "stable-clima-0.8.4.52-build-892", "ref": "stable/clima-0.8.4.52-build-892", "commit": "$STABLE_SHA"},
+              {"name": "feature-auto-widget-live-activity-897", "ref": "feature/auto-widget-live-activity-897", "commit": "$AUTO_SHA"},
+              {"name": "feature-dynamic-watchface-research", "ref": "feature/iwatch-ui-cleanup-accessory-bridge-0881", "commit": "$FACE_SHA"}
+            ]
+          }
+          EOF
+
+          cat > "$ROOT/README-PAQUETE.md" <<'EOF'
+          # Archivo del proyecto iWatch / Moto Watch Fit
+
+          Fecha del paquete: 22-10-2026.
+
+          Repositorio: https://github.com/eliqs1213-spec/moto-watch-bridge
+
+          ## Contenido
+
+          - `repository-snapshots/stable-clima-0.8.4.52-build-892/`: snapshot completo de la línea base estable de clima.
+          - `repository-snapshots/feature-auto-widget-live-activity-897/`: snapshot completo de iWatch 0.8.4.53 (build 897), con inicio automático de Actividad en Vivo y solicitudes de actualización del widget.
+          - `repository-snapshots/feature-dynamic-watchface-research/`: snapshot completo de la rama de investigación de esferas dinámicas, transferencia de archivos, diagnósticos RFCOMM y documentación HCI.
+          - `repository-history.bundle`: bundle Git para recuperar historial y referencias que el checkout del workflow tenía disponibles.
+          - `manifest.json`: refs y hashes exactos de los snapshots.
+
+          ## Funciones que ya están en el código
+
+          - Comunicación BLE con el Moto Watch Fit y gestión de conexión/colas.
+          - Panel meteorológico Open-Meteo, previsión actual y de varios días, controles de Celsius y pruebas de envío.
+          - Spotify mediante App Remote y respaldo Web API.
+          - Notificaciones mediante Atajos de iOS.
+          - Lecturas e histórico local de salud, sueño y ayuno.
+          - Inicio automático experimental de la Actividad en Vivo con lecturas de batería y solicitudes de renovación WidgetKit.
+
+          ## Investigación y límites
+
+          - La transferencia real de esferas dinámicas todavía no está confirmada. No se debe interpretar una escritura BLE aceptada como transferencia completada.
+          - La captura HCI del procedimiento oficial de instalación sigue siendo el siguiente paso de investigación. Este paquete incluye los documentos y herramientas que sí están versionados; no afirma contener un volcado HCI binario que no esté en el repositorio.
+          - iOS no permite a la app añadir un widget a la pantalla de bloqueo automáticamente; el usuario debe colocarlo una vez desde la galería.
+          - El widget fijo actual no comparte aún el porcentaje real de batería con la extensión.
+          - La Actividad en Vivo y las actualizaciones en segundo plano dependen de los permisos y políticas de iOS.
+          - El envío meteorológico está implementado, pero falta confirmar en el dispositivo que el firmware muestre la previsión.
+          - Spotify en segundo plano, etapas de sueño y recuperación profunda de históricos requieren pruebas y trabajo adicional.
+
+          ## Builds IPA
+
+          Los IPA compilados se adjuntan por separado en el ZIP final junto con los ZIP originales de artefactos de CI. Esta carpeta contiene los snapshots de código fuente y documentación, no los binarios.
+          EOF
+
+          zip -qr "iWatch-Project-Archive-2026-10-22-source.zip" "$ROOT"
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: iWatch-Project-Archive-2026-10-22-source
+          path: iWatch-Project-Archive-2026-10-22-source.zip
+          if-no-files-found: error
+          retention-days: 14
