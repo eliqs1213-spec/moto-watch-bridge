@@ -40,7 +40,7 @@ Este modo hace lo siguiente:
 4. Envía **una única solicitud** `AA 06 00 00 12 19 08 01 05 04` por F8F1 y espera dos segundos.
 5. Consulta SDP RFCOMM otra vez e informa si apareció algún servicio nuevo.
 
-**Alcance de seguridad:** este comando solo pide abrir el canal SPP; no envía JPEG, no manda comandos `MotoFt` de transferencia, no instala temas y no toca firmware/OTA. Sin embargo, sí cambia temporalmente el estado de conexión Bluetooth y podría interrumpir otra conexión activa. Cerrá iWatch/Moto Watch en el teléfono y desconectá temporalmente el reloj del teléfono antes de la prueba. No elimines el emparejamiento.
+**Alcance de seguridad:** este comando solo pide abrir el canal SPP; no envía JPEG, no manda comandos `MotoFt` de transferencia, no instala temas y no toca firmware/OTA. Sin embargo, sí cambia temporalmente el estado de conexión Bluetooth y podría interrumpir otra conexión activa. Antes de ejecutarlo, apagá temporalmente Bluetooth desde **Ajustes** tanto en el iPhone como en el Edge 60 (si están cerca o emparejados con el reloj); cerrar las apps no garantiza que liberen el enlace BLE. Mantené Bluetooth activo en Windows y no elimines el emparejamiento. Si GATT devuelve `Unreachable`, la herramienta reintentará una vez y luego saldrá sin enviar el comando; dejá los teléfonos con Bluetooth apagado y volvé a probar.
 
 Un ACK de escritura ATT significa que la característica BLE aceptó la escritura, no que el reloj haya aceptado la solicitud a nivel Motorola. La salida de F8F0 y la segunda consulta SDP son diagnósticos complementarios.
 
