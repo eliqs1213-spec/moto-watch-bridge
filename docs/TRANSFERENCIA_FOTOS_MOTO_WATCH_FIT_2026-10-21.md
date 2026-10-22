@@ -53,3 +53,9 @@ La versión experimental agrega **Inicio → Personalizar esfera → Probar env�
 - Protocolo reconstruido en `band/moto_ft.proto`: `FtSend` (task ID, URI, filename, tamaño, MD5), `FtChunk` (ID, contenido, offset/índice/CRC según versión), `FtComplete` y `FileTransmission`. Se requiere respuesta real del reloj y captura de subida oficial para implementar la secuencia restante.
 - **Interpretación:** respuesta positiva por LE permite investigar la etapa siguiente; silencio/rechazo es evidencia contra esa ruta, no prueba lógica de imposibilidad. Un ACK ATT **no** significa que el firmware haya admitido negociación.
 - Tests sintéticos para framing, CRC, respuesta válida/inválida añadidos a GitHub Actions, build 895.
+
+### Prueba adicional: mapeo directo del canal de archivos en el Android oficial
+
+En `classes4.dex` de Moto Watch 2.1.0.017, el método `BandProxy.getUUID(serviceId)` compara `ServiceId.FILE = 0x20` y devuelve **`LeServiceConstant.UUID_SPP`**. El inicializador de `LeServiceConstant` declara `UUID_SPP=fc9df9f0-4899-11ee-be56-0242ac120002`, `UUID_DEVICE=fc9df8f0-4899-11ee-be56-0242ac120002`, `UUID_FUNCTIONALITY=fc9df8f1-4899-11ee-be56-0242ac120002`, `UUID_FITNESS=fc9df8f2-4899-11ee-be56-0242ac120002`. `BandProxy.sendCommand` tiene una rama explícita de `SppConnection` y otra de `LeConnection`/característica GATT.
+
+**Interpretación:** la APK enruta el servicio FILE por su ruta de SPP/Classic, no por la característica GATT F8F1 de iWatch. La prueba `20/05` por F8F1 es por tanto una desviación deliberada y reversible para evaluar el firmware, no una réplica exacta del transporte oficial. Si no hay respuesta, el próximo paso es analizar una captura de envío fotográfico para estudiar una ruta alternativa o un puente autorizado.
