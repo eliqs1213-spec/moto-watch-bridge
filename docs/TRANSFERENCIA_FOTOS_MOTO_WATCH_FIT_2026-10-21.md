@@ -59,3 +59,14 @@ La versión experimental agrega **Inicio → Personalizar esfera → Probar env�
 En `classes4.dex` de Moto Watch 2.1.0.017, el método `BandProxy.getUUID(serviceId)` compara `ServiceId.FILE = 0x20` y devuelve **`LeServiceConstant.UUID_SPP`**. El inicializador de `LeServiceConstant` declara `UUID_SPP=fc9df9f0-4899-11ee-be56-0242ac120002`, `UUID_DEVICE=fc9df8f0-4899-11ee-be56-0242ac120002`, `UUID_FUNCTIONALITY=fc9df8f1-4899-11ee-be56-0242ac120002`, `UUID_FITNESS=fc9df8f2-4899-11ee-be56-0242ac120002`. `BandProxy.sendCommand` tiene una rama explícita de `SppConnection` y otra de `LeConnection`/característica GATT.
 
 **Interpretación:** la APK enruta el servicio FILE por su ruta de SPP/Classic, no por la característica GATT F8F1 de iWatch. La prueba `20/05` por F8F1 es por tanto una desviación deliberada y reversible para evaluar el firmware, no una réplica exacta del transporte oficial. Si no hay respuesta, el próximo paso es analizar una captura de envío fotográfico para estudiar una ruta alternativa o un puente autorizado.
+
+## Prueba real 895 y corrección 896 (22 de octubre de 2026)
+- La persona probó **iWatch build 895 en el Moto Watch Fit real**: la interfaz indicó **«Sin respuesta 20/05»**. Esa observación por sí sola no demuestra que no haya llegado un paquete.
+- La revisión de una **captura Motorola HCI original anterior** (únicamente análisis local) identificó un intercambio íntegro con CRC-16/XMODEM válido:
+  - Solicitud `20/05` = `MotoFt.FileTransmission` versión 1, `max_data_size=16384`, **14 bytes de paquete**.
+  - Respuesta **`20/85`**, no `20/05`; campos `file_protocol_version=1`, campo #3 = 5120 y `max_data_size=16384`, **17 bytes de paquete**.
+  - Esos mensajes fueron observados sobre **Bluetooth Classic RFCOMM** en el registro Android, no sobre la característica F8F0/F8F1 BLE de iWatch. Otros comandos de transferencia visibles en la misma sesión: `20/02` inicio, `20/82` respuesta, `20/04` fragmento, `20/84` ACK, `20/03` cierre y `20/83` ACK.
+- La versión 895 pedía por BLE el tamaño 1024, en lugar de los 16384 de Motorola, y **escuchaba erróneamente `20/05` en vez de `20/85`**. Eso podía producir un resultado de *sin respuesta* incluso si el reloj emitió `20/85` por F8F0.
+- **Build 896** replica la solicitud `20/05` de la captura y reconoce/valida `20/85` mediante CRC, versión, campo #3 y tamaño negociado. Las pruebas de Swift incluyen los dos marcos oficiales saneados y rechazan comandos/CRC erróneos. No se envía ninguna imagen ni se altera una esfera.
+- Una segunda prueba física con 896 determinará si el reloj emite `20/85` por **GATT LE**. No extrapolar la respuesta Classic observada a LE.
+- Si el resultado vuelve a ser silencio, priorizar una captura oficial de cambio de foto y evaluación de **puente Windows/Android** para implementar el canal RFCOMM; CoreBluetooth iOS no expone SPP/RFCOMM arbitrario en aplicaciones corrientes.
