@@ -1,12 +1,13 @@
 import Foundation
 import Combine
 import ActivityKit
+import WidgetKit
 
 // ActivityKit sólo confirma el registro de una actividad, NO que WidgetKit
 // esté ejecutando una extensión correctamente firmada.
 final class BatteryLiveActivityManager: ObservableObject {
     static let shared = BatteryLiveActivityManager()
-    @Published private(set) var status = "Todavía no iniciada"
+    @Published private(set) var status = "Se activará automáticamente al conectar el reloj"
 
     private init() {}
 
@@ -45,7 +46,7 @@ final class BatteryLiveActivityManager: ObservableObject {
         )
         if !recreate, let existing = Activity<MotoBatteryActivityAttributes>.activities.first {
             await existing.update(content)
-            status = "Actividad registrada (\(String(existing.id.prefix(8)))) · revisá si muestra contenido"
+            status = percentage.map { "Actividad en vivo activa · batería \($0)%" } ?? "Actividad en vivo activa · esperando batería"
             return
         }
         do {
@@ -54,25 +55,20 @@ final class BatteryLiveActivityManager: ObservableObject {
                 content: content,
                 pushType: nil
             )
-            status = "ActivityKit: \(String(describing: activity.activityState)) · ID \(String(activity.id.prefix(8))) · render sin verificar"
+            status = percentage.map { "Actividad en vivo iniciada automáticamente · batería \($0)%" } ?? "Actividad en vivo iniciada automáticamente · esperando batería"
         } catch {
             status = "Error al iniciar Actividad en vivo: " + error.localizedDescription
         }
     }
 
     func updateBattery(_ percentage: Int) {
+        // La actualización de batería también reactiva el timeline del widget
+        // fijo si el usuario ya lo agregó a la pantalla de bloqueo.
+        WidgetCenter.shared.reloadTimelines(ofKind: "iWatchDiagnosticStage7")
         Task { @MainActor in
-            let current = Activity<MotoBatteryActivityAttributes>.activities
-            guard !current.isEmpty else { return }
-            let content = ActivityContent(
-                state: MotoBatteryActivityAttributes.ContentState(
-                    percentage: percentage,
-                    updatedAt: Date().timeIntervalSince1970
-                ),
-                staleDate: Date().addingTimeInterval(60 * 45)
-            )
-            for item in current { await item.update(content) }
-            self.status = "ActivityKit recibió batería \(percentage)% · WidgetKit no verificado"
+            // Si todavía no existe una Actividad en vivo, crearla ahora sin
+            // requerir que el usuario pulse un botón de configuración.
+            await self.prepareActivity(percentage: percentage, recreate: false)
         }
     }
 
