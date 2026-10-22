@@ -11,22 +11,26 @@ struct DiagnosticProvider: TimelineProvider {
         completion(DiagnosticEntry(date: Date()))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<DiagnosticEntry>) -> Void) {
-        completion(Timeline(entries: [DiagnosticEntry(date: Date())], policy: .never))
+        let entry = DiagnosticEntry(date: Date())
+        // iOS administra la frecuencia real; esta política pide renovar el
+        // widget periódicamente además de las recargas solicitadas por iWatch.
+        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(60 * 60))))
     }
 }
 
 struct DiagnosticBatteryWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "iWatchDiagnosticStage7", provider: DiagnosticProvider()) { _ in
-            DiagnosticWidgetView()
+        StaticConfiguration(kind: "iWatchDiagnosticStage7", provider: DiagnosticProvider()) { entry in
+            DiagnosticWidgetView(updatedAt: entry.date)
         }
-        .configurationDisplayName("iWatch · Prueba")
-        .description("Verifica si iOS registró correctamente los widgets instalados con Sideloadly.")
+        .configurationDisplayName("iWatch · Estado")
+        .description("Estado del widget iWatch. Agregalo una vez desde la galería de widgets de iOS.")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular])
     }
 }
 
 struct DiagnosticWidgetView: View {
+    let updatedAt: Date
     @Environment(\.widgetFamily) private var family
     var body: some View {
         if family == .accessoryCircular {
@@ -41,8 +45,9 @@ struct DiagnosticWidgetView: View {
             HStack(spacing: 6) {
                 Image(systemName: "applewatch")
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("iWatch OK").font(.system(size: 14, weight: .bold))
-                    Text("Widget instalado").font(.system(size: 10))
+                    Text("iWatch").font(.system(size: 14, weight: .bold))
+                    Text("Widget actualizado \(updatedAt.formatted(date: .omitted, time: .shortened))")
+                        .font(.system(size: 10))
                 }
             }.widgetAccentable()
         }
