@@ -102,7 +102,7 @@ internal static class Program
             Console.WriteLine("  GATT UUID: " + discovered.Uuid.ToString("D"));
 
         var service = serviceResult.Services.FirstOrDefault(
-            candidate => candidate.ServiceId.Uuid == MotorolaGattService);
+            candidate => candidate.Uuid == MotorolaGattService);
         foreach (var discovered in serviceResult.Services)
         {
             if (!ReferenceEquals(discovered, service)) discovered.Dispose();
