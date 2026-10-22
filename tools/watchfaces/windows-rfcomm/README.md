@@ -37,12 +37,13 @@ Este modo hace lo siguiente:
 1. Consulta los servicios RFCOMM disponibles.
 2. Se conecta por BLE al servicio Motorola `FC9DF9F0-4899-11EE-BE56-0242AC120002`.
 3. Intenta habilitar notificaciones F8F0 para observar respuestas.
-4. Envía **una única solicitud** `AA 06 00 00 12 19 08 01 05 04` por F8F1 y espera dos segundos.
-5. Consulta SDP general y también busca explícitamente el UUID RFCOMM `FC9DF9F0-4899-11EE-BE56-0242AC120002`, antes y después de la solicitud. Si llega la respuesta `12/19` con `OperateBt type=4`, la identifica como respuesta correlacionada, pero no la etiqueta como éxito porque el significado del valor aún no está confirmado.
+4. Envía `AA 06 00 00 12 19 08 01 05 04` por F8F1 y espera hasta 3 segundos una respuesta válida `12/19 08 04`.
+5. Solo si recibe esa respuesta, envía `20/05 FileTransmission` con versión 1 y tamaño máximo 16384, sin contenido de archivo, y espera hasta 12 segundos una respuesta `20/85` con longitud/CRC válidos.
+6. Consulta SDP general y también busca explícitamente el UUID RFCOMM `FC9DF9F0-4899-11EE-BE56-0242AC120002`, antes y después. La respuesta `12/19 08 04` se correlaciona con la solicitud, pero no se etiqueta como éxito porque el significado del valor aún no está confirmado.
 
-**Alcance de seguridad:** este comando solo pide abrir el canal SPP; no envía JPEG, no manda comandos `MotoFt` de transferencia, no instala temas y no toca firmware/OTA. Sin embargo, sí cambia temporalmente el estado de conexión Bluetooth y podría interrumpir otra conexión activa. Antes de ejecutarlo, apagá temporalmente Bluetooth desde **Ajustes** tanto en el iPhone como en el Edge 60 (si están cerca o emparejados con el reloj); cerrar las apps no garantiza que liberen el enlace BLE. Mantené Bluetooth activo en Windows y no elimines el emparejamiento. Si GATT devuelve `Unreachable`, la herramienta reintentará una vez y luego saldrá sin enviar el comando; dejá los teléfonos con Bluetooth apagado y volvé a probar.
+**Alcance de seguridad:** este experimento solo solicita abrir SPP y negociar `FileTransmission`; no envía JPEG/PNG, no manda `FtSend`/`FtChunk`, no registra un álbum, no instala temas y no toca firmware/OTA. Sin embargo, sí cambia temporalmente el estado de conexión Bluetooth y podría interrumpir otra conexión activa. Antes de ejecutarlo, apagá temporalmente Bluetooth desde **Ajustes** tanto en el iPhone como en el Edge 60 (si están cerca o emparejados con el reloj); cerrar las apps no garantiza que liberen el enlace BLE. Mantené Bluetooth activo en Windows y no elimines el emparejamiento. Si GATT devuelve `Unreachable`, la herramienta reintentará una vez y luego saldrá sin enviar el comando; dejá los teléfonos con Bluetooth apagado y volvé a probar.
 
-Un ACK de escritura ATT significa que la característica BLE aceptó la escritura, no que el reloj haya aceptado la solicitud a nivel Motorola. La salida de F8F0 y las consultas SDP general + por UUID son diagnósticos complementarios. Que el SDP general esté vacío no descarta por sí solo una respuesta Motorola por BLE.
+Un ACK de escritura ATT significa que la característica BLE aceptó la escritura, no que el reloj haya aceptado la solicitud a nivel Motorola. La salida de F8F0 y las consultas SDP general + por UUID son diagnósticos complementarios. Que el SDP general esté vacío no descarta por sí solo una respuesta Motorola por BLE. Un ACK ATT de `20/05` no prueba que el reloj haya aceptado la negociación: solo una respuesta `20/85` válida sería evidencia positiva.
 
 ## Autocomprobación local
 
