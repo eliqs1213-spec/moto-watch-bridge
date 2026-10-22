@@ -57,6 +57,8 @@ jobs:
         run: |
           cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchWeatherUnitProtocol.swift ios-native/Tests/WatchWeatherUnitChecks.swift > "$RUNNER_TEMP/weather-unit-checks.swift"
           swift "$RUNNER_TEMP/weather-unit-checks.swift"
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/MotoFileLEProbe.swift ios-native/Tests/MotoFileLEProbeChecks.swift > "$RUNNER_TEMP/moto-file-le-checks.swift"
+          swift "$RUNNER_TEMP/moto-file-le-checks.swift"
 
       - name: Verificar señales 23/0A y 2A/05 sin escribir BLE
         run: |
