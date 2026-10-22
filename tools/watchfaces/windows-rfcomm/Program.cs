@@ -28,7 +28,14 @@ internal static class Program
                 Console.WriteLine("FALLO: trama OPEN_SPP: " + Hex(actual));
                 return 1;
             }
-            Console.WriteLine("OK: trama OPEN_SPP 12/19, payload OperateBt type=1, CRC16-XMODEM.");
+            byte[] observedReply = { 0xAA, 0x06, 0x00, 0x00, 0x12, 0x19, 0x08, 0x04, 0xA0, 0x54 };
+            if (!IsOpenSppReply(observedReply))
+            {
+                Console.WriteLine("FALLO: no se reconoce la respuesta OPEN_SPP observada.");
+                return 1;
+            }
+            Console.WriteLine("OK: trama OPEN_SPP 12/19 type=1 y CRC16-XMODEM.");
+            Console.WriteLine("OK: respuesta 12/19 type=4 con CRC valida; su semantica no se da por confirmada.");
             Console.WriteLine("No se establecio conexion Bluetooth ni se envio ningun comando.");
             return 0;
         }
