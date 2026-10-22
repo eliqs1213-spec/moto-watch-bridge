@@ -28,6 +28,12 @@ internal static class Program
                 Console.WriteLine("FALLO: trama OPEN_SPP: " + Hex(actual));
                 return 1;
             }
+            byte[] expectedFileRequest = { 0xAA, 0x0A, 0x00, 0x00, 0x20, 0x05, 0x08, 0x01, 0x20, 0x80, 0x80, 0x01, 0x0F, 0x79 };
+            if (!BuildFileTransmissionRequest().SequenceEqual(expectedFileRequest))
+            {
+                Console.WriteLine("FALLO: trama FILE/TRANSMISSION: " + Hex(BuildFileTransmissionRequest()));
+                return 1;
+            }
             byte[] observedReply = { 0xAA, 0x06, 0x00, 0x00, 0x12, 0x19, 0x08, 0x04, 0xA0, 0x54 };
             if (!IsOpenSppReply(observedReply))
             {
@@ -35,6 +41,7 @@ internal static class Program
                 return 1;
             }
             Console.WriteLine("OK: trama OPEN_SPP 12/19 type=1 y CRC16-XMODEM.");
+            Console.WriteLine("OK: trama FILE/TRANSMISSION 20/05 version=1 max_data_size=16384 y CRC16-XMODEM.");
             Console.WriteLine("OK: respuesta 12/19 type=4 con CRC valida; su semantica no se da por confirmada.");
             Console.WriteLine("No se establecio conexion Bluetooth ni se envio ningun comando.");
             return 0;
@@ -43,7 +50,7 @@ internal static class Program
         bool requestSpp = args.Contains("--request-spp");
         Console.WriteLine("=== Moto Watch Fit | diagnostico Bluetooth para temas dinamicos ===");
         Console.WriteLine(requestSpp
-            ? "Modo activo: se enviara UNA solicitud Motorola OPEN_SPP por BLE. No se envian archivos."
+            ? "Modo activo: OPEN_SPP y, solo tras respuesta correlacionada, solicitud de negociacion FILE/TRANSMISSION 20/05. No se envian archivos."
             : "Modo solo lectura: no se envian comandos ni archivos.");
 
         var classicSelector = BluetoothDevice.GetDeviceSelectorFromPairingState(true);
@@ -143,6 +150,8 @@ internal static class Program
             ? rxResult.Characteristics.FirstOrDefault()
             : null;
 
+        var sppReply = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fileReply = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         TypedEventHandler<GattCharacteristic, GattValueChangedEventArgs>? handler = null;
         if (rx is not null)
         {
@@ -153,7 +162,15 @@ internal static class Program
                 reader.ReadBytes(bytes);
                 Console.WriteLine("BLE RX F8F0: " + Hex(bytes));
                 if (IsOpenSppReply(bytes))
+                {
                     Console.WriteLine("Respuesta correlacionada 12/19 recibida (OperateBt type=4). La semantica de type=4 aun no esta confirmada; no se asume exito.");
+                    sppReply.TrySetResult(bytes);
+                }
+                if (IsFileTransmissionReply(bytes))
+                {
+                    Console.WriteLine("Respuesta FILE/TRANSMISSION 20/85 con longitud y CRC validos.");
+                    fileReply.TrySetResult(bytes);
+                }
             };
             rx.ValueChanged += handler;
             var mode = rx.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify)
@@ -195,17 +212,46 @@ internal static class Program
             }
         }
 
-        Console.WriteLine("Esperando 2 segundos por respuesta Motorola...");
-        await Task.Delay(2000);
+        Console.WriteLine("Esperando hasta 3 segundos por respuesta 12/19...");
+        var sppWait = await Task.WhenAny(sppReply.Task, Task.Delay(3000));
+        if (sppWait == sppReply.Task && sppReply.Task.IsCompletedSuccessfully)
+        {
+            byte[] fileRequest = BuildFileTransmissionRequest();
+            Console.WriteLine("BLE TX F8F1: " + Hex(fileRequest));
+            Console.WriteLine("Solicitud de negociacion FILE/TRANSMISSION 20/05; no contiene datos de archivo.");
+            using var fileWriter = new DataWriter();
+            fileWriter.WriteBytes(fileRequest);
+            var fileStatus = await tx.WriteValueAsync(
+                fileWriter.DetachBuffer(), GattWriteOption.WriteWithResponse);
+            Console.WriteLine("Resultado escritura ATT 20/05: " + fileStatus);
+            if (fileStatus == GattCommunicationStatus.Success)
+            {
+                Console.WriteLine("Esperando hasta 12 segundos por respuesta 20/85...");
+                var fileWait = await Task.WhenAny(fileReply.Task, Task.Delay(12000));
+                if (fileWait == fileReply.Task && fileReply.Task.IsCompletedSuccessfully)
+                    Console.WriteLine("Respuesta de negociacion recibida: " + Hex(fileReply.Task.Result));
+                else
+                    Console.WriteLine("Sin respuesta 20/85 en 12 segundos. No se envio ningun archivo.");
+            }
+            else
+            {
+                Console.WriteLine("ATT no acepto 20/05; no se envio ningun archivo.");
+            }
+        }
+        else
+        {
+            Console.WriteLine("No llego respuesta correlacionada 12/19 en 3 segundos; no se envia 20/05.");
+        }
+
         if (handler is not null && rx is not null) rx.ValueChanged -= handler;
         service.Dispose();
 
-        int? after = await ReadRemoteSdpAsync(classicWatch, "despues de OPEN_SPP");
+        int? after = await ReadRemoteSdpAsync(classicWatch, "despues de OPEN_SPP y 20/05");
         if (after.GetValueOrDefault() > before.GetValueOrDefault())
-            Console.WriteLine("Cambio observado: Windows ahora ve mas servicios RFCOMM. Todavia no se envio ningun archivo.");
+            Console.WriteLine("Cambio observado en los servicios RFCOMM consultados.");
         else
-            Console.WriteLine("No aparecieron servicios RFCOMM nuevos en esta consulta. Esto no confirma ni descarta una conexion Classic directa por UUID.");
-        Console.WriteLine("Fin: sin transferencia de archivos, instalacion de tema ni cambios de firmware.");
+            Console.WriteLine("El SDP sigue sin anunciar un servicio nuevo en estas consultas.");
+        Console.WriteLine("Fin: solo OPEN_SPP y solicitud de negociacion 20/05; no hay transferencia de datos, instalacion de tema ni cambios de firmware.");
         return 0;
     }
 
@@ -254,6 +300,27 @@ internal static class Program
             return null;
         }
     }
+
+    private static byte[] BuildFileTransmissionRequest()
+    {
+        // MotoFt.FileTransmission: version=1, max_data_size=16384.
+        // Esta solicitud solo negocia; no incluye JPEG, PNG ni payload de tema.
+        byte[] prefix = { 0xAA, 0x0A, 0x00, 0x00, 0x20, 0x05, 0x08, 0x01, 0x20, 0x80, 0x80, 0x01 };
+        ushort crc = Crc16Xmodem(prefix);
+        return prefix.Concat(new[] { (byte)(crc & 0xFF), (byte)(crc >> 8) }).ToArray();
+    }
+
+    private static bool IsValidFrame(byte[] bytes)
+    {
+        if (bytes.Length < 8 || bytes[0] != 0xAA) return false;
+        int length = bytes[1] | (bytes[2] << 8);
+        if (length + 4 != bytes.Length) return false;
+        ushort expected = (ushort)(bytes[^2] | (bytes[^1] << 8));
+        return Crc16Xmodem(bytes.Take(bytes.Length - 2).ToArray()) == expected;
+    }
+
+    private static bool IsFileTransmissionReply(byte[] bytes) =>
+        bytes.Length >= 8 && bytes[4] == 0x20 && bytes[5] == 0x85 && IsValidFrame(bytes);
 
     private static bool IsOpenSppReply(byte[] bytes)
     {
