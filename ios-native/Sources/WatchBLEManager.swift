@@ -27,6 +27,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     @Published private(set) var musicSyncStatus = "Sin sincronizar"
     @Published private(set) var weatherSyncStatus = "Clima aún no enviado al reloj"
     @Published private(set) var weatherUnitStatus = "Unidad del reloj sin consultar"
+    @Published private(set) var watchFaceCatalogStatus = "Catálogo sin consultar; envío de fotos pendiente"
     @Published private(set) var motorolaCharacteristicsStatus = "Todavía no se inspeccionaron las características Motorola"
 
     private let serviceUUID = CBUUID(string: MotoProtocol.service)
@@ -61,6 +62,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWriteIsNotification = false
     private var currentWriteIsWeather = false
     private var currentWriteIsWeatherUnit = false
+    private var currentWriteIsWatchFaceRead = false
     private var currentWeatherUnitAction: String? = nil
     private var weatherTotalFragments = 0
     private var weatherConfirmedFragments = 0
@@ -126,6 +128,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsNotification = false
         currentWriteIsWeather = false
         currentWriteIsWeatherUnit = false
+        currentWriteIsWatchFaceRead = false
+        watchFaceCatalogStatus = "Desconectado; consultá el catálogo después de reconectar"
         currentWeatherUnitAction = nil
         verifiedTemperatureUnit = nil
         attemptedCelsiusCorrection = false
@@ -565,6 +569,24 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
+        // 26/01: respuesta de catálogo, no instalación de imágenes.
+        let faceBytes = Array(data)
+        if faceBytes.count >= 8 && faceBytes.first == 0xAA {
+            var headerOffset = 1
+            repeat {
+                let byte = faceBytes[headerOffset]
+                headerOffset += 1
+                if byte & 0x80 == 0 { break }
+            } while headerOffset < min(faceBytes.count, 5)
+            if headerOffset + 4 < faceBytes.count &&
+               faceBytes[headerOffset] == 0, faceBytes[headerOffset + 1] == 0 &&
+               faceBytes[headerOffset + 2] == 0x26 &&
+               faceBytes[headerOffset + 3] == 0x01 {
+                watchFaceCatalogStatus = "Respuesta 26/01 recibida (\(data.count) bytes). La transferencia de fotos todavía no está validada."
+                record("ESFERA-DIAG", "Respuesta de catálogo 26/01: \(data.count) bytes")
+                return
+            }
+        }
         if let unit = WatchWeatherUnitProtocol.unitFromGetResponse(data) {
             verifiedTemperatureUnit = unit
             record("CLIMA-UNIDAD", "Respuesta Motorola 23/05 verificada: \(unit.label)")
@@ -840,6 +862,30 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         flushMusicQueue()
     }
 
+    // Lectura de catálogo 26/01, capturada y comprobada en Android.
+    // No instala ni modifica ninguna esfera.
+    @discardableResult
+    func queryWatchFaceCatalogReadOnly() -> Bool {
+        guard UIApplication.shared.applicationState == .active,
+              isConnected, let device = peripheral,
+              let tx = writeCharacteristic, tx.properties.contains(.write) else {
+            watchFaceCatalogStatus = "Conectá el reloj y dejá iWatch abierta"
+            return false
+        }
+        let command = Data([0xAA, 0x04, 0x00, 0x00, 0x26, 0x01, 0x4D, 0x52])
+        guard command.count <= device.maximumWriteValueLength(for: .withResponse),
+              !currentWriteIsWatchFaceRead,
+              !musicQueue.contains(where: { $0.kind == .watchFaceRead }) else {
+            watchFaceCatalogStatus = "Consulta pendiente o enlace no disponible"
+            return false
+        }
+        watchFaceCatalogStatus = "Solicitando catálogo de esferas (26/01)…"
+        musicQueue.append(PendingMusicWrite(packet: command, delayAfter: 0, kind: .watchFaceRead))
+        record("ESFERA-DIAG", "Consulta 26/01 de solo lectura; sin envío de fotografías")
+        flushMusicQueue()
+        return true
+    }
+
     // La APK Motorola consulta la unidad por 23/05. Se hace automáticamente
     // al conectar, y se cambia por 23/04 únicamente si el reloj indica °F.
     private func queueWeatherUnitCommand(_ packet: Data, action: String) -> Bool {
@@ -1110,6 +1156,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsNotification = next.kind == .notification
         currentWriteIsWeather = next.kind == .weather
         currentWriteIsWeatherUnit = next.kind == .weatherUnit
+        currentWriteIsWatchFaceRead = next.kind == .watchFaceRead
         currentWeatherUnitAction = next.kind == .weatherUnit ? next.musicStage : nil
         currentMusicStage = next.kind == .music ? next.musicStage : nil
         musicAfterDelay = next.delayAfter
@@ -1122,7 +1169,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 record("MUSICA-DIAG", "Captura puntual expirada antes del siguiente paquete")
             }
         }
-        record("BLE-TX", "F8F1: \(next.kind == .weather ? "CLIMA" : next.kind == .weatherUnit ? "CLIMA-UNIDAD" : next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
+        record("BLE-TX", "F8F1: \(next.kind == .weather ? "CLIMA" : next.kind == .weatherUnit ? "CLIMA-UNIDAD" : next.kind == .watchFaceRead ? "ESFERA-CONSULTA" : next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
         writeSequence += 1
         let sequence = writeSequence
         let connectionID = readyConnectionID
@@ -1162,6 +1209,8 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsWeather = false
         let isWeatherUnit = currentWriteIsWeatherUnit
         currentWriteIsWeatherUnit = false
+        let isFaceRead = currentWriteIsWatchFaceRead
+        currentWriteIsWatchFaceRead = false
         let unitAction = currentWeatherUnitAction
         currentWeatherUnitAction = nil
         let completedMusicStage = currentMusicStage
@@ -1170,6 +1219,10 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             if isNotice {
                 notificationStatus = "Falló la escritura del aviso; no se reenvía para evitar duplicados"
                 record("NOTIFICACION", notificationStatus)
+            }
+            else if isFaceRead {
+                watchFaceCatalogStatus = "Consulta 26/01 rechazada: \(error.localizedDescription)"
+                record("ESFERA-DIAG", "Error ATT en 26/01, sin reintento")
             }
             else if isWeatherUnit {
                 weatherUnitStatus = "El reloj rechazó la escritura de unidad (sin reintento)"
@@ -1221,6 +1274,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         let delay = musicAfterDelay
         if isNotice { notificationStatus = "Aviso escrito por Bluetooth; visualización no confirmada" }
+        if isFaceRead {
+            watchFaceCatalogStatus = "Consulta 26/01 escrita; esperando respuesta del reloj"
+        }
         if isWeatherUnit {
             if unitAction == "SET_CELSIUS" || unitAction == "AUTO_SET_CELSIUS" {
                 weatherUnitStatus = "Celsius enviado por BLE; verificando mediante 23/05…"
