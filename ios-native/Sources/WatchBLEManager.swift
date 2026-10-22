@@ -581,11 +581,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             fileLEProbeWaiting = false
             fileLEProbeSequence += 1
             if let reply = MotoFileLEProbe.reply(data) {
-                fileLEProbeStatus = "LE respondió 20/05: protocolo \(reply.protocolVersion), bloque máximo \(reply.maxDataSize) B. Próxima etapa: probar envío de foto."
-                record("ESFERA-LE", "20/05 válido por BLE: versión \(reply.protocolVersion), max \(reply.maxDataSize) bytes; sin transferencia")
+                fileLEProbeStatus = "LE respondió 20/85: protocolo \(reply.protocolVersion), bloque máximo \(reply.maxDataSize) B. No se envió ninguna foto."
+                record("ESFERA-LE", "Respuesta 20/85 válida por BLE: versión \(reply.protocolVersion), max \(reply.maxDataSize) bytes")
             } else {
-                fileLEProbeStatus = "El reloj respondió 20/05, pero el paquete no pasó las comprobaciones de CRC o formato"
-                record("ESFERA-LE", "20/05 inválido recibido; no se inicia transferencia")
+                fileLEProbeStatus = "El reloj respondió 20/85, pero el paquete no pasó las comprobaciones de CRC o formato"
+                record("ESFERA-LE", "20/85 inválido recibido; no se inicia transferencia")
             }
             return
         }
@@ -1343,7 +1343,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                       self.fileLEProbeSequence == sequence,
                       self.readyConnectionID == connection else { return }
                 self.fileLEProbeWaiting = false
-                self.fileLEProbeStatus = "Sin respuesta 20/05 por LE tras 12 s; posiblemente requiere SPP/Classic"
+                self.fileLEProbeStatus = "Sin respuesta 20/85 por LE tras 12 s; posiblemente requiere SPP/Classic"
                 self.record("ESFERA-LE", "Negociación LE sin respuesta; no iniciar transferencia")
             }
         }
