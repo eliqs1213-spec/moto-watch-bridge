@@ -32,3 +32,12 @@ Captura única, acotada y local, desde la aplicación oficial Moto Watch en el M
 5. Solo entonces incorporar «Enviar al Moto Watch» en iWatch, con guardas de tamaño, cancelación, progreso y validación de respuesta. Mantener la esfera actual hasta éxito confirmado.
 
 **No subir el HCI/bugreport crudo al repositorio público**: contiene direcciones, notificaciones y metadatos personales. Ninguna operación de firmware debe formar parte de la carga de fotos.
+
+## Investigación adicional — inicio de transferencia y canal SPP
+- Análisis estático de `classes4.dex`: `FileSender.sendFile(File, name, FileUri, task)` prepara una tarea, comprueba `BandProxy.isRequirePending()` y tiene un camino explícito `BandProxy.requestSpp()` antes de iniciar la transferencia. `BandProxy.requestSpp()` delega en `SppManager.requestSpp()`.
+- Otro camino continúa a `FileSender.getTransmission()` y negocia `MotoFt.FileTransmission` (`file_protocol_version`, `max_data_size`). La existencia de ambos caminos significa que **no podemos declarar la transferencia siempre Classic ni suponer que GATT sirve para enviar fotografías**. La captura del flujo fotográfico es la evidencia decisiva.
+- `band/moto_ft.proto` contiene `FileTransmission`, `FtSend` (task_id, uri, file_path, file_size, md5, etc.), `FileData` y respuestas de verificación. `band/moto_watchface.proto` define `AddAlbumWatchFace` con lista de nombres y `CurrWatchFace`. El protocolo tiene etapas y acuses; NO es válido enviar un PNG como un único comando `26/04`.
+- Una captura HCI previa disponible mostraba lecturas `26/01` y tráfico RFCOMM relacionado con otras operaciones, **no la instalación de una nueva fotografía**. No permite atribuir ese tráfico SPP a la foto.
+- Se creó un analizador offline de bugreport que solo emite conteos/tamaños de grupos Motorola 21/22/26 y actividad SPP, sin direcciones ni datos de usuario. Un resumen de conteos por sí solo no basta para reconstruir paquetes completos: después de confirmar el canal hará falta revisar la captura original de forma privada.
+### Estado de la aplicación
+- La build 894 permite comprobar el catálogo 26/01. **No hay una instalación de fotos desde iWatch comprobada todavía**. No habilitar un botón de aplicar que únicamente seleccione una esfera antigua o reporte éxito tras un ACK ATT.
