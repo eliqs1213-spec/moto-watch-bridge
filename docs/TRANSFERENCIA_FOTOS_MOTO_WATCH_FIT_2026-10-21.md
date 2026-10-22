@@ -106,3 +106,11 @@ Precauciones:
 
 ### Prueba que desbloquea el desarrollo
 Con la APK Moto Watch oficial en Motorola Edge 60, capturar HCI mientras se **instala una foto nueva como esfera**. Comparar canal L2CAP/RFCOMM, UUID/PSM, `20/05`, `20/02`, `20/04`, `20/03`, ACK `20/8x` y `AddAlbumWatchFaceRsp`. Si se encuentra un flujo reproducible, implementar un MVP Android aislado y el botón iWatch que use el puente por Wi-Fi local.
+
+
+## Prueba Windows real: OPEN_SPP aceptado por ATT, sin respuesta FileTransmission (22/10/2026)
+- El usuario ejecutó el diagnóstico con el reloj real. Windows encontró 7 servicios GATT, se suscribió a F8F0 y escribió por F8F1 la solicitud `OPEN_SPP 12/19 type=1`.
+- El reloj notificó `AA 06 00 00 12 19 08 04 A0 54`, trama correlacionada con CRC válido. Su semántica como éxito de apertura sigue sin confirmarse.
+- La herramienta escribió `20/05 FileTransmission` (versión 1, `max_data_size=16384`) y recibió ACK ATT, pero **no recibió respuesta `20/85` tras 12 segundos**. SDP general y consulta explícita del UUID `FC9DF9F0-4899-11EE-BE56-0242AC120002` devolvieron cero servicios, antes y después.
+- Conclusión acotada: la negociación de archivo **no está demostrada por GATT**; no se enviaron datos de archivo. No repetir envíos exploratorios. Próximo paso: capturar una instalación real de esfera dinámica desde la app oficial en Android y distinguir transporte, framing, paquete y ACKs.
+- Guía de captura acotada, con controles de privacidad: [CAPTURA_HCI_ESFERA_DINAMICA_MOTO_WATCH_FIT.md](CAPTURA_HCI_ESFERA_DINAMICA_MOTO_WATCH_FIT.md). No subir HCI crudo a GitHub; compartir solo en privado si el usuario está de acuerdo.
