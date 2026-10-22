@@ -502,6 +502,9 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         reconnectFailures = 0
         connectionStatus = "Escuchando botones · F8F1 listo"
         record("BLE", "Sesión lista: F8F0 notificando y F8F1 escribible")
+        if UIApplication.shared.applicationState == .active {
+            BatteryLiveActivityManager.shared.start(percentage: batteryPercentage)
+        }
         flushMusicQueue()
         scheduleBatteryRefresh()
         let connectionID = readyConnectionID
