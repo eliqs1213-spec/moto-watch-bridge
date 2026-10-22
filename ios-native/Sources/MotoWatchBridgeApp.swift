@@ -32,7 +32,10 @@ final class MotoAppDelegate: NSObject, UIApplicationDelegate {
         SpotifyLockMetadataHandoff.shared.didBecomeActive()
         SpotifyAppRemoteBridge.shared.applicationDidBecomeActive()
         SpotifyBridge.shared.resetTransientWebFailureAfterResume()
-        Task { @MainActor in await SpotifyBridge.shared.verifyCurrentMetadataForWatch() }
+        Task { @MainActor in
+            await SpotifyBridge.shared.verifyCurrentMetadataForWatch()
+            WatchWeatherService.shared.automaticRefreshIfNeeded(reason: "aplicación activa")
+        }
     }
 }
 
@@ -97,6 +100,11 @@ struct MotoWatchBridgeApp: App {
                 .task {
                     while !Task.isCancelled {
                         await SpotifyBridge.shared.verifyCurrentMetadataForWatch()
+                        await MainActor.run {
+                            // Revisión ligera: sólo consulta GPS/Internet si la hora
+                            // está vencida, hay permiso y el reloj está conectado.
+                            WatchWeatherService.shared.automaticRefreshIfNeeded(reason: "control periódico")
+                        }
                         do { try await Task.sleep(nanoseconds: 7_000_000_000) }
                         catch { break }
                     }
@@ -133,30 +141,10 @@ struct ContentView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    watchHero
                     connectionCard
                     batteryCard
                     musicCard
                     finderCard
-                    HStack(spacing: 12) {
-                        Image(systemName: "bell.badge.fill").foregroundStyle(.pink)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Tus avisos, primero").font(.subheadline.bold())
-                            Text(watch.notificationStatus).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 0)
-                    }.padding(16).background(Color.pink.opacity(0.07), in: RoundedRectangle(cornerRadius: 20))
-                    Button { showSettings = true } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "slider.horizontal.3").foregroundStyle(.indigo)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Ajustes y diagnóstico").font(.headline)
-                                Text("Spotify, avisos, pantalla de bloqueo y registro").font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary)
-                        }.padding(18).watchCard()
-                    }.buttonStyle(.plain)
                     Text("iWatch · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                         .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity)
                 }.padding(20)
@@ -189,20 +177,6 @@ struct ContentView: View {
 
     }
 
-    private var watchHero: some View {
-        HStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Tu reloj,\na tu ritmo").font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
-                Text("Todo conectado, en un solo lugar.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            ZStack {
-                RoundedRectangle(cornerRadius: 30).fill(Color.cyan.opacity(0.12)).frame(width: 94, height: 112)
-                Image(systemName: "watch.analog").font(.system(size: 70, weight: .light)).foregroundStyle(.cyan)
-            }.accessibilityHidden(true)
-        }.padding(.vertical, 8)
-    }
     private var connectionCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             cardHeading("Tu Moto Watch", symbol: "antenna.radiowaves.left.and.right", color: .cyan)
@@ -301,17 +275,11 @@ struct ContentView: View {
                             statusRow("Bluetooth", watch.bluetoothStatus)
                             statusRow("Reloj", watch.watchName)
                             statusRow("Estado", watch.connectionStatus)
-                            HStack {
-                                Button("Conectar reloj") { watch.connectToWatch() }
-                                    .buttonStyle(.borderedProminent)
-                                Button("Desconectar") { watch.disconnect() }
-                                    .buttonStyle(.bordered)
-                            }
-                            Toggle("Reconectar reloj automáticamente", isOn: Binding(
-                                get: { watch.autoReconnectEnabled },
-                                set: { watch.setAutoReconnect($0) }
-                            ))
-                            .tint(.green)
+                            Button("Desconectar reloj") { watch.disconnect() }
+                                .buttonStyle(.bordered)
+                                .disabled(!watch.isConnected)
+                            Text("Para conectar o activar la reconexión automática, usá la pantalla Reloj.")
+                                .font(.caption).foregroundStyle(.secondary)
                             Toggle("Avisar conexión y batería", isOn: $connectionAlerts.enabled)
                                 .tint(.green)
                             Text(connectionAlerts.permissionStatus)
@@ -332,20 +300,6 @@ struct ContentView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    GroupBox("Batería del reloj") {
-                        VStack(alignment: .leading, spacing: 9) {
-                            Text(watch.batteryPercentage.map { "\($0)%" } ?? "—")
-                                .font(.largeTitle.bold()).monospacedDigit()
-                            Text(watch.batteryStatus).foregroundStyle(.secondary)
-                            Button("Consultar batería") { watch.refreshBattery() }
-                                .buttonStyle(.bordered)
-                            Text("Etapa 7: batería Motorola 10/01 sin App Groups. Probá la actividad en vivo de abajo.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("Batería: exclusivamente protocolo Motorola 10/01. Solo se muestran respuestas con trama y checksum válidos.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     settingsSection("Pantalla de bloqueo", subtitle: "Widgets y Actividades en vivo", symbol: "rectangle.on.rectangle")
@@ -418,11 +372,7 @@ struct ContentView: View {
                                 Button("Desvincular") { spotify.disconnectSpotify() }
                                     .buttonStyle(.bordered)
                             }
-                            Toggle("Activar controles Spotify", isOn: Binding(
-                                get: { spotify.controlEnabled },
-                                set: { spotify.setEnabled($0) }
-                            ))
-                            .tint(.green)
+
                             statusRow("Spotify", spotify.status)
                             statusRow("Reproductor", spotify.playbackAvailability)
                             statusRow("Última canción", spotify.lastSong)
@@ -430,9 +380,9 @@ struct ContentView: View {
                             statusRow("Última orden", spotify.lastAction)
                             statusRow("Pantalla del reloj", watch.musicSyncStatus)
                             Divider()
-                            Text("Spotify iOS SDK · App Remote (prioritario)")
+                            Text("Spotify · SDK y Web API")
                                 .font(.headline)
-                            Text("SDK prioritario para controles y metadatos (título, artista, álbum, duración y reproducción). La Web API respalda los dos cuando el SDK no está conectado o falla la lectura nativa. Con el iPhone bloqueado, iWatch usa los eventos y tiempos de ejecución que iOS permita. Sin Atajos para Spotify.")
+                            Text("El coordinador acepta observaciones recientes de ambas fuentes, sin prioridad absoluta. Con el iPhone bloqueado, la detección de cambios depende del tiempo de ejecución que conceda iOS. La resincronización puntual por Atajos permanece experimental.")
                                 .font(.caption).foregroundStyle(.secondary)
                             HStack {
                                 Button("Activar SDK Spotify") {
@@ -451,14 +401,9 @@ struct ContentView: View {
                             statusRow("Metadatos SDK vigentes", spotifyRemote.nativeMetadataIsFresh ? "Sí" : "No · respaldo Web API")
                             Text("Si el SDK queda en reconectando, esperá hasta 12 s. La Web API sigue funcionando y no hace falta desvincularla. Para reintentar, dejá Spotify abierto reproduciendo, regresá a iWatch y tocá Reintentar SDK una sola vez.")
                                 .font(.caption).foregroundStyle(.secondary)
-                            HStack {
-                                Button("Consultar Spotify") {
-                                    Task { await spotify.refreshPlaybackInfo() }
-                                }.buttonStyle(.bordered)
-                                Button("Forzar metadatos") {
-                                    spotify.forceWatchMusicRecovery()
-                                }.buttonStyle(.bordered)
-                            }
+                            Button("Consultar Spotify (diagnóstico)") {
+                                Task { await spotify.refreshPlaybackInfo() }
+                            }.buttonStyle(.bordered)
                             Divider()
                             Text("Music Auto Sync · recuperación")
                                 .font(.headline)
@@ -490,17 +435,29 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 9) {
                             Text(finder.status).foregroundStyle(.secondary)
                             statusRow("Búsqueda", finder.searching ? "Solicitada por el reloj" : "Detenida")
-                            HStack {
-                                Button("Probar alarma") { finder.test() }
-                                    .buttonStyle(.borderedProminent)
-                                Button("Detener sonido") { finder.stop() }
-                                    .buttonStyle(.bordered)
-                            }
+
                             Button("Permitir aviso de respaldo (opcional)") { finder.requestPermission() }
                                 .buttonStyle(.bordered)
-                            Text("El reloj inicia una alarma en bucle y la detiene cuando salís de «Encuentra mi teléfono». También podés detenerla aquí. Probá primero con la app visible y después con el iPhone bloqueado; iOS puede impedir iniciar audio desde segundo plano.")
+                            Text("Probá y detené el sonido desde Reloj. La autorización de respaldo se gestiona aquí; iOS puede impedir iniciar audio desde segundo plano.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    GroupBox("Bluetooth Motorola · inspección de F8F2") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(watch.motorolaCharacteristicsStatus)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                            Button {
+                                watch.inspectMotorolaCharacteristics()
+                            } label: {
+                                Label("Inspeccionar características", systemImage: "antenna.radiowaves.left.and.right")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(!watch.isConnected)
+                            Text("Solo descubre UUID y permisos. No lee, no se suscribe y no escribe en F8F2. La presencia de F8F2 tampoco demuestra soporte HID.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
 
                     GroupBox("Comandos detectados") {
@@ -590,7 +547,7 @@ struct ContentView: View {
                 )
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text("A tu manera").font(.title2.bold())
+                Text("Ajustes avanzados").font(.title2.bold())
                 Text("Personalizá iWatch sin perder tus conexiones ni registros.")
                     .font(.subheadline).foregroundStyle(.secondary)
             }

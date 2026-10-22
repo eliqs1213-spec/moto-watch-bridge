@@ -25,6 +25,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     @Published private(set) var batteryPercentage: Int? = nil
     @Published private(set) var batteryStatus = "Sin lectura"
     @Published private(set) var musicSyncStatus = "Sin sincronizar"
+    @Published private(set) var weatherSyncStatus = "Clima aún no enviado al reloj"
+    @Published private(set) var weatherUnitStatus = "Unidad del reloj sin consultar"
+    @Published private(set) var watchFaceCatalogStatus = "Catálogo sin consultar; envío de fotos pendiente"
+    @Published private(set) var fileLEProbeStatus = "Sin probar: la app Motorola utiliza SPP para archivos"
+    @Published private(set) var motorolaCharacteristicsStatus = "Todavía no se inspeccionaron las características Motorola"
 
     private let serviceUUID = CBUUID(string: MotoProtocol.service)
     private let notifyUUID = CBUUID(string: MotoProtocol.notifications)
@@ -56,6 +61,24 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     private var currentWriteIsHealth = false
     private var currentWriteIsBattery = false
     private var currentWriteIsNotification = false
+    private var currentWriteIsWeather = false
+    private var currentWriteIsWeatherUnit = false
+    private var currentWriteIsWatchFaceRead = false
+    private var currentWriteIsFileLEProbe = false
+    private var fileLEProbeWaiting = false
+    private var fileLEProbeSequence = 0
+    private var currentWeatherUnitAction: String? = nil
+    private var weatherTotalFragments = 0
+    private var weatherConfirmedFragments = 0
+    // El reloj confirma la unidad por 23/05, nunca se infiere de un ACK ATT.
+    private var verifiedTemperatureUnit: WatchTemperatureUnit? = nil
+    private var lastWeatherUnitProbeAt = Date.distantPast
+    private var attemptedCelsiusCorrection = false
+    private var lastWeatherDeliveredAt = Date.distantPast
+    private var lastWeatherDeliveredConnectionID = -1
+    var weatherDeliveredThisConnection: Bool {
+        isConnected && lastWeatherDeliveredConnectionID == readyConnectionID
+    }
     private var currentMusicStage: String? = nil
     // Coalescer sólo mientras el par ANUNCIO/ESTADO todavía está activo.
     private var latestMusicContents: String?
@@ -107,7 +130,24 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         batteryRefresh?.cancel(); batteryRefresh = nil
         musicNotBefore = .distantPast
         currentWriteIsNotification = false
+        currentWriteIsWeather = false
+        currentWriteIsWeatherUnit = false
+        currentWriteIsWatchFaceRead = false
+        currentWriteIsFileLEProbe = false
+        fileLEProbeWaiting = false
+        fileLEProbeSequence += 1
+        fileLEProbeStatus = "Prueba interrumpida por desconexión"
+        watchFaceCatalogStatus = "Desconectado; consultá el catálogo después de reconectar"
+        currentWeatherUnitAction = nil
+        verifiedTemperatureUnit = nil
+        attemptedCelsiusCorrection = false
+        lastWeatherUnitProbeAt = .distantPast
+        weatherUnitStatus = "Consultando °C automáticamente al conectar"
+        weatherTotalFragments = 0
+        weatherConfirmedFragments = 0
         currentMusicStage = nil
+        weatherSyncStatus = "Envío de clima interrumpido por desconexión"
+        motorolaCharacteristicsStatus = "Pendiente de descubrimiento en la nueva conexión"
         latestMusicContents = nil
         deferredManualMusic = nil
         musicDiagnosticPacketsLeft = 0
@@ -395,14 +435,32 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
     }
 
+    // Una lectura de la tabla de características, sin readValue, notify adicional ni writeValue.
+    func inspectMotorolaCharacteristics() {
+        guard isConnected, let device = peripheral,
+              let motorola = device.services?.first(where: { $0.uuid == serviceUUID }) else {
+            motorolaCharacteristicsStatus = "Conectá el reloj primero"
+            return
+        }
+        motorolaCharacteristicsStatus = "Inspeccionando características por GATT…"
+        device.discoverCharacteristics(nil, for: motorola)
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error = error {
             record("ERROR", "Servicios: \(error.localizedDescription)")
             return
         }
         let services = peripheral.services ?? []
+        // Diagnóstico pasivo de servicios BLE tras cada conexión/reconexión.
+        // La ausencia de HID por GATT NO demuestra ausencia de Classic HID/AVRCP.
+        record("BLE-CAPACIDADES",
+               WatchBLECapabilityProbe.summarize(
+                serviceUUIDs: services.map { $0.uuid.uuidString }))
         if let motorola = services.first(where: { $0.uuid == serviceUUID }) {
-            peripheral.discoverCharacteristics([notifyUUID, txUUID], for: motorola)
+            // Descubrimiento pasivo: también permite detectar la F8F2 vista en el firmware.
+            // No se modifica ninguna suscripción ni se escriben características desconocidas.
+            peripheral.discoverCharacteristics(nil, for: motorola)
         } else {
             record("ERROR", "Servicio Motorola F9F0 no encontrado")
         }
@@ -412,10 +470,18 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
                     error: Error?) {
         if let error = error {
+            motorolaCharacteristicsStatus = "Error de descubrimiento: \(error.localizedDescription)"
             record("ERROR", "Características: \(error.localizedDescription)")
             return
         }
         guard service.uuid == serviceUUID else { return }
+        let found = (service.characteristics ?? []).map {
+            WatchBLECapabilityProbe.CharacteristicInfo(
+                uuid: $0.uuid.uuidString, properties: UInt($0.properties.rawValue))
+        }
+        let summary = WatchBLECapabilityProbe.summarizeMotorolaCharacteristics(found)
+        motorolaCharacteristicsStatus = summary
+        record("BLE-CARACTERISTICAS", summary)
         writeCharacteristic = service.characteristics?.first(where: { $0.uuid == txUUID })
         guard let tx = writeCharacteristic, tx.properties.contains(.write) else {
             isConnected = false
@@ -477,6 +543,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             WatchConnectionAlerts.shared.sendConnectedAlert(
                 watchName: self.watchName, percentage: nil)
         }
+        // Sin consulta geográfica en segundo plano: se reanudará al abrir iWatch.
+        if UIApplication.shared.applicationState == .active {
+            probeWeatherUnitAutomaticallyIfNeeded()
+            Task { @MainActor in WatchWeatherService.shared.automaticRefreshIfNeeded(reason: "reconexión Bluetooth") }
+        }
         Task { await SpotifyBridge.shared.recoverAfterWatchReady() }
     }
 
@@ -506,6 +577,59 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
             return
         }
         guard characteristic.uuid == notifyUUID, let data = characteristic.value else { return }
+        if fileLEProbeWaiting && MotoFileLEProbe.isFileTransmissionCandidate(data) {
+            fileLEProbeWaiting = false
+            fileLEProbeSequence += 1
+            if let reply = MotoFileLEProbe.reply(data) {
+                fileLEProbeStatus = "LE respondió 20/85: protocolo \(reply.protocolVersion), bloque máximo \(reply.maxDataSize) B. No se envió ninguna foto."
+                record("ESFERA-LE", "Respuesta 20/85 válida por BLE: versión \(reply.protocolVersion), max \(reply.maxDataSize) bytes")
+            } else {
+                fileLEProbeStatus = "El reloj respondió 20/85, pero el paquete no pasó las comprobaciones de CRC o formato"
+                record("ESFERA-LE", "20/85 inválido recibido; no se inicia transferencia")
+            }
+            return
+        }
+        // 26/01: respuesta de catálogo, no instalación de imágenes.
+        let faceBytes = Array(data)
+        if faceBytes.count >= 8 && faceBytes.first == 0xAA {
+            var headerOffset = 1
+            repeat {
+                let byte = faceBytes[headerOffset]
+                headerOffset += 1
+                if byte & 0x80 == 0 { break }
+            } while headerOffset < min(faceBytes.count, 5)
+            if headerOffset + 4 < faceBytes.count &&
+               faceBytes[headerOffset] == 0, faceBytes[headerOffset + 1] == 0 &&
+               faceBytes[headerOffset + 2] == 0x26 &&
+               faceBytes[headerOffset + 3] == 0x01 {
+                watchFaceCatalogStatus = "Respuesta 26/01 recibida (\(data.count) bytes). La transferencia de fotos todavía no está validada."
+                record("ESFERA-DIAG", "Respuesta de catálogo 26/01: \(data.count) bytes")
+                return
+            }
+        }
+        if let unit = WatchWeatherUnitProtocol.unitFromGetResponse(data) {
+            verifiedTemperatureUnit = unit
+            record("CLIMA-UNIDAD", "Respuesta Motorola 23/05 verificada: \(unit.label)")
+            if unit == .fahrenheit {
+                if !attemptedCelsiusCorrection {
+                    attemptedCelsiusCorrection = true
+                    weatherUnitStatus = "El reloj informa °F; aplicando °C automáticamente…"
+                    musicQueue.append(PendingMusicWrite(packet: WatchWeatherUnitProtocol.set(.celsius),
+                        delayAfter: 0, kind: .weatherUnit, musicStage: "AUTO_SET_CELSIUS"))
+                    flushMusicQueue()
+                } else {
+                    weatherUnitStatus = "El reloj sigue en °F tras la corrección; sin reintentos automáticos"
+                    record("CLIMA-UNIDAD", "Corrección de Celsius no confirmada; evitar bucle")
+                }
+            } else {
+                weatherUnitStatus = "Celsius (°C) confirmado automáticamente por el reloj"
+                Task { @MainActor in WatchWeatherService.shared.synchronizeAvailableForecast() }
+            }
+            return
+        }
+        if let signal = WatchEnvironmentalProtocol.identify(data) {
+            record("MOTO-ENTORNO", signal.diagnostic)
+        }
         // Diagnóstico pasivo: SOLO aprovecha callbacks F8F0 reales de iOS;
         // no inventa notificaciones ni consultas periódicas al reloj.
         MusicBackgroundExperiment.shared.didReceiveRealBLEFrame(data)
@@ -758,6 +882,147 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         flushMusicQueue()
     }
 
+    // Experimento explícito de negociación FileTransmission sobre F8F1 BLE.
+    // Envía solamente 20/05 (13 bytes): NO transmite JPEG/PNG, no registra
+    // álbum, no usa 26/04 y no inicia OTA. La aplicación oficial solicita SPP.
+    @discardableResult
+    func probePhotoTransferOverLE() -> Bool {
+        guard UIApplication.shared.applicationState == .active, isConnected,
+              let peripheral = peripheral, let tx = writeCharacteristic,
+              tx.properties.contains(.write),
+              MotoFileLEProbe.request().count <= peripheral.maximumWriteValueLength(for: .withResponse) else {
+            fileLEProbeStatus = "Conectá el Moto Watch Fit y dejá iWatch abierta"
+            return false
+        }
+        guard !fileLEProbeWaiting, !currentWriteIsFileLEProbe,
+              !musicQueue.contains(where: { $0.kind == .fileLEProbe }) else {
+            fileLEProbeStatus = "Ya hay una prueba de transferencia LE en curso"
+            return false
+        }
+        fileLEProbeWaiting = true
+        fileLEProbeSequence += 1
+        fileLEProbeStatus = "Negociando FileTransmission 20/05 por LE (sin foto)…"
+        record("ESFERA-LE", "Prueba de negociación FILE/TRANSMISSION por GATT F8F1")
+        musicQueue.append(PendingMusicWrite(packet: MotoFileLEProbe.request(), delayAfter: 0, kind: .fileLEProbe))
+        flushMusicQueue()
+        return true
+    }
+
+    // Lectura de catálogo 26/01, capturada y comprobada en Android.
+    // No instala ni modifica ninguna esfera.
+    @discardableResult
+    func queryWatchFaceCatalogReadOnly() -> Bool {
+        guard UIApplication.shared.applicationState == .active,
+              isConnected, let device = peripheral,
+              let tx = writeCharacteristic, tx.properties.contains(.write) else {
+            watchFaceCatalogStatus = "Conectá el reloj y dejá iWatch abierta"
+            return false
+        }
+        let command = Data([0xAA, 0x04, 0x00, 0x00, 0x26, 0x01, 0x4D, 0x52])
+        guard command.count <= device.maximumWriteValueLength(for: .withResponse),
+              !currentWriteIsWatchFaceRead,
+              !musicQueue.contains(where: { $0.kind == .watchFaceRead }) else {
+            watchFaceCatalogStatus = "Consulta pendiente o enlace no disponible"
+            return false
+        }
+        watchFaceCatalogStatus = "Solicitando catálogo de esferas (26/01)…"
+        musicQueue.append(PendingMusicWrite(packet: command, delayAfter: 0, kind: .watchFaceRead))
+        record("ESFERA-DIAG", "Consulta 26/01 de solo lectura; sin envío de fotografías")
+        flushMusicQueue()
+        return true
+    }
+
+    // La APK Motorola consulta la unidad por 23/05. Se hace automáticamente
+    // al conectar, y se cambia por 23/04 únicamente si el reloj indica °F.
+    private func queueWeatherUnitCommand(_ packet: Data, action: String) -> Bool {
+        guard UIApplication.shared.applicationState == .active,
+              isConnected, let device = peripheral,
+              let tx = writeCharacteristic, tx.properties.contains(.write) else {
+            weatherUnitStatus = "Conectá el reloj y dejá iWatch abierta"
+            return false
+        }
+        guard !currentWriteIsWeather, !currentWriteIsWeatherUnit,
+              !musicQueue.contains(where: { $0.kind == .weather || $0.kind == .weatherUnit }) else {
+            weatherUnitStatus = "Terminá primero la transferencia de clima o la consulta anterior"
+            return false
+        }
+        guard packet.count <= device.maximumWriteValueLength(for: .withResponse) else {
+            weatherUnitStatus = "F8F1 no permite escribir este comando"
+            return false
+        }
+        weatherUnitStatus = "Enviando comando de unidad: \(action)"
+        record("CLIMA-UNIDAD", "Acción automática \(action): \(MotoProtocol.hex(packet))")
+        musicQueue.append(PendingMusicWrite(packet: packet,
+            delayAfter: 0, kind: .weatherUnit, musicStage: action))
+        flushMusicQueue()
+        return true
+    }
+
+    func probeWeatherUnitAutomaticallyIfNeeded() {
+        guard UIApplication.shared.applicationState == .active, isConnected,
+              verifiedTemperatureUnit == nil,
+              Date().timeIntervalSince(lastWeatherUnitProbeAt) >= 600 else { return }
+        if queueWeatherUnitCommand(WatchWeatherUnitProtocol.get(), action: "AUTO_GET_UNIT") {
+            lastWeatherUnitProbeAt = Date()
+        }
+    }
+
+    // No repetir paquetes dentro de una misma hora/conexión. La unidad debe
+    // haber sido realmente confirmada antes de enviar temperaturas Celsius.
+    @discardableResult
+    func synchronizeWeatherAutomatically(_ snapshot: WatchWeatherSnapshot) -> Bool {
+        guard verifiedTemperatureUnit == .celsius, isConnected,
+              UIApplication.shared.applicationState == .active,
+              abs(Date().timeIntervalSince(snapshot.fetchedAt)) < 1800 else { return false }
+        if weatherDeliveredThisConnection &&
+           Date().timeIntervalSince(lastWeatherDeliveredAt) < 3600 { return false }
+        if currentWriteIsWeather || musicQueue.contains(where: { $0.kind == .weather }) { return false }
+        return sendWeatherExperimental(snapshot)
+    }
+
+    // Envío de 23/01 ya verificado en la pantalla real del reloj. Conservamos
+    // transportes BLE de 20 bytes y confirmación ATT por fragmento.
+    @discardableResult
+    func sendWeatherExperimental(_ snapshot: WatchWeatherSnapshot) -> Bool {
+        guard UIApplication.shared.applicationState == .active,
+              isConnected, let peripheral = peripheral,
+              let tx = writeCharacteristic, tx.properties.contains(.write) else {
+            weatherSyncStatus = "Conectá el reloj con iWatch visible"
+            return false
+        }
+        guard !currentWriteIsWeather, !musicQueue.contains(where: { $0.kind == .weather }) else {
+            weatherSyncStatus = "Ya hay un envío del clima en curso"
+            return false
+        }
+        do {
+            let frame = try WatchWeatherProtocol.encode(snapshot)
+            let reportedLimit = peripheral.maximumWriteValueLength(for: .withResponse)
+            guard let size = WatchWeatherProtocol.conservativeWriteLimit(reportedMaximum: reportedLimit) else {
+                weatherSyncStatus = "La conexión no permite fragmentos de 20 bytes"
+                record("CLIMA-BLE", "Sin límite seguro de escritura (máximo informado \(reportedLimit))")
+                return false
+            }
+            let parts = WatchWeatherProtocol.fragments(frame, maximum: size)
+            guard !parts.isEmpty, parts.count <= 100 else {
+                weatherSyncStatus = "Pronóstico demasiado grande para la prueba limitada"
+                return false
+            }
+            weatherTotalFragments = parts.count
+            weatherConfirmedFragments = 0
+            for part in parts {
+                musicQueue.append(PendingMusicWrite(packet: part, delayAfter: 0, kind: .weather))
+            }
+            weatherSyncStatus = "Enviando clima: 0/\(parts.count) fragmentos"
+            record("CLIMA-BLE", "Prueba 23/01: \(frame.count) bytes, \(parts.count) fragmentos de máximo \(size) bytes (máximo iOS \(reportedLimit)); sin reintentos")
+            flushMusicQueue()
+            return true
+        } catch {
+            weatherSyncStatus = "No se pudo preparar el clima; actualizá el pronóstico"
+            record("CLIMA-BLE", "Codificación rechazada: \(error)")
+            return false
+        }
+    }
+
     // Envío de avisos propios o recibidos por una automatización de Atajos iOS 27.
     // No se guardan remitente ni mensaje en el log, por privacidad.
     @discardableResult
@@ -935,6 +1200,11 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsHealth = next.kind == .health
         currentWriteIsBattery = next.kind == .battery
         currentWriteIsNotification = next.kind == .notification
+        currentWriteIsWeather = next.kind == .weather
+        currentWriteIsWeatherUnit = next.kind == .weatherUnit
+        currentWriteIsWatchFaceRead = next.kind == .watchFaceRead
+        currentWriteIsFileLEProbe = next.kind == .fileLEProbe
+        currentWeatherUnitAction = next.kind == .weatherUnit ? next.musicStage : nil
         currentMusicStage = next.kind == .music ? next.musicStage : nil
         musicAfterDelay = next.delayAfter
         if next.kind == .music && musicDiagnosticPacketsLeft > 0 {
@@ -946,7 +1216,7 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
                 record("MUSICA-DIAG", "Captura puntual expirada antes del siguiente paquete")
             }
         }
-        record("BLE-TX", "F8F1: \(next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
+        record("BLE-TX", "F8F1: \(next.kind == .weather ? "CLIMA" : next.kind == .weatherUnit ? "CLIMA-UNIDAD" : next.kind == .watchFaceRead ? "ESFERA-CONSULTA" : next.kind == .fileLEProbe ? "ESFERA-LE" : next.kind == .battery ? "BATERIA" : next.kind == .notification ? "AVISO" : next.kind == .health ? "SALUD" : next.kind == .vitals ? "CANDIDATO" : next.kind == .sleepRead ? "SUEÑO" : "MUSICA"), bytes=\(next.packet.count)")
         writeSequence += 1
         let sequence = writeSequence
         let connectionID = readyConnectionID
@@ -982,12 +1252,44 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         currentWriteIsBattery = false
         let isNotice = currentWriteIsNotification
         currentWriteIsNotification = false
+        let isWeather = currentWriteIsWeather
+        currentWriteIsWeather = false
+        let isWeatherUnit = currentWriteIsWeatherUnit
+        currentWriteIsWeatherUnit = false
+        let isFaceRead = currentWriteIsWatchFaceRead
+        currentWriteIsWatchFaceRead = false
+        let isFileLEProbe = currentWriteIsFileLEProbe
+        currentWriteIsFileLEProbe = false
+        let unitAction = currentWeatherUnitAction
+        currentWeatherUnitAction = nil
         let completedMusicStage = currentMusicStage
         currentMusicStage = nil
         if let error = error {
             if isNotice {
                 notificationStatus = "Falló la escritura del aviso; no se reenvía para evitar duplicados"
                 record("NOTIFICACION", notificationStatus)
+            }
+            else if isFileLEProbe {
+                fileLEProbeWaiting = false
+                fileLEProbeSequence += 1
+                fileLEProbeStatus = "F8F1 rechazó negociación de archivos por LE: \(error.localizedDescription)"
+                record("ESFERA-LE", "Error ATT 20/05, no se envía imagen")
+            }
+            else if isFaceRead {
+                watchFaceCatalogStatus = "Consulta 26/01 rechazada: \(error.localizedDescription)"
+                record("ESFERA-DIAG", "Error ATT en 26/01, sin reintento")
+            }
+            else if isWeatherUnit {
+                weatherUnitStatus = "El reloj rechazó la escritura de unidad (sin reintento)"
+                musicQueue.removeAll { $0.kind == .weatherUnit }
+                record("CLIMA-UNIDAD", "ATT rechazó \(unitAction ?? "acción"): \(error.localizedDescription)")
+            }
+            else if isWeather {
+                weatherSyncStatus = "Clima rechazado en fragmento \(weatherConfirmedFragments + 1)/\(weatherTotalFragments); no se reintenta"
+                musicQueue.removeAll { $0.kind == .weather }
+                record("CLIMA-BLE", "Escritura fallida en \(weatherConfirmedFragments + 1)/\(weatherTotalFragments): \(error.localizedDescription)")
+                weatherTotalFragments = 0
+                weatherConfirmedFragments = 0
             }
             else if isBattery { batteryStatus = "Error de consulta Motorola" }
             else if isSleep {
@@ -1027,6 +1329,55 @@ final class WatchBLEManager: NSObject, ObservableObject, CBCentralManagerDelegat
         }
         let delay = musicAfterDelay
         if isNotice { notificationStatus = "Aviso escrito por Bluetooth; visualización no confirmada" }
+        if isFaceRead {
+            watchFaceCatalogStatus = "Consulta 26/01 escrita; esperando respuesta del reloj"
+        }
+        if isFileLEProbe && fileLEProbeWaiting {
+            fileLEProbeStatus = "20/05 escrito por LE; esperando respuesta del reloj"
+            // El tiempo empieza tras el ACK de escritura, no cuando el
+            // paquete se encoló detrás de notificaciones, clima o Spotify.
+            let sequence = fileLEProbeSequence
+            let connection = readyConnectionID
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+                guard let self = self, self.fileLEProbeWaiting,
+                      self.fileLEProbeSequence == sequence,
+                      self.readyConnectionID == connection else { return }
+                self.fileLEProbeWaiting = false
+                self.fileLEProbeStatus = "Sin respuesta 20/85 por LE tras 12 s; posiblemente requiere SPP/Classic"
+                self.record("ESFERA-LE", "Negociación LE sin respuesta; no iniciar transferencia")
+            }
+        }
+        if isWeatherUnit {
+            if unitAction == "SET_CELSIUS" || unitAction == "AUTO_SET_CELSIUS" {
+                weatherUnitStatus = "Celsius enviado por BLE; verificando mediante 23/05…"
+                record("CLIMA-UNIDAD", "SET 23/04 aceptado por ATT; no demuestra que el reloj cambió a °C")
+                // Leer el valor por el comando oficial de Motorola, sin reenvíos automáticos.
+                musicQueue.append(PendingMusicWrite(packet: WatchWeatherUnitProtocol.get(),
+                    delayAfter: 0, kind: .weatherUnit, musicStage: "GET_UNIT"))
+            } else if unitAction == "GET_UNIT" || unitAction == "AUTO_GET_UNIT" {
+                if verifiedTemperatureUnit == nil {
+                    weatherUnitStatus = "Consultando unidad; esperando respuesta 23/05"
+                }
+                record("CLIMA-UNIDAD", "GET 23/05 escrito; esperando respuesta en F8F0")
+            }
+        }
+        if isWeather {
+            weatherConfirmedFragments += 1
+            let completed = weatherConfirmedFragments
+            let total = weatherTotalFragments
+            weatherSyncStatus = "Clima BLE: \(completed)/\(total) fragmentos confirmados"
+            if completed == 1 || completed % 8 == 0 || completed == total {
+                record("CLIMA-BLE", "Progreso ATT: \(completed)/\(total) escrituras aceptadas por iOS")
+            }
+            if completed == total {
+                lastWeatherDeliveredAt = Date()
+                lastWeatherDeliveredConnectionID = readyConnectionID
+                weatherSyncStatus = "Clima actualizado por Bluetooth · \(Date().formatted(date: .omitted, time: .shortened))"
+                record("CLIMA-BLE", "Todos los fragmentos confirmados; clima transmitido al reloj")
+                weatherTotalFragments = 0
+                weatherConfirmedFragments = 0
+            }
+        }
         if !isNotice && !isBattery && !isHealth && !isVitals && !isSleep {
             musicNotBefore = Date().addingTimeInterval(delay)
             if let completedMusicStage = completedMusicStage {

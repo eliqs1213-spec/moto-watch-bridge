@@ -1,0 +1,30 @@
+name: Windows Watchface RFCOMM Probe
+
+on:
+  push:
+    branches:
+      - feature/iwatch-ui-cleanup-accessory-bridge-0881
+    paths:
+      - 'tools/watchfaces/windows-rfcomm/**'
+      - '.github/workflows/windows-watchface-rfcomm-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-windows-rfcomm-probe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compilar diagnostico Windows
+        shell: pwsh
+        run: dotnet build tools/watchfaces/windows-rfcomm/RfcommProbe.csproj -c Release
+      - name: Autocomprobar trama OPEN_SPP sin Bluetooth
+        shell: pwsh
+        run: dotnet run --project tools/watchfaces/windows-rfcomm/RfcommProbe.csproj -c Release -- --self-test

@@ -33,6 +33,38 @@ jobs:
           cat ios-native/Sources/SpotifyPlaybackContinuityPolicy.swift ios-native/Sources/SpotifyCommandQueuePolicy.swift ios-native/Tests/SpotifyContinuityChecks.swift > "$RUNNER_TEMP/spotify-continuity-checks.swift"
           swift "$RUNNER_TEMP/spotify-continuity-checks.swift"
 
+      - name: Validar entradas MotoAccessoryBridgeKit sin escribir al reloj
+        run: |
+          cat ios-native/Sources/MotoAccessoryBridgeKit.swift ios-native/Tests/MotoAccessoryBridgeChecks.swift > "$RUNNER_TEMP/accessory-bridge-checks.swift"
+          swift "$RUNNER_TEMP/accessory-bridge-checks.swift"
+
+      - name: Diagnosticar capacidad HID y control multimedia BLE sin escribir al reloj
+        run: |
+          cat ios-native/Sources/WatchBLECapabilityProbe.swift ios-native/Tests/WatchBLECapabilityChecks.swift > "$RUNNER_TEMP/ble-capability-checks.swift"
+          swift "$RUNNER_TEMP/ble-capability-checks.swift"
+
+      - name: Validar clima iOS de seis días y veinticuatro horas
+        run: |
+          cat ios-native/Sources/WatchWeatherForecast.swift ios-native/Tests/WatchWeatherForecastChecks.swift > "$RUNNER_TEMP/weather-checks.swift"
+          swift "$RUNNER_TEMP/weather-checks.swift"
+
+      - name: Validar trama de clima Motorola antes de compilar iOS
+        run: |
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchWeatherForecast.swift ios-native/Sources/WatchWeatherProtocol.swift ios-native/Tests/WatchWeatherProtocolChecks.swift > "$RUNNER_TEMP/weather-ble-checks.swift"
+          swift "$RUNNER_TEMP/weather-ble-checks.swift"
+
+      - name: Validar Celsius Motorola 23/04 y lectura 23/05
+        run: |
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchWeatherUnitProtocol.swift ios-native/Tests/WatchWeatherUnitChecks.swift > "$RUNNER_TEMP/weather-unit-checks.swift"
+          swift "$RUNNER_TEMP/weather-unit-checks.swift"
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/MotoFileLEProbe.swift ios-native/Tests/MotoFileLEProbeChecks.swift > "$RUNNER_TEMP/moto-file-le-checks.swift"
+          swift "$RUNNER_TEMP/moto-file-le-checks.swift"
+
+      - name: Verificar señales 23/0A y 2A/05 sin escribir BLE
+        run: |
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchEnvironmentalProtocol.swift ios-native/Tests/WatchEnvironmentalChecks.swift > "$RUNNER_TEMP/environment-checks.swift"
+          swift "$RUNNER_TEMP/environment-checks.swift"
+
       - name: Verificar diagnóstico de Atajos sin datos obsoletos
         run: |
           cat ios-native/Sources/SpotifyShortcutSyncPolicy.swift ios-native/Tests/SpotifyShortcutSyncChecks.swift > "$RUNNER_TEMP/spotify-shortcuts-checks.swift"

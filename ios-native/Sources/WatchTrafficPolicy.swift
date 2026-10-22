@@ -1,12 +1,12 @@
 import Foundation
 
 enum WatchTrafficKind {
-    case notification, music, health, vitals, sleepRead, battery
+    case notification, weather, weatherUnit, watchFaceRead, fileLEProbe, music, health, vitals, sleepRead, battery
     var priority: Int {
         switch self {
-        case .notification: return 0
+        case .notification, .weather, .weatherUnit: return 0
         case .music: return 1
-        case .health, .vitals, .sleepRead: return 2
+        case .watchFaceRead, .fileLEProbe, .health, .vitals, .sleepRead: return 2
         case .battery: return 3
         }
     }
