@@ -20,9 +20,9 @@ enum MotoFileLEProbe {
     }
 
     static func request() -> Data {
-        // MotoFt.FileTransmission {file_protocol_version:1, max_data_size:1024}
-        // Identificado en FileSender.getTransmission() de la APK XT2541-1.
-        let body: [UInt8] = [0x20, 0x05, 0x08, 0x01, 0x20, 0x80, 0x08]
+        // Captura Motorola sobre RFCOMM: 20/05 version=1, max_data_size=16384.
+        // Prueba GATT independiente: la negociación sobre LE no está confirmada.
+        let body: [UInt8] = [0x20, 0x05, 0x08, 0x01, 0x20, 0x80, 0x80, 0x01]
         let length = body.count + 2 // group+CID+payload+CRC16
         let message: [UInt8] = [0xAA, UInt8(length), 0x00, 0x00] + body
         let crc = MotoProtocol.crc16Xmodem(message[...])
@@ -41,10 +41,11 @@ enum MotoFileLEProbe {
         return nil
     }
 
+    // El reloj responde con comando 20/85, no con el 20/05 de solicitud.
     static func isFileTransmissionCandidate(_ data: Data) -> Bool {
         let bytes = Array(data)
         return bytes.count >= 8 && bytes[0] == 0xAA &&
-               bytes[4] == 0x20 && bytes[5] == 0x05
+               bytes[4] == 0x20 && bytes[5] == 0x85
     }
 
     static func reply(_ data: Data) -> Reply? {
