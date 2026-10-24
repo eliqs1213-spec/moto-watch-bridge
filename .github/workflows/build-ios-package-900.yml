@@ -28,12 +28,23 @@ jobs:
           xz -dc .github/iwatch900/changes.patch.xz > "$RUNNER_TEMP/iwatch900.patch"
           git apply --check --binary "$RUNNER_TEMP/iwatch900.patch"
           git apply --binary "$RUNNER_TEMP/iwatch900.patch"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ios-native/Sources/SpotifyBridge.swift")
+          data = p.read_text(encoding="utf-8")
+          old = 'record("SPOTIFY-BG", "'
+          count = data.count(old)
+          assert count == 7, f"Expected 7 legacy log calls, found {count}"
+          p.write_text(data.replace(old, 'record("[SPOTIFY-BG] '), encoding="utf-8")
+          print("Fixed Spotify log calls to use single-argument record(_:) method")
+          PY
           grep -F "CFBundleShortVersionString: '0.8.4.56'" ios-native/project.yml
           grep -F "CFBundleVersion: '900'" ios-native/project.yml
           test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIconSource.jpg
           test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json
           bash ios-native/scripts/render-app-icon.sh
-          test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024x1024-1x.png || test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024x1024-1x.png
+          test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024x1024-1x.png
+          rm ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIconSource.jpg
 
       - name: Comprobar políticas de Spotify y clima
         shell: bash
