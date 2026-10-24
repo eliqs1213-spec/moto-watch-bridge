@@ -1,0 +1,173 @@
+name: Firmar iWatch 900 para iPhone (Nitera / Ad Hoc)
+
+# Se habilita solo cuando IWATCH_SIGNING_ENABLED=true y existen 4 secretos.
+# Nunca se ejecuta con pull_request. No publica una IPA firmada en Releases o Pages.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/iwatch-900-spotify-viento-icono
+    paths:
+      - .github/workflows/sign-ios-900.yml
+
+permissions:
+  contents: read
+
+jobs:
+  sign-ipa:
+    if: ${{ vars.IWATCH_SIGNING_ENABLED == 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Descargar IPA 900 compilada exitosamente
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/input"
+          gh run download 40060399604 --repo "$GITHUB_REPOSITORY" \
+            --name iWatch-900-unsigned --dir "$RUNNER_TEMP/input"
+          IPA="$RUNNER_TEMP/input/iWatch-900-unsigned.ipa"
+          test -s "$IPA"
+          mkdir -p "$RUNNER_TEMP/package"
+          cd "$RUNNER_TEMP/package"
+          unzip -q "$IPA"
+          test -f Payload/MotoWatchNativeProbe.app/Info.plist
+          test -f Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/Info.plist
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - Payload/MotoWatchNativeProbe.app/Info.plist)" = 900
+
+      - name: Preparar certificado y perfiles sin exponerlos
+        shell: bash
+        env:
+          CERT_P12_B64: ${{ secrets.IWATCH_CERT_P12_B64 }}
+          CERT_P12_PASSWORD: ${{ secrets.IWATCH_CERT_P12_PASSWORD }}
+          PROFILE_APP_B64: ${{ secrets.IWATCH_PROFILE_APP_B64 }}
+          PROFILE_WIDGET_B64: ${{ secrets.IWATCH_PROFILE_WIDGET_B64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$CERT_P12_B64" && test -n "$CERT_P12_PASSWORD"
+          test -n "$PROFILE_APP_B64" && test -n "$PROFILE_WIDGET_B64"
+          mkdir -p "$RUNNER_TEMP/signing"
+          printf '%s' "$CERT_P12_B64" | base64 -D > "$RUNNER_TEMP/signing/cert.p12"
+          printf '%s' "$PROFILE_APP_B64" | base64 -D > "$RUNNER_TEMP/signing/app.mobileprovision"
+          printf '%s' "$PROFILE_WIDGET_B64" | base64 -D > "$RUNNER_TEMP/signing/widget.mobileprovision"
+          security cms -D -i "$RUNNER_TEMP/signing/app.mobileprovision" \
+            -o "$RUNNER_TEMP/signing/app-profile.plist"
+          security cms -D -i "$RUNNER_TEMP/signing/widget.mobileprovision" \
+            -o "$RUNNER_TEMP/signing/widget-profile.plist"
+          openssl pkcs12 -in "$RUNNER_TEMP/signing/cert.p12" \
+            -passin "env:CERT_P12_PASSWORD" -clcerts -nokeys \
+            -out "$RUNNER_TEMP/signing/leaf.pem" 2>/dev/null
+          openssl x509 -in "$RUNNER_TEMP/signing/leaf.pem" -outform der \
+            | shasum -a 1 | awk '{print toupper($1)}' \
+            > "$RUNNER_TEMP/signing/cert-sha1.txt"
+          python3 - <<'PY'
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import hashlib, plistlib
+
+          base = Path(__import__("os").environ["RUNNER_TEMP"]) / "signing"
+          fingerprint = (base / "cert-sha1.txt").read_text().strip()
+
+          def make_entitlements(profile_name, bundle_id, output):
+              profile = plistlib.loads((base / profile_name).read_bytes())
+              ent = profile["Entitlements"]
+              team = profile["TeamIdentifier"][0]
+              prefix = profile["ApplicationIdentifierPrefix"][0]
+              allowed = ent.get("application-identifier", "")
+              expected = prefix + "." + bundle_id
+              if allowed != expected and allowed != prefix + ".*":
+                  raise SystemExit(f"Perfil incompatible con {bundle_id} (app ID).")
+              if profile["ExpirationDate"].replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
+                  raise SystemExit("El perfil venció.")
+              if ent.get("get-task-allow", False):
+                  raise SystemExit("Perfil de desarrollo: se requiere distribución Ad Hoc.")
+              if not (profile.get("ProvisionedDevices") or profile.get("ProvisionsAllDevices")):
+                  raise SystemExit("Perfil sin dispositivos registrados para distribución.")
+              if not any(hashlib.sha1(cert).hexdigest().upper() == fingerprint
+                         for cert in profile.get("DeveloperCertificates", [])):
+                  raise SystemExit("El certificado no figura en el perfil de aprovisionamiento.")
+              signed = {
+                  "application-identifier": expected,
+                  "com.apple.developer.team-identifier": team,
+                  "get-task-allow": False,
+              }
+              groups = ent.get("keychain-access-groups", [])
+              if groups:
+                  wanted = prefix + "." + bundle_id
+                  if wanted not in groups and prefix + ".*" not in groups:
+                      raise SystemExit(f"Perfil sin grupo de llavero para {bundle_id}.")
+                  signed["keychain-access-groups"] = [wanted]
+              (base / output).write_bytes(plistlib.dumps(signed))
+              return team
+
+          app_team = make_entitlements("app-profile.plist",
+              "org.motowatchbridge.nativeprobe", "app-entitlements.plist")
+          widget_team = make_entitlements("widget-profile.plist",
+              "org.motowatchbridge.nativeprobe.widgets", "widget-entitlements.plist")
+          if app_team != widget_team:
+              raise SystemExit("Los perfiles de app y widget usan equipos diferentes.")
+          print("Certificado válido, ambos perfiles autorizan los bundle IDs; mismo equipo.")
+          PY
+
+      - name: Firmar Spotify Framework, WidgetKit e iWatch por separado
+        shell: bash
+        env:
+          CERT_P12_PASSWORD: ${{ secrets.IWATCH_CERT_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEYCHAIN="$RUNNER_TEMP/iwatch-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security import "$RUNNER_TEMP/signing/cert.p12" -k "$KEYCHAIN" \
+            -P "$CERT_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | grep -Eo '[A-F0-9]{40}' | head -1)"
+          test -n "$IDENTITY"
+          APP="$RUNNER_TEMP/package/Payload/MotoWatchNativeProbe.app"
+          WIDGET="$APP/PlugIns/MotoBatteryWidgets.appex"
+          SIGN="$RUNNER_TEMP/signing"
+
+          # Orden Apple: codigo interno, extension, app. Sin --deep al firmar.
+          while IFS= read -r -d '' FRAMEWORK; do
+            codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" \
+              --timestamp=none "$FRAMEWORK"
+          done < <(find "$APP" -type d -name '*.framework' -print0)
+          cp "$SIGN/widget.mobileprovision" "$WIDGET/embedded.mobileprovision"
+          cp "$SIGN/app.mobileprovision" "$APP/embedded.mobileprovision"
+          codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" \
+            --timestamp=none --entitlements "$SIGN/widget-entitlements.plist" "$WIDGET"
+          codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" \
+            --timestamp=none --entitlements "$SIGN/app-entitlements.plist" "$APP"
+
+          codesign --verify --strict --verbose=2 "$WIDGET"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$APP/Info.plist")" = 900
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$WIDGET/Info.plist")" = 900
+          test "$(/usr/bin/plutil -extract NSSupportsLiveActivities raw -o - "$APP/Info.plist")" = true
+          test "$(/usr/bin/plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$WIDGET/Info.plist")" = com.apple.widgetkit-extension
+
+          cd "$RUNNER_TEMP/package"
+          zip -qry "$GITHUB_WORKSPACE/iWatch-900-firmada.ipa" Payload
+          test -s "$GITHUB_WORKSPACE/iWatch-900-firmada.ipa"
+          unzip -Z1 "$GITHUB_WORKSPACE/iWatch-900-firmada.ipa" \
+            | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/embedded.mobileprovision'
+          echo "IPA firmada: app, widget y Spotify Framework presentes."
+          security delete-keychain "$KEYCHAIN"
+
+      # Acceso restringido a miembros con permiso de ver Actions.
+      # NO subir la IPA firmada a Pages ni crear Releases publicas.
+      - name: Guardar IPA firmada como artefacto temporal
+        uses: actions/upload-artifact@v4
+        with:
+          name: iWatch-900-firmada-ad-hoc
+          path: iWatch-900-firmada.ipa
+          retention-days: 7
+          if-no-files-found: error
