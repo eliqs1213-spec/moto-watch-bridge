@@ -1,0 +1,85 @@
+name: Compilar iWatch 900 desde ZIP
+
+on:
+  push:
+    branches:
+      - feature/iwatch-900-spotify-viento-icono
+    paths:
+      - iWatch-build-900-icono-spotify-viento.zip
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa-900:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Extraer proyecto de iWatch 900
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f iWatch-build-900-icono-spotify-viento.zip
+          mkdir -p "$RUNNER_TEMP/iWatch900"
+          unzip -q iWatch-build-900-icono-spotify-viento.zip -d "$RUNNER_TEMP/iWatch900"
+          SRC="$RUNNER_TEMP/iWatch900/iWatch-900-Icono-Spotify-Viento"
+          test -f "$SRC/ios-native/project.yml"
+          test -f "$SRC/ios-native/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json"
+          grep -F "CFBundleShortVersionString: '0.8.4.56'" "$SRC/ios-native/project.yml"
+          grep -F "CFBundleVersion: '900'" "$SRC/ios-native/project.yml"
+          echo "PROJECT_DIR=$SRC" >> "$GITHUB_ENV"
+
+      - name: Preparar XcodeGen
+        shell: bash
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          cd "$PROJECT_DIR/ios-native"
+          xcodegen generate
+
+      - name: Compilar app y extensión WidgetKit sin firma
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project "$PROJECT_DIR/ios-native/MotoWatchNativeProbe.xcodeproj" \
+            -scheme MotoWatchNativeProbe \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Verificar widget, Live Activities e ícono
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          EXT="$APP/PlugIns/MotoBatteryWidgets.appex"
+          test -d "$APP"
+          test -x "$EXT/MotoBatteryWidgets"
+          test -f "$APP/Assets.car"
+          test "$(/usr/bin/plutil -extract NSSupportsLiveActivities raw -o - "$APP/Info.plist")" = true
+          test "$(/usr/bin/plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$EXT/Info.plist")" = com.apple.widgetkit-extension
+
+      - name: Preparar IPA para firma posterior en iPhone
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          OUT="$GITHUB_WORKSPACE/iWatch-900-para-firmar.ipa"
+          bash "$PROJECT_DIR/ios-native/scripts/prepare-sideload-ipa.sh" "$APP" "$OUT"
+          test -s "$OUT"
+          unzip -Z1 "$OUT" | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/MotoBatteryWidgets'
+
+      - name: Publicar IPA en GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: iWatch-900-para-firmar
+          path: iWatch-900-para-firmar.ipa
+          retention-days: 14
