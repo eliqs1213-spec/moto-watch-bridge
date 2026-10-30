@@ -1,4 +1,5 @@
 name: Compilar iWatch 908 (Spotify rápido y metadatos)
+# Trigger de compilación solicitado desde ChatGPT
 
 on:
   push:
