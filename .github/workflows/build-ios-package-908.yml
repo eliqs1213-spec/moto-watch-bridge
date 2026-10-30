@@ -1,5 +1,5 @@
 name: Compilar iWatch 908 (Spotify rápido y metadatos)
-# Trigger de compilación solicitado desde ChatGPT
+# Trigger 908: workflow registrado en main; nuevo push en rama 908
 
 on:
   push:
