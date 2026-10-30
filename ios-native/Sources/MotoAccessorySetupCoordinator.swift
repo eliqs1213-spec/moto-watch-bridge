@@ -26,6 +26,20 @@ final class MotoAccessorySetupCoordinator: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
+        let info = Bundle.main.infoDictionary ?? [:]
+        let supports = info["NSAccessorySetupSupports"] as? [String] ?? []
+        let legacy = info["NSAccessorySetupKitSupports"] as? [String] ?? []
+        let names = info["NSAccessorySetupBluetoothNames"] as? [String] ?? []
+        let services = info["NSAccessorySetupBluetoothServices"] as? [String] ?? []
+        guard supports.contains("Bluetooth"), legacy.contains("Bluetooth"),
+              names.contains("Moto Watch Fit"),
+              services.contains(MotoProtocol.service.uppercased()) else {
+            status = "AccessorySetupKit incompleto; iniciando Bluetooth convencional"
+            WatchBLEManager.shared.record("ACCESSORY-SETUP", "Configuración plist insuficiente; evitando cierre")
+            WatchBLEManager.shared.startCentralIfNeeded()
+            WatchBLEManager.shared.autoConnectIfNeeded()
+            return
+        }
         let accessory = ASAccessorySession()
         session = accessory
         accessory.activate(on: DispatchQueue.main) { [weak self] event in
