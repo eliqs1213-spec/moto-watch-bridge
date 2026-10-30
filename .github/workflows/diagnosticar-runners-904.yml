@@ -1,0 +1,21 @@
+name: Diagnosticar runners GitHub Actions para iWatch 904
+on:
+  push:
+    branches:
+      - feature/iwatch-904-accessory-manual-seguro
+    paths:
+      - '.github/workflows/diagnosticar-runners-904.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  comprobar-runner-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Confirmar que GitHub asigna un runner
+        run: |
+          echo "RUNNER_OS=$RUNNER_OS"
+          echo "RUNNER_NAME=$RUNNER_NAME"
+          echo "GH_RUN_ID=$GITHUB_RUN_ID"
+          echo "Un runner GitHub-hosted se asignó correctamente"
