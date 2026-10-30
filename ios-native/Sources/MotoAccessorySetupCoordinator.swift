@@ -14,7 +14,7 @@ final class MotoAccessorySetupCoordinator: ObservableObject {
     @Published private(set) var isAuthorized = false
     @Published private(set) var status = "Preparando la autorización del Moto Watch Fit"
 
-    private let session = ASAccessorySession()
+    private var session: ASAccessorySession?
     private var started = false
     private var activated = false
     private var pickerOpen = false
@@ -26,7 +26,9 @@ final class MotoAccessorySetupCoordinator: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
-        session.activate(on: DispatchQueue.main) { [weak self] event in
+        let accessory = ASAccessorySession()
+        session = accessory
+        accessory.activate(on: DispatchQueue.main) { [weak self] event in
             self?.handle(event)
         }
         log("Sesión AccessorySetupKit iniciada automáticamente")
@@ -46,7 +48,7 @@ final class MotoAccessorySetupCoordinator: ObservableObject {
     }
 
     func requestAuthorization() {
-        guard started, activated, !pickerOpen, !isAuthorized else { return }
+        guard started, activated, !pickerOpen, !isAuthorized, let session else { return }
         let descriptor = ASDiscoveryDescriptor()
         descriptor.bluetoothServiceUUID = CBUUID(string: MotoProtocol.service)
         descriptor.bluetoothNameSubstring = "Moto Watch Fit"
@@ -113,6 +115,7 @@ final class MotoAccessorySetupCoordinator: ObservableObject {
     }
 
     private func restoreAuthorizedAccessory() {
+        guard let session else { return }
         let known = UserDefaults.standard.string(forKey: knownPeripheralKey)
         guard let accessory = session.accessories.first(where: { item in
             guard let id = item.bluetoothIdentifier else { return false }
