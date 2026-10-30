@@ -161,14 +161,13 @@ final class MotoAccessorySetupCoordinator: ObservableObject {
         }
         pickerOpen = true
         session.showPicker(for: [entry]) { [weak self] error in
-            if let error {
-                self?.pickerOpen = false
-                self?.log("Selector rechazado: \(error.localizedDescription)")
-                UserDefaults.standard.set(false, forKey: self?.manualRequestKey ?? "")
-                self?.restoreConventionalBluetooth(
-                    reason: "No se completó la autorización de iOS · Bluetooth convencional activo"
-                )
-            }
+            guard let self, let error else { return }
+            self.pickerOpen = false
+            self.log("Selector rechazado: \(error.localizedDescription)")
+            UserDefaults.standard.set(false, forKey: self.manualRequestKey)
+            self.restoreConventionalBluetooth(
+                reason: "No se completó la autorización de iOS · Bluetooth convencional activo"
+            )
         }
     }
 
