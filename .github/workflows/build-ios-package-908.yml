@@ -6,7 +6,7 @@ on:
     branches:
       - feature/iwatch-908-spotify-fast-sync
     paths:
-      - '.github/workflows/build-ios-package-907.yml'
+      - '.github/workflows/build-ios-package-908.yml'
       - '.github/iwatch900/changes.patch.xz'
       - '.github/iwatch902/apply-902.py'
       - '.github/iwatch903/apply-903.py'
