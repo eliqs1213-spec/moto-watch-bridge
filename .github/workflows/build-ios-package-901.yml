@@ -174,12 +174,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: iWatch-901-unsigned
-          path: iWatch-900-unsigned.ipa
+          path: iWatch-901-unsigned.ipa
+          if-no-files-found: error
           retention-days: 14
 
       - name: Publicar IPA preparada para re-firmar
         uses: actions/upload-artifact@v4
         with:
           name: iWatch-901-re-sign
-          path: iWatch-900-re-sign.ipa
+          path: iWatch-901-re-sign.ipa
+          if-no-files-found: error
           retention-days: 14
