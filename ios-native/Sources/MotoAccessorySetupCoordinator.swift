@@ -3,6 +3,7 @@ import CoreBluetooth
 import AccessorySetupKit
 import UIKit
 import Combine
+import SwiftUI
 
 // iOS 18+: AccessorySetupKit está SIEMPRE iniciado desde el arranque.
 // iOS requiere consentimiento UNA VEZ para registrar/migrar el reloj.
@@ -127,5 +128,26 @@ final class MotoAccessorySetupCoordinator: ObservableObject {
 
     private func log(_ message: String) {
         WatchBLEManager.shared.record("ACCESSORY-SETUP", message)
+    }
+}
+
+@available(iOS 18.0, *)
+struct MotoAccessorySetupStatusView: View {
+    @ObservedObject private var coordinator = MotoAccessorySetupCoordinator.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(coordinator.status,
+                  systemImage: coordinator.isAuthorized ? "checkmark.shield.fill" : "lock.shield")
+                .font(.caption)
+                .foregroundStyle(coordinator.isAuthorized ? .green : .secondary)
+            if !coordinator.isAuthorized {
+                Button("Autorizar reloj en iOS (una sola vez)") {
+                    coordinator.requestAuthorization()
+                }
+                .buttonStyle(.bordered)
+                .font(.caption)
+            }
+        }
     }
 }
