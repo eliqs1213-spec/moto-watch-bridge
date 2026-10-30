@@ -117,7 +117,7 @@ replace_once(ble,
 replace_once(ble,
     """    private func scheduleReconnectIfNeeded() {
         guard autoReconnectEnabled, !manuallyDisconnected, !reconnectScheduled,
-               central.state == .poweredOn else { return }""",
+              central.state == .poweredOn else { return }""",
     """    private func scheduleReconnectIfNeeded() {
         guard let central = central, autoReconnectEnabled,
               !manuallyDisconnected, !reconnectScheduled,
