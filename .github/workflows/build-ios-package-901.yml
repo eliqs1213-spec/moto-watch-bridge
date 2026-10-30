@@ -59,44 +59,28 @@ jobs:
           p = Path("ios-native/Sources/SpotifyBridge.swift")
           data = p.read_text(encoding="utf-8")
           old = """        if requestBusy {
-              enqueuePendingWatchCommand(command, receivedAt: now)
-              return
-          }"""
-          # Respeta exactamente la indentación del código de 897.
-          old = """        if requestBusy {
-              enqueuePendingWatchCommand(command, receivedAt: now)
-              return
-          }""".replace("              ", "            ")
-          assert data.count(old) == 1, "No se encontró el punto único de encolado"
+            enqueuePendingWatchCommand(command, receivedAt: now)
+            return
+        }"""
+          assert data.count(old) == 1, "No se encontró la cola en receive"
           new = """        if requestBusy {
-              lastAction = "Spotify ocupado · pulsación descartada (sin cola)"
-              record("[SPOTIFY] Descartado por orden anterior en curso: \\(key); NO se encola")
-              return
-          }""".replace("              ", "            ")
+            lastAction = "Spotify ocupado · pulsación descartada (sin cola)"
+            record("[SPOTIFY] Orden anterior en curso: pulsación descartada, NO encolada")
+            return
+        }"""
           data = data.replace(old, new)
-          # Bloquear también el segundo camino de encolado al recuperar Connect.
           probe_old = """                if self.requestBusy {
-                      self.enqueuePendingWatchCommand(command, receivedAt: receivedAt)
-                  } else {
-                      self.performWatchCommand(command)
-                  }""".replace("                      ", "                    ").replace("                  ", "                ")
-          if data.count(probe_old) != 1:
-              # Forma exacta de la rama 897; fallar si difiere.
-              import re
-              pattern = r"                if self\\.requestBusy \\{\\n                    self\\.enqueuePendingWatchCommand\\(command, receivedAt: receivedAt\\)\\n                \\} else \\{\\n                    self\\.performWatchCommand\\(command\\)\\n                \\}"
-              matches = list(re.finditer(pattern, data))
-              assert len(matches) == 1, "No se encontró la cola en recuperación de Spotify Connect"
-              data = re.sub(pattern, """                if self.requestBusy {
-                    self.record("[SPOTIFY] Control Connect ocupado: pulsación descartada, sin cola")
+                    self.enqueuePendingWatchCommand(command, receivedAt: receivedAt)
                 } else {
                     self.performWatchCommand(command)
-                }""", data)
-          else:
-              data = data.replace(probe_old, """                if self.requestBusy {
-                    self.record("[SPOTIFY] Control Connect ocupado: pulsación descartada, sin cola")
+                }"""
+          assert data.count(probe_old) == 1, "No se encontró la cola de Connect"
+          probe_new = """                if self.requestBusy {
+                    self.record("[SPOTIFY] Recuperación Connect ocupada: descartado sin cola")
                 } else {
                     self.performWatchCommand(command)
-                }""")
+                }"""
+          data = data.replace(probe_old, probe_new)
           # Ninguna ruta debe volver a llamar al método de encolado.
           assert data.count("enqueuePendingWatchCommand(") == 1, "Se mantiene algún sitio activo de encolado"
           assert "SpotifyBackgroundCommandLease" not in data, "Motor 900 no fue revertido"
@@ -156,7 +140,7 @@ jobs:
           test -x "$EXT/MotoBatteryWidgets"
           test -s "$APP/Assets.car"
           test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$APP/Info.plist")" = 901
-          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$EXT/Info.plist")" = 900
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$EXT/Info.plist")" = 901
           test "$(/usr/bin/plutil -extract NSSupportsLiveActivities raw -o - "$APP/Info.plist")" = true
           test "$(/usr/bin/plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$EXT/Info.plist")" = com.apple.widgetkit-extension
 
