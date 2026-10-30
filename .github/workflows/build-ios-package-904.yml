@@ -21,7 +21,7 @@ jobs:
   build-ipa-904:
     # Segundo intento sin ejecutor en macos-15: usar imagen macOS actual.
     # Apple Silicon macos-15 y macos-latest sin capacidad; probar pool Intel estándar.
-    runs-on: macos-15-intel
+    runs-on: macos-26-intel
     timeout-minutes: 45
     steps:
       - name: Obtener rama 897 y cambios experimentales
