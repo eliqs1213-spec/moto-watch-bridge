@@ -178,7 +178,7 @@ jobs:
           test -x "$EXT/MotoBatteryWidgets"
           test -s "$APP/Assets.car"
           test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$APP/Info.plist")" = 903
-          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$EXT/Info.plist")" = 902
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$EXT/Info.plist")" = 903
           test "$(/usr/bin/plutil -extract NSSupportsLiveActivities raw -o - "$APP/Info.plist")" = true
           test "$(/usr/bin/plutil -extract NSAccessorySetupSupports.0 raw -o - "$APP/Info.plist")" = Bluetooth
           test "$(/usr/bin/plutil -extract NSAccessorySetupKitSupports.0 raw -o - "$APP/Info.plist")" = Bluetooth
