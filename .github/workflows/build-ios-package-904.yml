@@ -19,9 +19,8 @@ permissions:
 
 jobs:
   build-ipa-904:
-    # Segundo intento sin ejecutor en macos-15: usar imagen macOS actual.
-    # Apple Silicon macos-15 y macos-latest sin capacidad; probar pool Intel estándar.
-    runs-on: macos-26-intel
+    # macos-15 ejecutó el intento previo hasta xcodebuild; el bloqueo era de Swift.
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - name: Obtener rama 897 y cambios experimentales
@@ -146,6 +145,7 @@ jobs:
           test "$(grep -c "CFBundleVersion: '904'" ios-native/project.yml)" -eq 2
           grep -F 'func prepareManualAuthorization()' ios-native/Sources/MotoAccessorySetupCoordinator.swift
           grep -F 'guard requested || previouslyAuthorized else {' ios-native/Sources/MotoAccessorySetupCoordinator.swift
+          ! grep -F 'MotoAccessorySetupCoordinator.shared.requestAuthorization()' ios-native/Sources/WatchBLEManager.swift
 
       - name: Comprobar políticas de Spotify y clima
         shell: bash

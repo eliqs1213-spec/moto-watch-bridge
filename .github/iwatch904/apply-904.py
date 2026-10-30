@@ -22,6 +22,17 @@ assert "MotoAccessorySetupStatusView" in src
 assert "Preparar vinculación con AccessorySetupKit" in src
 assert "Cerrá iWatch desde el selector de apps" in src
 assert 'info["NSAccessorySetupSupports"]' in src
+# La 902 intentaba abrir el selector incluso al pulsar Conectar. En la 904
+# la autorización solo puede continuar si el usuario preparó la migración,
+# se reinició la app y la sesión ya está activada.
+ble = Path("ios-native/Sources/WatchBLEManager.swift")
+ble_text = ble.read_text(encoding="utf-8")
+old_call = "MotoAccessorySetupCoordinator.shared.requestAuthorization()"
+assert ble_text.count(old_call) == 1, "Falta la llamada heredada de 902"
+ble_text = ble_text.replace(old_call, "MotoAccessorySetupCoordinator.shared.becameActive()")
+assert old_call not in ble_text, "Persistió llamada privada desde BLE"
+ble.write_text(ble_text, encoding="utf-8")
+
 assert "session.activate(on: DispatchQueue.main)" not in src
 assert "accessory.activate(on: DispatchQueue.main)" in src
 assert "startCentralIfNeeded()" in src
