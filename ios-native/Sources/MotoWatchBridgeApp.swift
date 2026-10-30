@@ -267,237 +267,83 @@ struct ContentView: View {
     private func cardHeading(_ title: String, symbol: String, color: Color) -> some View {
         Label(title, systemImage: symbol).font(.subheadline.bold()).foregroundStyle(color)
     }
+    // Configuración de uso diario. Las herramientas experimentales siguen en el
+    // código para diagnóstico, pero no ocupan espacio en la interfaz normal.
     private var settingsSheet: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     settingsHeader
                     appearanceSettings
-                    settingsSection("Conexión y dispositivos", subtitle: "Reloj, avisos y energía", symbol: "applewatch")
-                    GroupBox("Conexión") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            statusRow("Bluetooth", watch.bluetoothStatus)
-                            statusRow("Reloj", watch.watchName)
-                            statusRow("Estado", watch.connectionStatus)
+
+                    settingsSection("Reloj", subtitle: "Conexión y avisos", symbol: "applewatch")
+                    GroupBox("Moto Watch Fit") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            statusRow("Conexión", watch.connectionStatus)
+                            Toggle("Avisos de conexión y batería", isOn: $connectionAlerts.enabled)
+                                .tint(.green)
+                            if !watch.isConnected {
+                                Button("Conectar reloj") { watch.connectToWatch() }
+                                    .buttonStyle(.borderedProminent)
+                            }
                             Button("Desconectar reloj") { watch.disconnect() }
                                 .buttonStyle(.bordered)
                                 .disabled(!watch.isConnected)
-                            Text("Para conectar o activar la reconexión automática, usá la pantalla Reloj.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Toggle("Avisar conexión y batería", isOn: $connectionAlerts.enabled)
-                                .tint(.green)
-                            Text(connectionAlerts.permissionStatus)
-                                .font(.caption).foregroundStyle(.secondary)
-                            HStack {
-                                Button("Permitir avisos") { connectionAlerts.requestPermission() }
-                                    .buttonStyle(.bordered)
-                                Button("Probar aviso") {
-                                    connectionAlerts.sendTestAlert(
-                                        watchName: watch.watchName,
-                                        percentage: watch.isConnected ? watch.batteryPercentage : nil)
-                                }
-                                .buttonStyle(.bordered)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    settingsSection("Spotify", subtitle: "Cuenta y controles musicales", symbol: "music.note")
+                    GroupBox("Música") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            statusRow("Estado", spotify.status)
+                            Toggle("Controles desde el reloj", isOn: Binding(
+                                get: { spotify.controlEnabled },
+                                set: { spotify.setEnabled($0) }
+                            )).tint(.green)
+                            if spotify.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                TextField("Spotify Client ID", text: $spotify.clientID)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .textFieldStyle(.roundedBorder)
                             }
-                            Text("Al conectar, iWatch consulta automáticamente la batería Motorola 10/01 y manda un solo aviso con porcentaje. Si la lectura falla, avisa sin inventar el valor; evita repeticiones durante 90 s. «Desconectar» detiene la reconexión hasta pulsar «Conectar reloj».")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("Antes de conectar, cerrá el puente de Windows y desconectá Bluefy y el Motorola Edge.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    settingsSection("Pantalla de bloqueo", subtitle: "Widget y Actividad en vivo", symbol: "rectangle.on.rectangle")
-                    GroupBox("Sincronización automática") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Label(batteryLive.status, systemImage: "bolt.horizontal.circle")
-                                .font(.subheadline.bold())
-                            Text("La Actividad en vivo se inicia automáticamente al conectar el Moto Watch Fit y se actualiza con cada lectura real de batería. Si iOS tiene desactivadas las Actividades en vivo, habilitalas desde Ajustes del iPhone.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("El widget solicita una actualización al recibir una lectura y también tiene renovación periódica; iOS decide cuándo mostrar los cambios.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("Por restricciones de iOS, la app no puede agregar el widget a la pantalla de bloqueo por sí sola: hay que añadirlo una vez desde la galería. El widget actual muestra la hora de actualización, no la batería real; compartir ese dato con la extensión requiere un canal de datos adicional.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    settingsSection("Música", subtitle: "Conexión y sincronización con Spotify", symbol: "music.note")
-                    GroupBox("Spotify Premium") {
-                        VStack(alignment: .leading, spacing: 9) {
-                            Text("Configurá en Spotify Developer Dashboard la Redirect URI EXACTA:")
-                                .font(.caption)
-                            Text(SpotifyBridge.redirect)
-                                .font(.caption.monospaced())
-                                .textSelection(.enabled)
-                            TextField("Spotify Client ID (no Secret)", text: $spotify.clientID)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .textFieldStyle(.roundedBorder)
                             HStack {
-                                Button("Autorizar Spotify") { spotify.authorize() }
+                                Button("Vincular Spotify") { spotify.authorize() }
                                     .buttonStyle(.borderedProminent)
                                 Button("Desvincular") { spotify.disconnectSpotify() }
                                     .buttonStyle(.bordered)
                             }
-
-                            statusRow("Spotify", spotify.status)
-                            statusRow("Reproductor", spotify.playbackAvailability)
-                            statusRow("Última canción", spotify.lastSong)
-                            statusRow("Fuente de metadatos", spotify.metadataSource)
-                            statusRow("Última orden", spotify.lastAction)
-                            statusRow("Pantalla del reloj", watch.musicSyncStatus)
-                            Divider()
-                            Text("Spotify · SDK y Web API")
-                                .font(.headline)
-                            Text("El coordinador acepta observaciones recientes de ambas fuentes, sin prioridad absoluta. Con el iPhone bloqueado, la detección de cambios depende del tiempo de ejecución que conceda iOS. La resincronización puntual por Atajos permanece experimental.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            HStack {
-                                Button("Activar SDK Spotify") {
-                                    spotifyRemote.authorize(clientID: spotify.clientID.trimmingCharacters(in: .whitespacesAndNewlines))
-                                }.buttonStyle(.bordered)
-                                Button("Desactivar SDK") { spotifyRemote.disable() }
-                                    .buttonStyle(.bordered)
-                                Button("Reintentar SDK") { spotifyRemote.retryConnection() }
-                                    .buttonStyle(.bordered)
-                                    .disabled(!spotifyRemote.enabled)
-                            }
-                            statusRow("Spotify SDK", spotifyRemote.status)
-                            statusRow("SDK conectado", spotifyRemote.isConnected ? "Sí" : "No")
-                            statusRow("Eventos del SDK", spotifyRemote.metadataEventsActive ? "Suscripto" : "Sin suscripción")
-                            statusRow("Último dato nativo", spotifyRemote.lastNativeEvent)
-                            statusRow("Metadatos SDK vigentes", spotifyRemote.nativeMetadataIsFresh ? "Sí" : "No · respaldo Web API")
-                            Text("Si el SDK queda en reconectando, esperá hasta 12 s. La Web API sigue funcionando y no hace falta desvincularla. Para reintentar, dejá Spotify abierto reproduciendo, regresá a iWatch y tocá Reintentar SDK una sola vez.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Button("Consultar Spotify (diagnóstico)") {
-                                Task { await spotify.refreshPlaybackInfo() }
-                            }.buttonStyle(.bordered)
-                            Divider()
-                            Text("Music Auto Sync · recuperación")
-                                .font(.headline)
-                            statusRow("Auto Sync", musicAutoSync.status)
-                            Text("Activado por defecto: sincroniza cambios de pista, reanuncia al reconectar y al volver a iWatch cuando hace falta, y realiza una recuperación preventiva como máximo cada 3 minutos con la app visible. No garantiza ejecución periódica cuando iOS suspende la app.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Button {
-                                spotify.resyncWatchMusicManually()
-                            } label: {
-                                Label("Resincronizar reproductor", systemImage: "arrow.triangle.2.circlepath")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!watch.isConnected || !spotify.controlEnabled)
-                            Text("Consulta una canción actual y fuerza un anuncio 24/01 con su estado. Guarda hasta dos paquetes en HEX durante 20 segundos en el registro persistente. El HEX revela títulos/artistas; compartilo solo si querés. La escritura BLE no confirma la pantalla del reloj.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Divider()
-                            Button("Probar pantalla sin música") {
-                                spotify.testNoMusicScreen()
-                            }.buttonStyle(.bordered)
-                            Text("Prueba del paquete Motorola de reposo: si el reloj no vuelve a «No se está reproduciendo música», copiá el registro. El formato todavía es experimental. Una pausa normal no lo activa.")
-                                .font(.caption).foregroundStyle(.orange)
-                            Text("Título + artista y estado Play/Pausa: 08 02 al cambiar canción, vacío al reproducir, 08 01 al pausar. Refresco automático solo con la app visible; cuando está bloqueada, se actualiza al recibir botones.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    settingsSection("Utilidades y diagnóstico", subtitle: "Herramientas avanzadas de iWatch", symbol: "wrench.adjustable")
-                    GroupBox("Encuentra mi teléfono") {
-                        VStack(alignment: .leading, spacing: 9) {
-                            Text(finder.status).foregroundStyle(.secondary)
-                            statusRow("Búsqueda", finder.searching ? "Solicitada por el reloj" : "Detenida")
-
-                            Button("Permitir aviso de respaldo (opcional)") { finder.requestPermission() }
-                                .buttonStyle(.bordered)
-                            Text("Probá y detené el sonido desde Reloj. La autorización de respaldo se gestiona aquí; iOS puede impedir iniciar audio desde segundo plano.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    GroupBox("Bluetooth Motorola · inspección de F8F2") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(watch.motorolaCharacteristicsStatus)
-                                .font(.caption.monospaced())
-                                .textSelection(.enabled)
-                            Button {
-                                watch.inspectMotorolaCharacteristics()
-                            } label: {
-                                Label("Inspeccionar características", systemImage: "antenna.radiowaves.left.and.right")
+                            Button("Actualizar canción") {
+                                spotify.forceWatchMusicRecovery()
                             }
                             .buttonStyle(.bordered)
-                            .disabled(!watch.isConnected)
-                            Text("Solo descubre UUID y permisos. No lee, no se suscribe y no escribe en F8F2. La presencia de F8F2 tampoco demuestra soporte HID.")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }
-
-                    GroupBox("Comandos detectados") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text(watch.lastCommand).font(.title3.bold())
-                            HStack {
-                                counter("Siguiente", watch.nextCount, "forward.end.fill")
-                                counter("Anterior", watch.previousCount, "backward.end.fill")
-                                counter("Play/Pausa", watch.toggleCount, "playpause.fill")
-                            }
+                            .disabled(!watch.isConnected || !spotify.controlEnabled)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    GroupBox("Music Auto Sync · experimento de segundo plano") {
+                    settingsSection("Diagnóstico", subtitle: "Solo cuando necesitemos revisar un problema", symbol: "waveform.path.ecg")
+                    GroupBox("Registro de actividad") {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Optativo · iOS 26 o posterior")
-                                .font(.subheadline.bold())
-                            Text("Prueba una Actividad en vivo ANTES de bloquear y registra si iOS concede tiempo al bloquear o despierta la app ante eventos F8F0 reales. NO garantiza sincronización continua: si iOS suspende iWatch y no hay eventos BLE, Spotify no enviará cambios naturales a esta app.")
+                            Text("La conexión, el clima, la batería y la sincronización funcionan automáticamente. Si surge un problema, podés compartir el registro.")
                                 .font(.caption).foregroundStyle(.secondary)
-                            HStack {
-                                Button("Iniciar prueba") {
-                                    backgroundExperiment.start()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(backgroundExperiment.enabled)
-                                Button("Detener prueba") {
-                                    backgroundExperiment.stop()
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(!backgroundExperiment.enabled)
-                            }
-                            Text(backgroundExperiment.status)
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("Para probar: iniciá con el reloj listo y Spotify reproduciendo; esperá a ver la Actividad en vivo, bloqueá sin cerrar iWatch y dejá terminar una canción. Desbloqueá, copiá el registro y buscá BG-EXPERIMENTO. Detener la prueba también detiene la Actividad en vivo de batería. No se reproducirá audio falso ni se consultará la batería periódicamente.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    GroupBox("Prueba con pantalla bloqueada") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("1. Conectá el reloj y esperá «Escuchando los botones».\n2. Bloqueá el iPhone durante 60 segundos.\n3. Pulsá Siguiente, Anterior y Play/Pausa, espaciados 5 segundos.\n4. Desbloqueá y revisá el registro con las horas.")
-                                .font(.subheadline)
-                            Text("No cierres la app desde el selector de apps. Spotify y los metadatos en segundo plano dependen de los límites de iOS. La alarma usa notificaciones y requiere permiso.")
-                                .font(.caption).foregroundStyle(.orange)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    GroupBox("Registro persistente") {
-                        VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Button("Copiar registro") {
                                     UIPasteboard.general.string = watch.report
                                 }.buttonStyle(.borderedProminent)
-                                Button("Limpiar") { watch.clearLog() }
+                                Button("Limpiar registro") { watch.clearLog() }
                                     .buttonStyle(.bordered)
-                            }
-                            ForEach(Array(watch.events.suffix(55).reversed())) { event in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("\(event.timestamp.formatted(date: .omitted, time: .standard)) · \(event.kind)")
-                                        .font(.caption2.monospaced()).foregroundStyle(.secondary)
-                                    Text(event.message)
-                                        .font(.caption).textSelection(.enabled)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                Divider()
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }.padding(20).groupBoxStyle(WatchSettingsGroupStyle())
-            }.background(Color(uiColor: .systemGroupedBackground))
-                .navigationTitle("Configuración").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Listo") { showSettings = false } } }
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("Configuración")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Listo") { showSettings = false }
+                }
+            }
         }
     }
 
@@ -514,8 +360,8 @@ struct ContentView: View {
                 )
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Ajustes avanzados").font(.title2.bold())
-                Text("Personalizá iWatch sin perder tus conexiones ni registros.")
+                Text("Configuración").font(.title2.bold())
+                Text("Solo los ajustes que necesitás.")
                     .font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
