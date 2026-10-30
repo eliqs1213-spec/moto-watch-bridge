@@ -58,28 +58,36 @@ jobs:
           from pathlib import Path
           p = Path("ios-native/Sources/SpotifyBridge.swift")
           data = p.read_text(encoding="utf-8")
-          old = """        if requestBusy {
-            enqueuePendingWatchCommand(command, receivedAt: now)
-            return
-        }"""
+          old = "\n".join([
+              "        if requestBusy {",
+              "            enqueuePendingWatchCommand(command, receivedAt: now)",
+              "            return",
+              "        }",
+          ])
           assert data.count(old) == 1, "No se encontró la cola en receive"
-          new = """        if requestBusy {
-            lastAction = "Spotify ocupado · pulsación descartada (sin cola)"
-            record("[SPOTIFY] Orden anterior en curso: pulsación descartada, NO encolada")
-            return
-        }"""
+          new = "\n".join([
+              "        if requestBusy {",
+              "            lastAction = \"Spotify ocupado · pulsación descartada (sin cola)\"",
+              "            record(\"[SPOTIFY] Orden anterior en curso: pulsación descartada, NO encolada\")",
+              "            return",
+              "        }",
+          ])
           data = data.replace(old, new)
-          probe_old = """                if self.requestBusy {
-                    self.enqueuePendingWatchCommand(command, receivedAt: receivedAt)
-                } else {
-                    self.performWatchCommand(command)
-                }"""
+          probe_old = "\n".join([
+              "                if self.requestBusy {",
+              "                    self.enqueuePendingWatchCommand(command, receivedAt: receivedAt)",
+              "                } else {",
+              "                    self.performWatchCommand(command)",
+              "                }",
+          ])
           assert data.count(probe_old) == 1, "No se encontró la cola de Connect"
-          probe_new = """                if self.requestBusy {
-                    self.record("[SPOTIFY] Recuperación Connect ocupada: descartado sin cola")
-                } else {
-                    self.performWatchCommand(command)
-                }"""
+          probe_new = "\n".join([
+              "                if self.requestBusy {",
+              "                    self.record(\"[SPOTIFY] Recuperación Connect ocupada: descartado sin cola\")",
+              "                } else {",
+              "                    self.performWatchCommand(command)",
+              "                }",
+          ])
           data = data.replace(probe_old, probe_new)
           # Ninguna ruta debe volver a llamar al método de encolado.
           assert data.count("enqueuePendingWatchCommand(") == 1, "Se mantiene algún sitio activo de encolado"
