@@ -19,7 +19,8 @@ permissions:
 
 jobs:
   build-ipa-904:
-    runs-on: macos-15
+    # Segundo intento sin ejecutor en macos-15: usar imagen macOS actual.
+    runs-on: macos-latest
     timeout-minutes: 45
     steps:
       - name: Obtener rama 897 y cambios experimentales
