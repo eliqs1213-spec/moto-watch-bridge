@@ -3,7 +3,7 @@ name: Compilar iWatch 902 (AccessorySetupKit permanente y música corregida)
 on:
   push:
     branches:
-      - feature/iwatch-900-spotify-viento-icono
+      - feature/iwatch-902-accessorysetup-siempre
     paths:
       - '.github/workflows/build-ios-package-902.yml'
       - '.github/iwatch900/changes.patch.xz'
