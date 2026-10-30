@@ -40,7 +40,20 @@ final class MotoAccessorySetupCoordinator: ObservableObject {
             WatchBLEManager.shared.autoConnectIfNeeded()
             return
         }
+        // Si iOS aborta durante init (no es un error Swift recuperable), en
+        // el próximo lanzamiento recuperamos la conexión BLE de la build 897.
+        let initKey = "motowatch.ask.session.init.inflight.903"
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: initKey) {
+            status = "iOS rechazó AccessorySetupKit; restaurando Bluetooth convencional"
+            WatchBLEManager.shared.record("ACCESSORY-SETUP", "Recuperación tras cierre de ASAccessorySession.init")
+            WatchBLEManager.shared.startCentralIfNeeded()
+            WatchBLEManager.shared.autoConnectIfNeeded()
+            return
+        }
+        defaults.set(true, forKey: initKey)
         let accessory = ASAccessorySession()
+        defaults.set(false, forKey: initKey)
         session = accessory
         accessory.activate(on: DispatchQueue.main) { [weak self] event in
             self?.handle(event)
