@@ -82,8 +82,15 @@ final class MotoAccessorySetupCoordinator: ObservableObject {
             log("Sesión AccessorySetupKit activada")
             restoreAuthorizedAccessory()
             if !isAuthorized { becameActive() }
-        case .accessoryAdded, .accessoryChanged, .migrationComplete:
-            log("Dispositivo añadido, modificado o migrado")
+        case .accessoryAdded:
+            // No crear CBCentralManager hasta que el selector haya terminado.
+            log("Dispositivo seleccionado; esperando cierre del selector")
+            if !pickerOpen { restoreAuthorizedAccessory() }
+        case .accessoryChanged:
+            if !pickerOpen { restoreAuthorizedAccessory() }
+        case .migrationComplete:
+            // La migración de CoreBluetooth a AccessorySetupKit ha terminado.
+            log("Migración de Moto Watch Fit completada")
             restoreAuthorizedAccessory()
         case .pickerDidDismiss:
             pickerOpen = false
