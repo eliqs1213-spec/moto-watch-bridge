@@ -292,31 +292,63 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    settingsSection("Spotify", subtitle: "Cuenta y controles musicales", symbol: "music.note")
-                    GroupBox("Música") {
+                    settingsSection("Spotify", subtitle: "Autorización, SDK y sincronización", symbol: "music.note")
+                    GroupBox("Spotify Premium") {
                         VStack(alignment: .leading, spacing: 12) {
-                            statusRow("Estado", spotify.status)
-                            Toggle("Controles desde el reloj", isOn: Binding(
-                                get: { spotify.controlEnabled },
-                                set: { spotify.setEnabled($0) }
-                            )).tint(.green)
-                            if spotify.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                TextField("Spotify Client ID", text: $spotify.clientID)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                    .textFieldStyle(.roundedBorder)
-                            }
+                            Text("Redirect URI para Spotify Developer Dashboard")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text(SpotifyBridge.redirect)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                            TextField("Spotify Client ID (no Secret)", text: $spotify.clientID)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .textFieldStyle(.roundedBorder)
                             HStack {
-                                Button("Vincular Spotify") { spotify.authorize() }
+                                Button("Autorizar Spotify") { spotify.authorize() }
                                     .buttonStyle(.borderedProminent)
                                 Button("Desvincular") { spotify.disconnectSpotify() }
                                     .buttonStyle(.bordered)
                             }
-                            Button("Actualizar canción") {
-                                spotify.forceWatchMusicRecovery()
+                            statusRow("Spotify", spotify.status)
+                            statusRow("Reproductor", spotify.playbackAvailability)
+                            Toggle("Controles desde el reloj", isOn: Binding(
+                                get: { spotify.controlEnabled },
+                                set: { spotify.setEnabled($0) }
+                            )).tint(.green)
+                            Divider()
+                            Text("Conexión SDK").font(.headline)
+                            HStack {
+                                Button("Activar SDK Spotify") {
+                                    spotifyRemote.authorize(clientID: spotify.clientID.trimmingCharacters(in: .whitespacesAndNewlines))
+                                }.buttonStyle(.bordered)
+                                Button("Desactivar SDK") { spotifyRemote.disable() }
+                                    .buttonStyle(.bordered)
+                                Button("Reintentar SDK") { spotifyRemote.retryConnection() }
+                                    .buttonStyle(.bordered)
+                                    .disabled(!spotifyRemote.enabled)
                             }
-                            .buttonStyle(.bordered)
+                            statusRow("Spotify SDK", spotifyRemote.status)
+                            statusRow("SDK conectado", spotifyRemote.isConnected ? "Sí" : "No")
+                            statusRow("Eventos SDK", spotifyRemote.metadataEventsActive ? "Activos" : "Inactivos")
+                            statusRow("Fuente de metadatos", spotify.metadataSource)
+                            statusRow("Última canción", spotify.lastSong)
+                            Divider()
+                            Text("Sincronización").font(.headline)
+                            statusRow("Auto Sync", musicAutoSync.status)
+                            statusRow("Pantalla del reloj", watch.musicSyncStatus)
+                            Button {
+                                spotify.resyncWatchMusicManually()
+                            } label: {
+                                Label("Resincronizar reproductor", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            .buttonStyle(.borderedProminent)
                             .disabled(!watch.isConnected || !spotify.controlEnabled)
+                            Button("Consultar Spotify") {
+                                Task { await spotify.refreshPlaybackInfo() }
+                            }.buttonStyle(.bordered)
+                            Text("El SDK y la Web API se complementan. Con el iPhone bloqueado, iOS puede limitar la actualización automática.")
+                                .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
 
