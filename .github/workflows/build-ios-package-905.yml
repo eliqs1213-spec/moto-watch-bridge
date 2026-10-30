@@ -6,6 +6,7 @@ on:
       - feature/iwatch-905-corebluetooth-safe
     paths:
       - '.github/workflows/build-ios-package-904.yml'
+      - '.github/workflows/build-ios-package-905.yml'
       - '.github/iwatch900/changes.patch.xz'
       - '.github/iwatch902/apply-902.py'
       - '.github/iwatch903/apply-903.py'
