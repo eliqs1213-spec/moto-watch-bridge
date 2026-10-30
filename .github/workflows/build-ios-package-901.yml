@@ -1,0 +1,193 @@
+name: Compilar iWatch 901 (Spotify 897 sin cola, viento e icono)
+
+on:
+  push:
+    branches:
+      - feature/iwatch-900-spotify-viento-icono
+    paths:
+      - '.github/workflows/build-ios-package-901.yml'
+      - '.github/iwatch900/changes.patch.xz'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa-900:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Obtener rama 897 y cambios experimentales
+        uses: actions/checkout@v4
+
+      - name: Aplicar cambios de la build 900, incluido icono azul
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .github/iwatch900/changes.patch.xz
+          xz -dc .github/iwatch900/changes.patch.xz > "$RUNNER_TEMP/iwatch900.patch"
+          git apply --check --binary "$RUNNER_TEMP/iwatch900.patch"
+          git apply --binary "$RUNNER_TEMP/iwatch900.patch"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ios-native/Sources/SpotifyBridge.swift")
+          data = p.read_text(encoding="utf-8")
+          old = 'record("SPOTIFY-BG", "'
+          count = data.count(old)
+          assert count == 7, f"Expected 7 legacy log calls, found {count}"
+          p.write_text(data.replace(old, 'record("[SPOTIFY-BG] '), encoding="utf-8")
+          print("Fixed Spotify log calls to use single-argument record(_:) method")
+          PY
+          grep -F "CFBundleShortVersionString: '0.8.4.56'" ios-native/project.yml
+          grep -F "CFBundleVersion: '900'" ios-native/project.yml
+          test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIconSource.jpg
+          test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json
+          bash ios-native/scripts/render-app-icon.sh
+          test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024x1024-1x.png
+          rm ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIconSource.jpg
+
+      - name: Restaurar Spotify estable de 897 y eliminar cola de botones
+        shell: bash
+        run: |
+          set -euo pipefail
+          # La rama contiene el código original de 897; los cambios 900 se aplican en CI.
+          # Recuperar manejo probado de BLE/Spotify con iPhone bloqueado.
+          git show HEAD:ios-native/Sources/SpotifyBridge.swift > ios-native/Sources/SpotifyBridge.swift
+          git show HEAD:ios-native/Sources/MotoWatchBridgeApp.swift > ios-native/Sources/MotoWatchBridgeApp.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ios-native/Sources/SpotifyBridge.swift")
+          data = p.read_text(encoding="utf-8")
+          old = """        if requestBusy {
+              enqueuePendingWatchCommand(command, receivedAt: now)
+              return
+          }"""
+          # Respeta exactamente la indentación del código de 897.
+          old = """        if requestBusy {
+              enqueuePendingWatchCommand(command, receivedAt: now)
+              return
+          }""".replace("              ", "            ")
+          assert data.count(old) == 1, "No se encontró el punto único de encolado"
+          new = """        if requestBusy {
+              lastAction = "Spotify ocupado · pulsación descartada (sin cola)"
+              record("[SPOTIFY] Descartado por orden anterior en curso: \\(key); NO se encola")
+              return
+          }""".replace("              ", "            ")
+          data = data.replace(old, new)
+          # Bloquear también el segundo camino de encolado al recuperar Connect.
+          probe_old = """                if self.requestBusy {
+                      self.enqueuePendingWatchCommand(command, receivedAt: receivedAt)
+                  } else {
+                      self.performWatchCommand(command)
+                  }""".replace("                      ", "                    ").replace("                  ", "                ")
+          if data.count(probe_old) != 1:
+              # Forma exacta de la rama 897; fallar si difiere.
+              import re
+              pattern = r"                if self\\.requestBusy \\{\\n                    self\\.enqueuePendingWatchCommand\\(command, receivedAt: receivedAt\\)\\n                \\} else \\{\\n                    self\\.performWatchCommand\\(command\\)\\n                \\}"
+              matches = list(re.finditer(pattern, data))
+              assert len(matches) == 1, "No se encontró la cola en recuperación de Spotify Connect"
+              data = re.sub(pattern, """                if self.requestBusy {
+                    self.record("[SPOTIFY] Control Connect ocupado: pulsación descartada, sin cola")
+                } else {
+                    self.performWatchCommand(command)
+                }""", data)
+          else:
+              data = data.replace(probe_old, """                if self.requestBusy {
+                    self.record("[SPOTIFY] Control Connect ocupado: pulsación descartada, sin cola")
+                } else {
+                    self.performWatchCommand(command)
+                }""")
+          # Ninguna ruta debe volver a llamar al método de encolado.
+          assert data.count("enqueuePendingWatchCommand(") == 1, "Se mantiene algún sitio activo de encolado"
+          assert "SpotifyBackgroundCommandLease" not in data, "Motor 900 no fue revertido"
+          p.write_text(data, encoding="utf-8")
+          project = Path("ios-native/project.yml")
+          original = project.read_text(encoding="utf-8")
+          assert original.count("CFBundleShortVersionString: '0.8.4.56'") == 2
+          assert original.count("CFBundleVersion: '900'") == 2
+          project.write_text(original.replace("CFBundleShortVersionString: '0.8.4.56'",
+              "CFBundleShortVersionString: '0.8.4.57'").replace("CFBundleVersion: '900'",
+              "CFBundleVersion: '901'"), encoding="utf-8")
+          print("901: restaurado control 897, dos rutas de cola desactivadas; viento e icono conservados")
+          PY
+          grep -F "CFBundleShortVersionString: '0.8.4.57'" ios-native/project.yml
+          grep -F "CFBundleVersion: '901'" ios-native/project.yml
+
+      - name: Comprobar políticas de Spotify y clima
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchWeatherForecast.swift ios-native/Sources/WatchWeatherProtocol.swift ios-native/Tests/WatchWeatherProtocolChecks.swift > "$RUNNER_TEMP/weather-tests.swift"
+          swift "$RUNNER_TEMP/weather-tests.swift"
+          cat ios-native/Sources/SpotifyBackgroundRefreshPolicy.swift ios-native/Tests/SpotifyBackgroundRefreshChecks.swift > "$RUNNER_TEMP/spotify-tests.swift"
+          swift "$RUNNER_TEMP/spotify-tests.swift"
+
+      - name: Generar proyecto con XcodeGen
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          brew install xcodegen
+          cd ios-native
+          xcodegen generate
+
+      - name: Compilar iWatch 901 y WidgetKit para iPhone
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ios-native/MotoWatchNativeProbe.xcodeproj \
+            -scheme MotoWatchNativeProbe \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Validar icono azul, extension y Dynamic Island
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          EXT="$APP/PlugIns/MotoBatteryWidgets.appex"
+          test -d "$APP"
+          test -x "$EXT/MotoBatteryWidgets"
+          test -s "$APP/Assets.car"
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$APP/Info.plist")" = 901
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$EXT/Info.plist")" = 900
+          test "$(/usr/bin/plutil -extract NSSupportsLiveActivities raw -o - "$APP/Info.plist")" = true
+          test "$(/usr/bin/plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$EXT/Info.plist")" = com.apple.widgetkit-extension
+
+      - name: Empaquetar IPA sin firmar para IPAsig
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          mkdir -p "$RUNNER_TEMP/unsigned/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/unsigned/Payload/"
+          (cd "$RUNNER_TEMP/unsigned" && zip -qry "$GITHUB_WORKSPACE/iWatch-901-unsigned.ipa" Payload)
+          test -s "$GITHUB_WORKSPACE/iWatch-901-unsigned.ipa"
+
+      - name: Preparar IPA 901 para servicio de firma
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          bash ios-native/scripts/prepare-sideload-ipa.sh "$APP" "$GITHUB_WORKSPACE/iWatch-901-re-sign.ipa"
+          unzip -Z1 "$GITHUB_WORKSPACE/iWatch-901-re-sign.ipa" | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/MotoBatteryWidgets'
+
+      - name: Publicar IPA sin firmar
+        uses: actions/upload-artifact@v4
+        with:
+          name: iWatch-901-unsigned
+          path: iWatch-900-unsigned.ipa
+          retention-days: 14
+
+      - name: Publicar IPA preparada para re-firmar
+        uses: actions/upload-artifact@v4
+        with:
+          name: iWatch-901-re-sign
+          path: iWatch-900-re-sign.ipa
+          retention-days: 14
