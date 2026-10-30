@@ -1,0 +1,301 @@
+name: Compilar iWatch 908 (Spotify rápido y metadatos)
+# Trigger de compilación solicitado desde ChatGPT
+
+on:
+  push:
+    branches:
+      - feature/iwatch-908-spotify-fast-sync
+    paths:
+      - '.github/workflows/build-ios-package-907.yml'
+      - '.github/iwatch900/changes.patch.xz'
+      - '.github/iwatch902/apply-902.py'
+      - '.github/iwatch903/apply-903.py'
+      - '.github/iwatch904/apply-904.py'
+      - '.github/iwatch906/apply-906.py'
+      - '.github/iwatch907/apply-907.py'
+      - '.github/iwatch908/apply-908.py'
+      - 'ios-native/Sources/MotoAccessorySetupCoordinator.swift'
+      - 'ios-native/Tests/MusicField7Checks.swift'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa-908:
+    # macos-15 ejecutó el intento previo hasta xcodebuild; el bloqueo era de Swift.
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Obtener rama 897 y cambios experimentales
+        uses: actions/checkout@v4
+
+      - name: Aplicar cambios de la build 900, incluido icono azul
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .github/iwatch900/changes.patch.xz
+          xz -dc .github/iwatch900/changes.patch.xz > "$RUNNER_TEMP/iwatch900.patch"
+          git apply --check --binary "$RUNNER_TEMP/iwatch900.patch"
+          git apply --binary "$RUNNER_TEMP/iwatch900.patch"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ios-native/Sources/SpotifyBridge.swift")
+          data = p.read_text(encoding="utf-8")
+          old = 'record("SPOTIFY-BG", "'
+          count = data.count(old)
+          assert count == 7, f"Expected 7 legacy log calls, found {count}"
+          p.write_text(data.replace(old, 'record("[SPOTIFY-BG] '), encoding="utf-8")
+          print("Fixed Spotify log calls to use single-argument record(_:) method")
+          PY
+          grep -F "CFBundleShortVersionString: '0.8.4.56'" ios-native/project.yml
+          grep -F "CFBundleVersion: '900'" ios-native/project.yml
+          test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIconSource.jpg
+          test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json
+          bash ios-native/scripts/render-app-icon.sh
+          test -s ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024x1024-1x.png
+          rm ios-native/Resources/Assets.xcassets/AppIcon.appiconset/AppIconSource.jpg
+
+      - name: Restaurar Spotify estable de 897 y eliminar cola de botones
+        shell: bash
+        run: |
+          set -euo pipefail
+          # La rama contiene el código original de 897; los cambios 900 se aplican en CI.
+          # Recuperar manejo probado de BLE/Spotify con iPhone bloqueado.
+          git show HEAD:ios-native/Sources/SpotifyBridge.swift > ios-native/Sources/SpotifyBridge.swift
+          git show HEAD:ios-native/Sources/MotoWatchBridgeApp.swift > ios-native/Sources/MotoWatchBridgeApp.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ios-native/Sources/SpotifyBridge.swift")
+          data = p.read_text(encoding="utf-8")
+          old = "\n".join([
+              "        if requestBusy {",
+              "            enqueuePendingWatchCommand(command, receivedAt: now)",
+              "            return",
+              "        }",
+          ])
+          assert data.count(old) == 1, "No se encontró la cola en receive"
+          new = "\n".join([
+              "        if requestBusy {",
+              "            lastAction = \"Spotify ocupado · pulsación descartada (sin cola)\"",
+              "            record(\"[SPOTIFY] Orden anterior en curso: pulsación descartada, NO encolada\")",
+              "            return",
+              "        }",
+          ])
+          data = data.replace(old, new)
+          probe_old = "\n".join([
+              "                if self.requestBusy {",
+              "                    self.enqueuePendingWatchCommand(command, receivedAt: receivedAt)",
+              "                } else {",
+              "                    self.performWatchCommand(command)",
+              "                }",
+          ])
+          assert data.count(probe_old) == 1, "No se encontró la cola de Connect"
+          probe_new = "\n".join([
+              "                if self.requestBusy {",
+              "                    self.record(\"[SPOTIFY] Recuperación Connect ocupada: descartado sin cola\")",
+              "                } else {",
+              "                    self.performWatchCommand(command)",
+              "                }",
+          ])
+          data = data.replace(probe_old, probe_new)
+          # Ninguna ruta debe volver a llamar al método de encolado.
+          assert data.count("enqueuePendingWatchCommand(") == 1, "Se mantiene algún sitio activo de encolado"
+          assert "SpotifyBackgroundCommandLease" not in data, "Motor 900 no fue revertido"
+          p.write_text(data, encoding="utf-8")
+          project = Path("ios-native/project.yml")
+          original = project.read_text(encoding="utf-8")
+          assert original.count("CFBundleShortVersionString: '0.8.4.56'") == 2
+          assert original.count("CFBundleVersion: '900'") == 2
+          project.write_text(original.replace("CFBundleShortVersionString: '0.8.4.56'",
+              "CFBundleShortVersionString: '0.8.4.57'").replace("CFBundleVersion: '900'",
+              "CFBundleVersion: '901'"), encoding="utf-8")
+          print("901: restaurado control 897, dos rutas de cola desactivadas; viento e icono conservados")
+          PY
+          grep -F "CFBundleShortVersionString: '0.8.4.57'" ios-native/project.yml
+          grep -F "CFBundleVersion: '901'" ios-native/project.yml
+
+      - name: Integrar AccessorySetupKit obligatorio y reparar PlayInfo
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/iwatch902/apply-902.py
+          grep -F "CFBundleShortVersionString: '0.8.4.58'" ios-native/project.yml
+          grep -F "CFBundleVersion: '902'" ios-native/project.yml
+          grep -F 'NSAccessorySetupKitSupports:' ios-native/project.yml
+          grep -F 'NSAccessorySetupBluetoothServices:' ios-native/project.yml
+          ! grep -F 'details += numberField(7, snapshot.progressMs)' ios-native/Sources/WatchMusicProtocol.swift
+          grep -F 'MotoAccessorySetupCoordinator.shared.start()' ios-native/Sources/MotoWatchBridgeApp.swift
+          grep -F 'func startCentralIfNeeded()' ios-native/Sources/WatchBLEManager.swift
+          cat ios-native/Sources/WatchProtocol.swift \
+            ios-native/Sources/WatchMusicProtocol.swift \
+            ios-native/Tests/MusicFrameChecks.swift \
+            ios-native/Tests/MusicField7Checks.swift > "$RUNNER_TEMP/music-902-tests.swift"
+          swift "$RUNNER_TEMP/music-902-tests.swift"
+
+      - name: Corregir Info.plist AccessorySetupKit iOS 27 y versión 903
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/iwatch903/apply-903.py
+          test "$(grep -c "CFBundleVersion: '903'" ios-native/project.yml)" -eq 2
+          test "$(grep -c "CFBundleShortVersionString: '0.8.4.59'" ios-native/project.yml)" -eq 2
+
+      - name: Aplicar 904 con autorización manual sin tocar Live Activity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/iwatch904/apply-904.py
+          test "$(grep -c "CFBundleVersion: '904'" ios-native/project.yml)" -eq 2
+          grep -F 'func prepareManualAuthorization()' ios-native/Sources/MotoAccessorySetupCoordinator.swift
+          grep -F 'guard requested || previouslyAuthorized else {' ios-native/Sources/MotoAccessorySetupCoordinator.swift
+          ! grep -F 'MotoAccessorySetupCoordinator.shared.requestAuthorization()' ios-native/Sources/WatchBLEManager.swift
+
+      - name: Aplicar 906 y comprobar la hipótesis de configuración
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/iwatch906/apply-906.py
+          test "$(grep -c "CFBundleVersion: '906'" ios-native/project.yml)" -eq 2
+          ! grep -F "NSAccessorySetupBluetoothCompanyIdentifiers:" ios-native/project.yml
+          grep -F 'installationDiagnostics' ios-native/Sources/MotoAccessorySetupCoordinator.swift
+
+      - name: Corregir inicio de Live Activity y diagnosticar Spotify 907
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/iwatch907/apply-907.py
+          test "$(grep -c "CFBundleVersion: '907'" ios-native/project.yml)" -eq 2
+          grep -F 'case .visibility:' ios-native/Sources/BatteryLiveActivityManager.swift
+          grep -F 'SPOTIFY-WEB-DIAG: HTTP sin respuesta' ios-native/Sources/SpotifyBridge.swift
+          grep -F 'Probar Spotify Web API (sin SDK)' ios-native/Sources/MotoWatchBridgeApp.swift
+
+      - name: Optimizar controles Spotify y versión 908
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/iwatch908/apply-908.py
+          test "$(grep -c "CFBundleVersion: '908'" ios-native/project.yml)" -eq 2
+          grep -F 'request.timeoutInterval = ' ios-native/Sources/SpotifyBridge.swift
+          grep -F 'pendingWatchCommands.removeAll()' ios-native/Sources/SpotifyBridge.swift
+
+      - name: Comprobar políticas de Spotify y clima
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat ios-native/Sources/WatchProtocol.swift ios-native/Sources/WatchWeatherForecast.swift ios-native/Sources/WatchWeatherProtocol.swift ios-native/Tests/WatchWeatherProtocolChecks.swift > "$RUNNER_TEMP/weather-tests.swift"
+          swift "$RUNNER_TEMP/weather-tests.swift"
+          cat ios-native/Sources/SpotifyBackgroundRefreshPolicy.swift ios-native/Tests/SpotifyBackgroundRefreshChecks.swift > "$RUNNER_TEMP/spotify-tests.swift"
+          swift "$RUNNER_TEMP/spotify-tests.swift"
+
+      - name: Generar proyecto con XcodeGen
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          brew install xcodegen
+          cd ios-native
+          xcodegen generate
+
+      - name: Compilar iWatch 907 y WidgetKit para iPhone
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ios-native/MotoWatchNativeProbe.xcodeproj \
+            -scheme MotoWatchNativeProbe \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Validar icono azul, AccessorySetupKit, widget y Dynamic Island de 907
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          EXT="$APP/PlugIns/MotoBatteryWidgets.appex"
+          test -d "$APP"
+          test -x "$EXT/MotoBatteryWidgets"
+          test -s "$APP/Assets.car"
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$APP/Info.plist")" = 907
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$EXT/Info.plist")" = 907
+          test "$(/usr/bin/plutil -extract NSSupportsLiveActivities raw -o - "$APP/Info.plist")" = true
+          test "$(/usr/bin/plutil -extract NSAccessorySetupSupports.0 raw -o - "$APP/Info.plist")" = Bluetooth
+          test "$(/usr/bin/plutil -extract NSAccessorySetupKitSupports.0 raw -o - "$APP/Info.plist")" = Bluetooth
+          /usr/bin/plutil -extract NSAccessorySetupBluetoothServices.0 raw -o - "$APP/Info.plist" | grep -F FC9DF9F0-4899-11EE-BE56-0242AC120002
+          /usr/bin/plutil -extract NSAccessorySetupBluetoothNames.0 raw -o - "$APP/Info.plist" | grep -F 'Moto Watch Fit'
+          python3 - "$APP/Info.plist" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], "rb") as f:
+              info = plistlib.load(f)
+          assert info["NSAccessorySetupSupports"] == ["Bluetooth"]
+          assert info["NSAccessorySetupKitSupports"] == ["Bluetooth"]
+          assert "Moto Watch Fit" in info["NSAccessorySetupBluetoothNames"]
+          assert "FC9DF9F0-4899-11EE-BE56-0242AC120002" in info["NSAccessorySetupBluetoothServices"]
+          assert "NSAccessorySetupBluetoothCompanyIdentifiers" not in info
+          print("AccessorySetupKit Info.plist validado antes de distribuir")
+          PY
+          test -s "$APP/MotoWatchNativeProbe"
+          test -x "$EXT/MotoBatteryWidgets"
+          test "$(/usr/bin/plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$EXT/Info.plist")" = com.apple.widgetkit-extension
+
+      - name: Empaquetar IPA sin firmar para IPAsig
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          mkdir -p "$RUNNER_TEMP/unsigned/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/unsigned/Payload/"
+          (cd "$RUNNER_TEMP/unsigned" && zip -qry "$GITHUB_WORKSPACE/iWatch-908-unsigned.ipa" Payload)
+          test -s "$GITHUB_WORKSPACE/iWatch-908-unsigned.ipa"
+
+      - name: Preparar IPA 907 para servicio de firma
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
+          bash ios-native/scripts/prepare-sideload-ipa.sh "$APP" "$GITHUB_WORKSPACE/iWatch-908-re-sign.ipa"
+          unzip -Z1 "$GITHUB_WORKSPACE/iWatch-908-re-sign.ipa" | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/MotoBatteryWidgets'
+
+      - name: Confirmar que la vinculación NO se activa al abrir iWatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("ios-native/Sources/MotoWatchBridgeApp.swift").read_text()
+          coordinator = Path("ios-native/Sources/MotoAccessorySetupCoordinator.swift").read_text()
+          assert "MotoAccessorySetupCoordinator.shared.start()" in app
+          first = coordinator.index("func start() {")
+          after = coordinator.index("func prepareManualAuthorization()", first)
+          segment = coordinator[first:after]
+          assert segment.index('guard requested || previouslyAuthorized else') < segment.index('ASAccessorySession()')
+          assert 'restoreConventionalBluetooth(reason: "Bluetooth convencional activo' in segment
+          assert 'defaults.bool(forKey: initKey)' in segment
+          assert 'let accessory = ASAccessorySession()' in segment
+          assert "BatteryLiveActivityManager.shared.start(" in app
+          assert "installationDiagnostics" in coordinator
+          live = Path("ios-native/Sources/BatteryLiveActivityManager.swift").read_text()
+          assert "case .visibility:" in live
+          print("Inicio normal = CoreBluetooth. Botón requiere reinicio; batería Live Activity sin cambios.")
+          PY
+
+      - name: Publicar IPA sin firmar
+        uses: actions/upload-artifact@v4
+        with:
+          name: iWatch-908-unsigned
+          path: iWatch-908-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publicar IPA preparada para re-firmar
+        uses: actions/upload-artifact@v4
+        with:
+          name: iWatch-908-re-sign
+          path: iWatch-908-re-sign.ipa
+          if-no-files-found: error
+          retention-days: 14
