@@ -1,5 +1,5 @@
 name: Compilar iWatch 908 (Spotify rápido y metadatos)
-# Trigger 908: workflow registrado en main; nuevo push en rama 908
+# Trigger 908: nuevo intento solicitado el 31-10-2026
 
 on:
   push:
