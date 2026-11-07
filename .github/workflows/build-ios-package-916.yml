@@ -182,7 +182,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/iwatch914/apply-914.py
-          test "$(grep -c "CFBundleVersion: '916'" ios-native/project.yml)" -eq 2
+          test "$(grep -c "CFBundleVersion: '914'" ios-native/project.yml)" -eq 2
           grep -F 'BLE-914' ios-native/Sources/WatchBLEManager.swift
 
       - name: Integrar AccessorySetupKit opcional sin alterar CoreBluetooth
