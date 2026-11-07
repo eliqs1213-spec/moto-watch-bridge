@@ -20,11 +20,9 @@ s=s.replace(anchor,anchor+'''
           - FC9DF9F0-4899-11EE-BE56-0242AC120002''')
 p.write_text(s)
 p=Path("ios-native/Sources/MotoWatchBridgeApp.swift");s=p.read_text()
-needle='''        _ = WatchBLEManager.shared
-        _ = SpotifyBridge.shared'''
+needle='''        _ = SpotifyBridge.shared'''
 assert s.count(needle)==1
-s=s.replace(needle,'''        _ = WatchBLEManager.shared
-        if #available(iOS 18.0, *) {
+s=s.replace(needle,'''        if #available(iOS 18.0, *) {
             // A clean install of 916 ignores stale migration flags from earlier builds.
             let defaults = UserDefaults.standard
             if !defaults.bool(forKey: "motowatch.ask.916.initialized") {
