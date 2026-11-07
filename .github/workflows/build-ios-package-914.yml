@@ -3,7 +3,7 @@ name: Compilar iWatch 914 (prueba autorización Bluetooth)
 on:
   push:
     branches:
-      - feature/iwatch-914-bluetooth-permission
+      - feature/iwatch-914-clean-corebluetooth
     paths:
       - '.github/workflows/build-ios-package-914.yml'
       - '.github/iwatch900/changes.patch.xz'
