@@ -23,7 +23,7 @@ needle='''        session.showPicker(for: [entry]) { [weak self] error in
 assert s.count(needle)==1
 s=s.replace(needle,'''        session.showPicker(for: [entry]) { [weak self] error in
             guard let self else { return }
-            if error == nil {
+            guard let error else {
                 self.log("918: showPicker completion sin error; esperando evento de iOS")
                 return
             }''')
