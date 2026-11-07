@@ -1,4 +1,4 @@
-name: Compilar iWatch 920 (prueba autorización Bluetooth)
+name: Compilar iWatch 920 (selector AccessorySetupKit exclusivo)
 
 on:
   push:
