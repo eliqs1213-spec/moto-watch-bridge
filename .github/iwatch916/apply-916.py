@@ -41,14 +41,12 @@ s=s.replace(needle,'''        if #available(iOS 18.0, *) {
             WatchBLEManager.shared.startCentralIfNeeded()
         }
         _ = SpotifyBridge.shared''')
-needle='''    func applicationDidBecomeActive(_ application: UIApplication) {
-        WatchBLEManager.shared.resumeAuxiliaryWork()'''
-assert s.count(needle)==1
-s=s.replace(needle,'''    func applicationDidBecomeActive(_ application: UIApplication) {
-        if #available(iOS 18.0, *) {
+needle='''        WatchBLEManager.shared.resumeAuxiliaryWork()'''
+assert s.count(needle)>=1
+s=s.replace(needle,'''        if #available(iOS 18.0, *) {
             MotoAccessorySetupCoordinator.shared.becameActive()
         }
-        WatchBLEManager.shared.resumeAuxiliaryWork()''')
+        WatchBLEManager.shared.resumeAuxiliaryWork()''',1)
 needle='''                Text("914: AccessorySetupKit desactivado para diagnóstico BLE")
                     .font(.caption).foregroundStyle(.secondary)'''
 assert s.count(needle)==1
