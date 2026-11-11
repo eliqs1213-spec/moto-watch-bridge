@@ -1,9 +1,9 @@
-name: Compilar iWatch 920 (selector AccessorySetupKit exclusivo)
+name: Compilar iWatch 922 (restauración AccessorySetupKit automática)
 
 on:
   push:
     branches:
-      - feature/iwatch-920-accessory-exclusive-picker
+      - feature/iwatch-922-accessory-auto-restore
     paths:
       - '.github/workflows/build-ios-package-920.yml'
       - '.github/iwatch900/changes.patch.xz'
@@ -17,6 +17,7 @@ on:
       - '.github/iwatch916/apply-916.py'
       - '.github/iwatch918/apply-918.py'
       - '.github/iwatch920/apply-920.py'
+      - '.github/iwatch922/apply-922.py'
       - 'ios-native/Sources/MotoAccessorySetupCoordinator.swift'
       - 'ios-native/Tests/MusicField7Checks.swift'
   workflow_dispatch:
@@ -25,7 +26,7 @@ permissions:
   contents: read
 
 jobs:
-  build-ipa-920:
+  build-ipa-922:
     # macos-15 ejecutó el intento previo hasta xcodebuild; el bloqueo era de Swift.
     runs-on: macos-15
     timeout-minutes: 45
@@ -207,8 +208,19 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/iwatch920/apply-920.py
-          test "$(grep -c "CFBundleVersion: '920'" ios-native/project.yml)" -eq 2
+          test "$(grep -c "CFBundleVersion: '922'" ios-native/project.yml)" -eq 2
           grep -F 'CBCentralManager pospuesto' ios-native/Sources/WatchBLEManager.swift
+
+      - name: Restaurar automáticamente AccessorySetupKit autorizado 922
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/iwatch922/apply-922.py
+          test "$(grep -c "CFBundleVersion: '922'" ios-native/project.yml)" -eq 2
+          grep -F 'let previouslyAuthorized = defaults.bool(forKey: "motowatch.ask.authorized.904")' ios-native/Sources/MotoWatchBridgeApp.swift
+          grep -F 'if pendingMigration || previouslyAuthorized' ios-native/Sources/MotoWatchBridgeApp.swift
+          grep -F 'Restauración automática de accesorio previamente autorizado' ios-native/Sources/MotoWatchBridgeApp.swift
+          grep -F 'guard UserDefaults.standard.bool(forKey: manualRequestKey)' ios-native/Sources/MotoAccessorySetupCoordinator.swift
 
       - name: Comprobar políticas de Spotify y clima
         shell: bash
@@ -228,7 +240,7 @@ jobs:
           cd ios-native
           xcodegen generate
 
-      - name: Compilar iWatch 920 y WidgetKit para iPhone
+      - name: Compilar iWatch 922 y WidgetKit para iPhone
         shell: bash
         run: |
           set -euo pipefail
@@ -252,8 +264,8 @@ jobs:
           test -d "$APP"
           test -x "$EXT/MotoBatteryWidgets"
           test -s "$APP/Assets.car"
-          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$APP/Info.plist")" = 920
-          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$EXT/Info.plist")" = 920
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$APP/Info.plist")" = 922
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$EXT/Info.plist")" = 922
           test "$(/usr/bin/plutil -extract NSSupportsLiveActivities raw -o - "$APP/Info.plist")" = true
           python3 - "$APP/Info.plist" <<'PY'
           import plistlib,sys
@@ -277,18 +289,18 @@ jobs:
           APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
           mkdir -p "$RUNNER_TEMP/unsigned/Payload"
           cp -R "$APP" "$RUNNER_TEMP/unsigned/Payload/"
-          (cd "$RUNNER_TEMP/unsigned" && zip -qry "$GITHUB_WORKSPACE/iWatch-920-unsigned.ipa" Payload)
-          test -s "$GITHUB_WORKSPACE/iWatch-920-unsigned.ipa"
+          (cd "$RUNNER_TEMP/unsigned" && zip -qry "$GITHUB_WORKSPACE/iWatch-922-unsigned.ipa" Payload)
+          test -s "$GITHUB_WORKSPACE/iWatch-922-unsigned.ipa"
 
       - name: Preparar IPA 914 para servicio de firma
         shell: bash
         run: |
           set -euo pipefail
           APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/MotoWatchNativeProbe.app"
-          bash ios-native/scripts/prepare-sideload-ipa.sh "$APP" "$GITHUB_WORKSPACE/iWatch-920-re-sign.ipa"
-          unzip -Z1 "$GITHUB_WORKSPACE/iWatch-920-re-sign.ipa" | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/MotoBatteryWidgets'
+          bash ios-native/scripts/prepare-sideload-ipa.sh "$APP" "$GITHUB_WORKSPACE/iWatch-922-re-sign.ipa"
+          unzip -Z1 "$GITHUB_WORKSPACE/iWatch-922-re-sign.ipa" | grep -F 'Payload/MotoWatchNativeProbe.app/PlugIns/MotoBatteryWidgets.appex/MotoBatteryWidgets'
 
-      - name: Verificar arranque BLE seguro y migración ASK manual
+      - name: Verificar arranque BLE seguro y restauración ASK automática
         shell: bash
         run: |
           set -euo pipefail
@@ -296,26 +308,26 @@ jobs:
           from pathlib import Path
           app=Path("ios-native/Sources/MotoWatchBridgeApp.swift").read_text()
           ble=Path("ios-native/Sources/WatchBLEManager.swift").read_text()
-          assert 'if defaults.bool(forKey: "motowatch.ask.manual-request.904")' in app
+          assert 'if pendingMigration || previouslyAuthorized' in app
           assert "MotoAccessorySetupCoordinator.shared.start()" in app
           assert "WatchBLEManager.shared.startCentralIfNeeded()" in app
           assert "CBCentralManagerOptionRestoreIdentifierKey" not in ble
           assert "BatteryLiveActivityManager.shared.start(" in app
-          print("916: ASK solo a pedido, CoreBluetooth 914 por defecto")
+          print("922: ASK automático tras autorización; picker manual; CoreBluetooth 914 fallback")
           PY
 
       - name: Publicar IPA sin firmar
         uses: actions/upload-artifact@v4
         with:
-          name: iWatch-920-unsigned
-          path: iWatch-920-unsigned.ipa
+          name: iWatch-922-unsigned
+          path: iWatch-922-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
 
       - name: Publicar IPA preparada para re-firmar
         uses: actions/upload-artifact@v4
         with:
-          name: iWatch-920-re-sign
-          path: iWatch-920-re-sign.ipa
+          name: iWatch-922-re-sign
+          path: iWatch-922-re-sign.ipa
           if-no-files-found: error
           retention-days: 14
