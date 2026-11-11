@@ -208,7 +208,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/iwatch920/apply-920.py
-          test "$(grep -c "CFBundleVersion: '922'" ios-native/project.yml)" -eq 2
+          test "$(grep -c "CFBundleVersion: '920'" ios-native/project.yml)" -eq 2
           grep -F 'CBCentralManager pospuesto' ios-native/Sources/WatchBLEManager.swift
 
       - name: Restaurar automáticamente AccessorySetupKit autorizado 922
