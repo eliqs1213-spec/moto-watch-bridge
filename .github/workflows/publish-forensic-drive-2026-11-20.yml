@@ -1,0 +1,38 @@
+name: Publish verified forensic archive from Drive
+on:
+  push:
+    branches:
+      - feature/iwatch-922-accessory-auto-restore
+    paths:
+      - .github/workflows/publish-forensic-drive-2026-11-20.yml
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Download from approved public Google Drive share
+        run: |
+          python -m pip install --disable-pip-version-check gdown==5.2.0
+          gdown --id '17z_L3gJEnCD6cXCDAQXNEave-ZSIPtgK' --output forensic-evidence.zip
+      - name: Verify exact archive and integrity
+        run: |
+          echo '5e1c25711b453c4122fda26c5c77df863a4d5867bfff84aa5da7163b0933b493  forensic-evidence.zip' | sha256sum -c -
+          unzip -t forensic-evidence.zip | tail -n 2
+          sha256sum forensic-evidence.zip > SHA256SUMS.txt
+      - name: Create release and attach verified ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG=forensic-evidence-2026-11-20
+          cat > RELEASE_NOTES.md <<'EOF'
+          # iWatch / Moto Watch Fit — archivo forense
+          Copia verificada del respaldo histórico aprobado por el propietario del repositorio.
+          El ZIP incluye documentos, capturas, firmware y otros artefactos de investigación.
+          Verificar integridad con SHA256SUMS.txt. Leer docs/forensics para contexto, límites
+          y métodos. No flashear firmware ni redistribuir material de terceros sin autorización.
+          EOF
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "iWatch — Archivo forense de investigación (2026-11-20)" --notes-file RELEASE_NOTES.md --target "${GITHUB_SHA}"
+          gh release upload "$TAG" forensic-evidence.zip SHA256SUMS.txt --clobber
