@@ -1,0 +1,61 @@
+name: Publish forensic evidence (verified archive)
+on:
+  workflow_dispatch:
+    inputs:
+      archive_url:
+        description: 'HTTPS direct URL to approved ZIP archive (not a GitHub page)'
+        required: true
+        type: string
+      sha256:
+        description: 'SHA-256 of the exact ZIP file to download'
+        required: true
+        type: string
+      tag:
+        description: 'Release tag'
+        required: true
+        default: 'forensic-evidence-2026-11-20'
+        type: string
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate input
+        env:
+          ARCHIVE_URL: ${{ inputs.archive_url }}
+          SHA256: ${{ inputs.sha256 }}
+        run: |
+          python3 - <<'PY'
+          import os,re,urllib.parse
+          url=os.environ['ARCHIVE_URL']
+          assert url.startswith('https://'), 'HTTPS required'
+          assert re.fullmatch('[0-9a-fA-F]{64}',os.environ['SHA256']), 'Invalid SHA-256'
+          assert urllib.parse.urlparse(url).hostname not in ('localhost','127.0.0.1'), 'Invalid host'
+          PY
+      - name: Download and verify exact archive
+        env:
+          ARCHIVE_URL: ${{ inputs.archive_url }}
+          SHA256: ${{ inputs.sha256 }}
+        run: |
+          curl --fail --location --retry 3 --max-time 600 --output forensic-evidence.zip "$ARCHIVE_URL"
+          echo "$SHA256  forensic-evidence.zip" | sha256sum -c -
+          unzip -t forensic-evidence.zip | tail -n 2
+          sha256sum forensic-evidence.zip > SHA256SUMS.txt
+          du -h forensic-evidence.zip
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          cat > RELEASE_NOTES.md <<'EOF'
+          # Archivo de evidencia forense iWatch / Moto Watch Fit
+          Archivo histórico aprobado para publicación. Descargar el ZIP y verificar
+          el SHA-256 contra SHA256SUMS.txt. Consulte docs/forensics para el
+          informe técnico, procedencia, límites y reproducción de resultados.
+          La presencia de un binario no implica soporte ni seguridad para flasheo.
+          EOF
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "iWatch — Evidencia forense" --notes-file RELEASE_NOTES.md
+          gh release upload "$TAG" forensic-evidence.zip SHA256SUMS.txt --clobber
